@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+.env
+.env.*
+
+*.log
+.DS_Store
+.vercel
+
+# Docs and secrets live in ../private/ (see parent .gitignore)
+*.md
+../private/
