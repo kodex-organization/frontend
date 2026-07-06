@@ -2,12 +2,12 @@ import Link from "next/link";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/catalog", label: "Tables" },
   { href: "/billing", label: "Billing" },
   { href: "/udhaar", label: "Udhaar" },
   { href: "/customers", label: "Customers" },
   { href: "/reports", label: "Reports" },
 ];
-
 export function OwnerShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
