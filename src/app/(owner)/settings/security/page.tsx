@@ -1,5 +1,5 @@
 
-import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import ProtectedRoute from "@/components/security/ProtectedRoute";
 import DeviceTable from "@/features/security/components/DeviceTable";
 import LoginHistory from "@/features/security/components/LoginHistory";
 

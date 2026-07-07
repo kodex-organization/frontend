@@ -31,7 +31,7 @@ export default function DeviceCard({
                 {deviceType}
               </span>
 
-              <span className="text-sm text-gray-600">
+              <span className="max-w-[600px] truncate text-sm text-gray-600">
                 {operatingSystem}
               </span>
             </div>

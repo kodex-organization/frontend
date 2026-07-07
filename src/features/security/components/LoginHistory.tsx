@@ -1,31 +1,50 @@
-const loginHistory: any[] = []; //for testing empty state
-// const loginHistory = [
-//   {
-//     id: 1,
-//     device: "Nimra's Laptop",
-//     location: "Lahore",
-//     time: "Today, 10:15 AM",
-//     status: "Successful",
-//   },
-//   {
-//     id: 2,
-//     device: "Office Desktop",
-//     location: "Islamabad",
-//     time: "Yesterday, 4:30 PM",
-//     status: "Successful",
-//   },
-//   {
-//     id: 3,
-//     device: "Unknown Device",
-//     location: "Karachi",
-//     time: "3 Days Ago",
-//     status: "Failed",
-//   },
-// ];
+"use client";
 
-const hasLoginHistory = loginHistory.length > 0;
+import { useEffect, useState } from "react";
+import {
+  getLoginHistory,
+  type LoginHistoryItem,
+} from "../api";
+
+//const loginHistory: any[] = []; //for testing empty state
 
 export default function LoginHistory() {
+  const [loginHistory, setLoginHistory] = useState<LoginHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadHistory = async () => {
+    try {
+      const data = await getLoginHistory();
+      setLoginHistory(data);
+    } catch (error) {
+      console.error("Failed to load login history:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const hasLoginHistory = loginHistory.length > 0;
+   
+  if (loading) //loading state
+  {
+    return (
+      <div className="mt-12">
+        <h2 className="mb-6 text-2xl font-semibold text-slate-900">
+          Login History
+        </h2>
+
+        <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-500">
+          Loading login history...
+        </div>
+      </div>
+    );
+  }
+
+
   return (
     <div className="mt-12">
       <h2 className="mb-6 text-2xl font-semibold text-slate-900">Login History</h2>
@@ -34,7 +53,7 @@ export default function LoginHistory() {
           <thead className="bg-gray-200 border-b border-gray-400">
             <tr>
               <th className="px-6 py-4 text-left font-semibold text-gray-700">Device</th>
-              <th className="px-6 py-4 text-left font-semibold text-gray-700">Location</th>
+              <th className="px-6 py-4 text-left font-semibold text-gray-700">IP Address</th>
               <th className="px-6 py-4 text-left font-semibold text-gray-700">Login Time</th>
               <th className="px-6 py-4 text-left font-semibold text-gray-700">Status</th>
             </tr>
@@ -44,23 +63,34 @@ export default function LoginHistory() {
             {
               hasLoginHistory ? (
               loginHistory.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50">
-                  <td className="border-b border-gray-200 px-6 py-5 text-sm text-gray-800 bg-white">{item.device}</td>
-                  <td className="border-b border-gray-200 px-6 py-5 text-sm text-gray-800 bg-white">{item.location}</td>
-                  <td className="border-b border-gray-200 px-6 py-5 text-sm text-gray-800 bg-white">{item.time}</td>
-                  <td className="border-b border-gray-200 px-6 py-5 text-sm text-gray-800 bg-white">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${
-                        item.status === "Successful"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      {item.status}
-                    </span>
-                  </td>
-                </tr>
-              ))) : (
+              <tr key={item.id} className="hover:bg-gray-50">
+
+                <td className="border-b border-gray-200 bg-white px-6 py-5 text-sm text-gray-800">
+                  {item.device?.deviceName ?? "Unknown Device"}
+                </td>
+
+                <td className="border-b border-gray-200 bg-white px-6 py-5 text-sm text-gray-800">
+                  {item.ipAddress ?? "-"}
+                </td>
+
+                <td className="border-b border-gray-200 bg-white px-6 py-5 text-sm text-gray-800">
+                  {new Date(item.attemptedAt).toLocaleString()}
+                </td>
+
+                <td className="border-b border-gray-200 bg-white px-6 py-5 text-sm text-gray-800">
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-medium ${
+                      item.success
+                        ? "bg-green-100 text-green-700"
+                        : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {item.success ? "Successful" : "Failed"}
+                  </span>
+                </td>
+
+              </tr>
+            ))) : (
                 <tr>
                   <td
                     colSpan={4}

@@ -1,54 +1,52 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import DeviceCard from "./DeviceCard";
-
-const devices = [
-  {
-    id: 1,
-    deviceName: "Nimra's Laptop",
-    deviceType: "Laptop",
-    operatingSystem: "Windows 11",
-    appVersion: "1.0.0",
-    lastSeen: "Today, 10:15 AM",
-    isCurrentDevice: true,
-  },
-  {
-    id: 2,
-    deviceName: "Office Desktop",
-    deviceType: "Desktop",
-    operatingSystem: "Windows 10",
-    appVersion: "1.0.0",
-    lastSeen: "Yesterday, 4:30 PM",
-    isCurrentDevice: false,
-  },
-];
-
-
+import { getDevices, revokeDevice, type Device } from "../api";
+import { getDeviceInfo } from "@/features/auth/index";
 
 export default function DeviceTable() {
-    
-    const [loading, setLoading] = useState(true);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const currentDeviceIdentifier = getDeviceInfo().deviceIdentifier;
 
-    useEffect(() => {
-      const timer = setTimeout(() => {
-        setLoading(false);
-      }, 2000);
+  const [loading, setLoading] = useState(true);
 
-      return () => clearTimeout(timer);
-    }, []);
+  const loadDevices = async () => {
+    try {
+      const data = await getDevices();
+      setDevices(data);
+    } catch (error) {
+      console.error("Failed to load devices:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleRevoke = (deviceName: string) => {
-      const confirmed = window.confirm(
-        `Are you sure you want to revoke "${deviceName}"?\n\nThe user will need to sign in again to access the account.`
-      );
+  useEffect(() => {
+    loadDevices();
+  }, []);
 
-      if (!confirmed) return;
+  const handleRevoke = async (device: Device) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to revoke "${device.deviceName ?? "Unknown Device"}"?\n\nThe user will need to sign in again to access the account.`
+    );
 
-      alert(`${deviceName} revoked successfully. (Dummy UI only)`);
-    };
+    if (!confirmed) return;
 
-  
-    if (loading) {
+    try {
+      await revokeDevice(device.id);
+
+      alert("Device revoked successfully.");
+
+      // Refresh the device list
+      await loadDevices();
+    } catch (error) {
+      console.error("Failed to revoke device:", error);
+      alert("Failed to revoke device.");
+    }
+  };
+
+  if (loading) {
     return (
       <div className="space-y-4">
         {[1, 2].map((item) => (
@@ -57,33 +55,40 @@ export default function DeviceTable() {
             className="animate-pulse rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
           >
             <div className="mb-4 h-6 w-48 rounded bg-gray-200"></div>
-
             <div className="mb-3 h-4 w-32 rounded bg-gray-200"></div>
-
             <div className="mb-2 h-4 w-40 rounded bg-gray-200"></div>
-
             <div className="h-4 w-36 rounded bg-gray-200"></div>
           </div>
         ))}
       </div>
     );
   }
-  
+
+  if (devices.length === 0) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-gray-500">
+        No active devices found.
+      </div>
+    );
+  }
+
   return (
-    
     <div className="space-y-4">
       {devices.map((device) => (
         <DeviceCard
           key={device.id}
-          deviceName={device.deviceName}
-          deviceType={device.deviceType}
-          operatingSystem={device.operatingSystem}
-          appVersion={device.appVersion}
-          lastSeen={device.lastSeen}
-          isCurrentDevice={device.isCurrentDevice}
-          onRevoke={() => handleRevoke(device.deviceName)}
+          deviceName={device.deviceName ?? "Unknown Device"}
+          deviceType={device.deviceType ?? "-"}
+          operatingSystem={device.os ?? "-"}
+          appVersion={device.appVersion ?? "-"}
+          lastSeen={new Date(device.lastSeenAt).toLocaleString()}
+          isCurrentDevice={
+            device.deviceIdentifier === currentDeviceIdentifier
+          }
+          onRevoke={() => handleRevoke(device)}
         />
       ))}
     </div>
   );
 }
+

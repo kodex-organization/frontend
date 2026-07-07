@@ -3,18 +3,21 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/auth-context";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/billing", label: "Billing" },
-  { href: "/udhaar", label: "Udhaar" },
-  { href: "/customers", label: "Customers" },
-  { href: "/reports", label: "Reports" },
-  { href: "/settings/security", label: "Settings" },
-  { href: "/settings/staff", label: "Settings" },
-];
-
 export function OwnerShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+
+   const navItems = [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/billing", label: "Billing" },
+    { href: "/udhaar", label: "Udhaar" },
+    { href: "/customers", label: "Customers" },
+    { href: "/reports", label: "Reports" },
+    ...(user?.roles.includes("OWNER")
+      ? [{ href: "/settings/security", label: "Security & Devices" }]
+      : []),
+    { href: "/settings/staff", label: "Settings" },
+  ];
+
 
   return (
     <div className="flex min-h-screen">
