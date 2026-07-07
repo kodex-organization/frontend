@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useAuth } from "@/lib/auth/auth-context";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
@@ -7,14 +10,17 @@ const navItems = [
   { href: "/udhaar", label: "Udhaar" },
   { href: "/customers", label: "Customers" },
   { href: "/reports", label: "Reports" },
+  { href: "/settings/staff", label: "Settings" },
 ];
 
 export function OwnerShell({ children }: { children: React.ReactNode }) {
+  const { user, logout } = useAuth();
+
   return (
     <div className="flex min-h-screen">
-      <aside className="w-56 border-r border-slate-200 bg-white p-4">
+      <aside className="flex w-56 flex-col border-r border-slate-200 bg-white p-4">
         <p className="mb-6 text-sm font-semibold text-brand-700">CueCloud</p>
-        <nav className="flex flex-col gap-1">
+        <nav className="flex flex-1 flex-col gap-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -25,6 +31,24 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
+
+        <div className="border-t border-slate-200 pt-3">
+          {user && (
+            <div className="mb-2 px-1">
+              <p className="truncate text-sm font-medium text-slate-900">
+                {user.fullName ?? user.email}
+              </p>
+              <p className="truncate text-xs text-slate-500">{user.roles.join(", ")}</p>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="w-full rounded-md px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100"
+          >
+            Log out
+          </button>
+        </div>
       </aside>
       <main className="flex-1 p-8">{children}</main>
     </div>
