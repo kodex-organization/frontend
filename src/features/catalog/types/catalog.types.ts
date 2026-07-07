@@ -1,15 +1,44 @@
-// src/features/catalog/types/catalog.types.ts
-
-export type TableStatus = "AVAILABLE" | "OCCUPIED" | "MAINTENANCE";
+export type TableStatus =
+  | "available"
+  | "occupied"
+  | "maintenance"
+  | "reserved"
+  | "inactive";
 
 export interface SnookerTable {
-  id: number;
+  id: string;
+  branchId: string;
   tableNumber: string;
-  hourlyRate: number;
+  defaultHourlyRate: number;
   status: TableStatus;
+  isActive: boolean;
+  deletedAt: string | null;
 }
 
 export interface CreateTableInput {
   tableNumber: string;
   hourlyRate: number;
+  status?: string;
+}
+
+export interface RatePlan {
+  id: string;
+  tableId: string;
+  branchId: string;
+  rateType: string;
+  hourlyRate: number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  isActive: boolean;
+}
+
+export interface CreateRatePlanInput {
+  rateType: string;
+  hourlyRate: number;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  error?: string;
 }

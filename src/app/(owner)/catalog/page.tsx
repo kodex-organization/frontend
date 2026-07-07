@@ -9,24 +9,38 @@ import {
   createTable,
   updateTable,
   deleteTable,
+  getRateHistory,
+  createRatePlan,
 } from "@/services/catalog.service";
+import { RatePlan } from "@/features/catalog/types/catalog.types";
 
 export default function CatalogPage() {
-  // ── state ───────────────────────────────────
-  const [tables, setTables]         = useState<SnookerTable[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState<string | null>(null);
-  const [showForm, setShowForm]     = useState(false);
+
+  // ── table state ──────────────────────────────
+  const [tables, setTables]             = useState<SnookerTable[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
+
+  // ── add/edit form state ──────────────────────
+  const [showForm, setShowForm]         = useState(false);
   const [editingTable, setEditingTable] = useState<SnookerTable | null>(null);
   const [tableNumber, setTableNumber]   = useState("");
   const [hourlyRate, setHourlyRate]     = useState("");
+  const [tableStatus, setTableStatus]   = useState("available");
   const [saving, setSaving]             = useState(false);
   const [formError, setFormError]       = useState<string | null>(null);
 
+  // ── rate modal state ─────────────────────────
+  const [rateTable, setRateTable]       = useState<SnookerTable | null>(null);
+  const [rates, setRates]               = useState<RatePlan[]>([]);
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const [newRateType, setNewRateType]   = useState("standard");
+  const [newRateValue, setNewRateValue] = useState("");
+  const [rateSaving, setRateSaving]     = useState(false);
+  const [rateError, setRateError]       = useState<string | null>(null);
+
   // ── fetch tables on load ─────────────────────
-  useEffect(() => {
-    fetchTables();
-  }, []);
+  useEffect(() => { fetchTables(); }, []);
 
   async function fetchTables() {
     try {
@@ -41,11 +55,12 @@ export default function CatalogPage() {
     }
   }
 
-  // ── open form ────────────────────────────────
+  // ── add/edit handlers ────────────────────────
   function handleOpenAdd() {
     setEditingTable(null);
     setTableNumber("");
     setHourlyRate("");
+    setTableStatus("available");
     setFormError(null);
     setShowForm(true);
   }
@@ -53,7 +68,8 @@ export default function CatalogPage() {
   function handleOpenEdit(table: SnookerTable) {
     setEditingTable(table);
     setTableNumber(table.tableNumber);
-    setHourlyRate(String(table.hourlyRate));
+    setHourlyRate(String(table.defaultHourlyRate));
+    setTableStatus(table.status);
     setFormError(null);
     setShowForm(true);
   }
@@ -61,15 +77,11 @@ export default function CatalogPage() {
   function handleCloseForm() {
     setShowForm(false);
     setEditingTable(null);
-    setTableNumber("");
-    setHourlyRate("");
     setFormError(null);
   }
 
-  // ── save (add or edit) ────────────────────────
   async function handleSave() {
     setFormError(null);
-
     if (!tableNumber.trim()) {
       setFormError("Table number is required");
       return;
@@ -82,6 +94,7 @@ export default function CatalogPage() {
     const input: CreateTableInput = {
       tableNumber: tableNumber.trim(),
       hourlyRate: Number(hourlyRate),
+      ...(editingTable && { status: tableStatus }),
     };
 
     try {
@@ -103,8 +116,7 @@ export default function CatalogPage() {
     }
   }
 
-  // ── delete ────────────────────────────────────
-  async function handleDelete(id: number) {
+  async function handleDelete(id: string) {
     if (!confirm("Are you sure you want to delete this table?")) return;
     try {
       await deleteTable(id);
@@ -114,17 +126,64 @@ export default function CatalogPage() {
     }
   }
 
+  // ── rate modal handlers ──────────────────────
+  async function handleOpenRates(table: SnookerTable) {
+    setRateTable(table);
+    setRates([]);
+    setRateError(null);
+    setNewRateValue("");
+    try {
+      setRatesLoading(true);
+      const data = await getRateHistory(table.id);
+      setRates(data);
+    } catch (err: any) {
+      setRateError(err.message);
+    } finally {
+      setRatesLoading(false);
+    }
+  }
+
+  function handleCloseRates() {
+    setRateTable(null);
+    setRates([]);
+    setRateError(null);
+  }
+
+  async function handleAddRate() {
+    setRateError(null);
+    if (!newRateValue || Number(newRateValue) <= 0) {
+      setRateError("Enter a valid rate value");
+      return;
+    }
+    try {
+      setRateSaving(true);
+      const newRate = await createRatePlan(rateTable!.id, {
+        rateType: newRateType,
+        hourlyRate: Number(newRateValue),
+      });
+      setRates((prev) => [newRate, ...prev]);
+      setNewRateValue("");
+    } catch (err: any) {
+      setRateError(err.message);
+    } finally {
+      setRateSaving(false);
+    }
+  }
+
   // ── status color ──────────────────────────────
   const statusColor: Record<string, string> = {
-    AVAILABLE:   "bg-green-100 text-green-700",
-    OCCUPIED:    "bg-red-100 text-red-700",
-    MAINTENANCE: "bg-yellow-100 text-yellow-700",
+    available:   "bg-green-100 text-green-700",
+    occupied:    "bg-red-100 text-red-700",
+    maintenance: "bg-yellow-100 text-yellow-700",
+    reserved:    "bg-blue-100 text-blue-700",
+    inactive:    "bg-slate-100 text-slate-500",
   };
 
   // ── render ────────────────────────────────────
   return (
     <div>
-      {/* header */}
+
+      {/* ── page header ── */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">
@@ -143,12 +202,12 @@ export default function CatalogPage() {
         </button>
       </div>
 
-      {/* loading */}
+      {/* ── loading ── */}
       {loading && (
         <p className="text-sm text-slate-400">Loading tables...</p>
       )}
 
-      {/* error */}
+      {/* ── error ── */}
       {error && (
         <div className="rounded-md bg-red-50 border border-red-200
                         p-4 text-sm text-red-600">
@@ -156,7 +215,7 @@ export default function CatalogPage() {
         </div>
       )}
 
-      {/* empty */}
+      {/* ── empty ── */}
       {!loading && !error && tables.length === 0 && (
         <div className="flex flex-col items-center justify-center
                         rounded-lg border-2 border-dashed
@@ -168,7 +227,7 @@ export default function CatalogPage() {
         </div>
       )}
 
-      {/* tables list */}
+      {/* ── tables list ── */}
       {!loading && tables.length > 0 && (
         <div className="rounded-xl border border-slate-200
                         bg-white overflow-hidden">
@@ -190,17 +249,26 @@ export default function CatalogPage() {
                     Table #{table.tableNumber}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    Rs. {table.hourlyRate}/hr
+                    Rs. {table.defaultHourlyRate}/hr
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full
-                                     text-xs font-medium
-                                     ${statusColor[table.status]}`}>
+                    <span className={`px-2 py-1 rounded-full text-xs
+                                     font-medium
+                                     ${statusColor[table.status] ??
+                                       "bg-slate-100 text-slate-500"}`}>
                       {table.status}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => handleOpenRates(table)}
+                        className="rounded border border-slate-200
+                                   px-3 py-1 text-xs text-slate-600
+                                   hover:bg-slate-50"
+                      >
+                        Rates
+                      </button>
                       <button
                         onClick={() => handleOpenEdit(table)}
                         className="rounded border border-blue-200
@@ -226,14 +294,15 @@ export default function CatalogPage() {
         </div>
       )}
 
-      {/* modal */}
+      {/* ══════════════════════════════════════════
+          ADD / EDIT TABLE MODAL
+      ══════════════════════════════════════════ */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 flex
                         items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl
                           w-full max-w-md p-6">
 
-            {/* modal header */}
             <div className="flex justify-between items-center mb-5">
               <h2 className="text-lg font-semibold text-slate-800">
                 {editingTable ? "Edit Table" : "Add New Table"}
@@ -246,17 +315,16 @@ export default function CatalogPage() {
               </button>
             </div>
 
-            {/* form error */}
             {formError && (
-              <div className="mb-4 rounded-md bg-red-50
-                              border border-red-200 p-3
-                              text-sm text-red-600">
+              <div className="mb-4 rounded-md bg-red-50 border
+                              border-red-200 p-3 text-sm text-red-600">
                 {formError}
               </div>
             )}
 
-            {/* inputs */}
             <div className="space-y-4">
+
+              {/* table number */}
               <div>
                 <label className="block text-sm font-medium
                                   text-slate-700 mb-1">
@@ -273,6 +341,7 @@ export default function CatalogPage() {
                 />
               </div>
 
+              {/* hourly rate */}
               <div>
                 <label className="block text-sm font-medium
                                   text-slate-700 mb-1">
@@ -289,9 +358,31 @@ export default function CatalogPage() {
                              focus:ring-2 focus:ring-green-500"
                 />
               </div>
+
+              {/* status — only when editing */}
+              {editingTable && (
+                <div>
+                  <label className="block text-sm font-medium
+                                    text-slate-700 mb-1">
+                    Table Status
+                  </label>
+                  <select
+                    value={tableStatus}
+                    onChange={(e) => setTableStatus(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300
+                               px-3 py-2 text-sm focus:outline-none
+                               focus:ring-2 focus:ring-green-500"
+                  >
+                    <option value="available">Available</option>
+                    <option value="occupied">Occupied</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="reserved">Reserved</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+              )}
             </div>
 
-            {/* buttons */}
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={handleCloseForm}
@@ -316,6 +407,122 @@ export default function CatalogPage() {
           </div>
         </div>
       )}
+
+      {/* ══════════════════════════════════════════
+          RATE HISTORY MODAL
+      ══════════════════════════════════════════ */}
+      {rateTable && (
+        <div className="fixed inset-0 bg-black/40 flex
+                        items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl
+                          w-full max-w-lg p-6">
+
+            {/* header */}
+            <div className="flex justify-between items-center mb-5">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800">
+                  Rate History
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Table #{rateTable.tableNumber}
+                </p>
+              </div>
+              <button
+                onClick={handleCloseRates}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* add new rate */}
+            <div className="bg-slate-50 rounded-lg p-4 mb-5">
+              <p className="text-sm font-medium text-slate-700 mb-3">
+                Set New Rate
+              </p>
+
+              {rateError && (
+                <p className="text-xs text-red-500 mb-2">{rateError}</p>
+              )}
+
+              <div className="flex gap-2">
+                <select
+                  value={newRateType}
+                  onChange={(e) => setNewRateType(e.target.value)}
+                  className="rounded-lg border border-slate-300
+                             px-3 py-2 text-sm focus:outline-none
+                             focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="standard">Standard</option>
+                  <option value="peak">Peak</option>
+                  <option value="off_peak">Off Peak</option>
+                  <option value="custom">Custom</option>
+                </select>
+
+                <input
+                  type="number"
+                  value={newRateValue}
+                  onChange={(e) => setNewRateValue(e.target.value)}
+                  placeholder="Rate in Rs."
+                  min={1}
+                  className="flex-1 rounded-lg border border-slate-300
+                             px-3 py-2 text-sm focus:outline-none
+                             focus:ring-2 focus:ring-green-500"
+                />
+
+                <button
+                  onClick={handleAddRate}
+                  disabled={rateSaving}
+                  className="rounded-lg bg-green-700 px-4 py-2
+                             text-sm text-white hover:bg-green-800
+                             disabled:opacity-50"
+                >
+                  {rateSaving ? "..." : "Set"}
+                </button>
+              </div>
+            </div>
+
+            {/* rate list */}
+            <div className="max-h-60 overflow-y-auto space-y-2">
+              {ratesLoading && (
+                <p className="text-sm text-slate-400 text-center py-4">
+                  Loading...
+                </p>
+              )}
+
+              {!ratesLoading && rates.length === 0 && (
+                <p className="text-sm text-slate-400 text-center py-4">
+                  No rate history yet
+                </p>
+              )}
+
+              {rates.map((rate) => (
+                <div key={rate.id}
+                     className="flex justify-between items-center
+                                border rounded-lg px-4 py-3 text-sm">
+                  <div>
+                    <span className="font-medium capitalize">
+                      {rate.rateType}
+                    </span>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      From: {new Date(rate.effectiveFrom)
+                        .toLocaleDateString()}
+                      {rate.effectiveTo
+                        ? ` → ${new Date(rate.effectiveTo)
+                            .toLocaleDateString()}`
+                        : " → Current"}
+                    </p>
+                  </div>
+                  <span className="font-semibold text-green-700">
+                    Rs. {rate.hourlyRate}/hr
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
