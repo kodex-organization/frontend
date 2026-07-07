@@ -9,6 +9,7 @@ const navItems = [
   { href: "/udhaar", label: "Udhaar" },
   { href: "/customers", label: "Customers" },
   { href: "/reports", label: "Reports" },
+  { href: "/sync-status", label: "Sync Status" },
   { href: "/settings/staff", label: "Settings" },
 ];
 
@@ -18,7 +19,10 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-56 flex-col border-r border-slate-200 bg-white p-4">
-        <p className="mb-6 text-sm font-semibold text-brand-700">CueCloud</p>
+        <p className="mb-6 text-sm font-semibold text-brand-700">
+          CueCloud
+        </p>
+
         <nav className="flex flex-1 flex-col gap-1">
           {navItems.map((item) => (
             <Link
@@ -37,9 +41,13 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
               <p className="truncate text-sm font-medium text-slate-900">
                 {user.fullName ?? user.email}
               </p>
-              <p className="truncate text-xs text-slate-500">{user.roles.join(", ")}</p>
+
+              <p className="truncate text-xs text-slate-500">
+                {user.roles.join(", ")}
+              </p>
             </div>
           )}
+
           <button
             type="button"
             onClick={() => logout()}
@@ -49,6 +57,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </aside>
+
       <main className="flex-1 p-8">{children}</main>
     </div>
   );
