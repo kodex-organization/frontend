@@ -8,10 +8,12 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
 
    const navItems = [
     { href: "/dashboard", label: "Dashboard" },
+     { href: "/sessions", label: "Sessions" },
     { href: "/billing", label: "Billing" },
     { href: "/udhaar", label: "Udhaar" },
     { href: "/customers", label: "Customers" },
     { href: "/reports", label: "Reports" },
+    { href: "/sync-status", label: "Sync Status" },
     ...(user?.roles.includes("OWNER")
       ? [{ href: "/settings/security", label: "Security & Devices" }]
       : []),
