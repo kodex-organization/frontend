@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/auth-context";
 
+export function OwnerShell({ children }: { children: React.ReactNode }) {
+  const { user, logout } = useAuth();
+
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/sessions", label: "Sessions" },
@@ -11,11 +14,12 @@ const navItems = [
   { href: "/customers", label: "Customers" },
   { href: "/reports", label: "Reports" },
   { href: "/sync-status", label: "Sync Status" },
+    ...(user?.roles.includes("OWNER")
+      ? [{ href: "/settings/security", label: "Security & Devices" }]
+      : []),
   { href: "/settings/staff", label: "Settings" },
 ];
 
-export function OwnerShell({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useAuth();
 
   return (
     <div className="flex min-h-screen">
