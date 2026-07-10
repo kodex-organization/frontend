@@ -1,0 +1,5 @@
+"use client";
+import { useEffect, useState } from "react";
+import type { ActiveSession } from "./types";
+function billableSeconds(s: ActiveSession, now: number) { const end = s.endedAt ? Date.parse(s.endedAt) : now; const paused = s.pauses.reduce((n, p) => n + ((p.resumedAt ? Date.parse(p.resumedAt) : end) - Date.parse(p.pausedAt)), 0); return Math.max(0, Math.floor((end - Date.parse(s.startedAt) - paused) / 1000)); }
+export function SessionClock({ session }: { session: ActiveSession }) { const [now, setNow] = useState(Date.now()); useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []); const seconds = billableSeconds(session, now); const duration = `${String(Math.floor(seconds / 3600)).padStart(2,"0")}:${String(Math.floor(seconds % 3600 / 60)).padStart(2,"0")}:${String(seconds % 60).padStart(2,"0")}`; const charge = Number(session.appliedHourlyRate) * seconds / 3600; return <div><p className="font-mono text-3xl font-bold text-slate-900">{duration}</p><p className="mt-1 text-sm text-slate-500">Running charge <span className="font-semibold text-emerald-700">PKR {charge.toFixed(2)}</span></p></div>; }

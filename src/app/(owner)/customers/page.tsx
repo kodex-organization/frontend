@@ -1,10 +1,6 @@
-export default function CustomersPage() {
-  return (
-    <div>
-      <h1 className="text-2xl font-semibold text-slate-900">Customers</h1>
-      <p className="mt-2 text-slate-600">
-        Customer records, visit history, and tags.
-      </p>
-    </div>
-  );
-}
+"use client";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { sessionApi } from "@/features/sessions/session-api";
+import type { Customer } from "@/features/sessions/types";
+import { apiFetch } from "@/lib/api/client";
+export default function CustomersPage(){const [items,setItems]=useState<Customer[]>([]),[q,setQ]=useState(""),[loading,setLoading]=useState(true),[error,setError]=useState(""),[form,setForm]=useState({fullName:"",phone:"",cnic:""});const load=useCallback(async()=>{setLoading(true);try{setItems(await sessionApi.customers(q));setError("")}catch(e){setError(e instanceof Error?e.message:"Failed to load customers")}finally{setLoading(false)}},[q]);useEffect(()=>{const id=setTimeout(()=>void load(),250);return()=>clearTimeout(id)},[load]);async function submit(e:FormEvent){e.preventDefault();try{await apiFetch("/customers",{method:"POST",body:JSON.stringify({...form,cnic:form.cnic||null})});setForm({fullName:"",phone:"",cnic:""});await load()}catch(e){setError(e instanceof Error?e.message:"Could not create customer")}}return <div><div><h1 className="text-2xl font-semibold">Customers</h1><p className="mt-1 text-slate-500">Create and find customer records by name, phone, or CNIC.</p></div><div className="mt-6 grid gap-6 lg:grid-cols-[360px_1fr]"><form onSubmit={submit} className="h-fit rounded-xl border bg-white p-5 shadow-sm"><h2 className="font-semibold">New customer</h2>{([['fullName','Full name'],['phone','Phone'],['cnic','CNIC (optional)']] as const).map(([k,l])=><label key={k} className="mt-4 block text-sm font-medium">{l}<input required={k!=="cnic"} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})} className="mt-1 w-full rounded-lg border p-3"/></label>)}<button className="mt-5 w-full rounded-lg bg-emerald-600 p-3 font-semibold text-white">Save customer</button></form><section><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by phone, name, or CNIC" className="w-full rounded-lg border bg-white p-3"/>{error&&<p className="mt-3 rounded-lg bg-red-50 p-3 text-red-700">{error}</p>}{loading?<p className="mt-6">Searching…</p>:!items.length?<div className="mt-4 rounded-xl border border-dashed p-10 text-center text-slate-500">No customers found.</div>:<div className="mt-4 overflow-hidden rounded-xl border bg-white">{items.map(c=><div key={c.id} className="border-b p-4 last:border-0"><p className="font-semibold">{c.fullName}</p><p className="text-sm text-slate-500">{c.phone}{c.cnic?` · ${c.cnic}`:""}</p></div>)}</div>}</section></div></div>}

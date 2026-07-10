@@ -1,9 +1,22 @@
-import { redirect } from "next/navigation";
+"use client";
 
-// task.pdf: "The only unauthenticated page is Login." Root "/" is not a
-// marketing page — send everyone straight to sign-in. Once Developer 2's
-// <ProtectedRoute> ships, authenticated users hitting "/" can be redirected
-// to their role's home screen instead; for now this keeps the app scope-compliant.
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth/auth-context";
+import { redirectPathForRoles } from "@/lib/auth/session";
+
 export default function HomePage() {
-  redirect("/login");
+  const router = useRouter();
+  const { user, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (user) {
+      router.replace(redirectPathForRoles(user.roles));
+    } else {
+      router.replace("/login");
+    }
+  }, [user, isLoading, router]);
+
+  return null;
 }
