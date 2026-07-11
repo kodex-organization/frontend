@@ -6,20 +6,20 @@ import { useAuth } from "@/lib/auth/auth-context";
 export function OwnerShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/sessions", label: "Sessions" },
-  { href: "/billing", label: "Billing" },
-  { href: "/udhaar", label: "Udhaar" },
-  { href: "/customers", label: "Customers" },
-  { href: "/reports", label: "Reports" },
-  { href: "/sync-status", label: "Sync Status" },
+  const navItems = [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/catalog", label: "Tables" },
+    { href: "/sessions", label: "Sessions" },
+    { href: "/billing", label: "Billing" },
+    { href: "/udhaar", label: "Udhaar" },
+    { href: "/customers", label: "Customers" },
+    { href: "/reports", label: "Reports" },
+    { href: "/sync-status", label: "Sync Status" },
     ...(user?.roles.includes("OWNER")
       ? [{ href: "/settings/security", label: "Security & Devices" }]
       : []),
-  { href: "/settings/staff", label: "Settings" },
-];
-
+    { href: "/settings/staff", label: "Settings" },
+  ];
 
   return (
     <div className="flex min-h-screen">
@@ -46,7 +46,6 @@ const navItems = [
               <p className="truncate text-sm font-medium text-slate-900">
                 {user.fullName ?? user.email}
               </p>
-
               <p className="truncate text-xs text-slate-500">
                 {user.roles.join(", ")}
               </p>
@@ -56,7 +55,8 @@ const navItems = [
           <button
             type="button"
             onClick={() => logout()}
-            className="w-full rounded-md px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100"
+            className="w-full rounded-md px-3 py-2 text-left text-sm
+                       text-slate-600 hover:bg-slate-100"
           >
             Log out
           </button>
