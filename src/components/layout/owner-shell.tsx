@@ -6,6 +6,7 @@ const navItems = [
   { href: "/udhaar", label: "Udhaar" },
   { href: "/customers", label: "Customers" },
   { href: "/reports", label: "Reports" },
+  { href: "/governance", label: "Governance"}
 ];
 
 export function OwnerShell({ children }: { children: React.ReactNode }) {
