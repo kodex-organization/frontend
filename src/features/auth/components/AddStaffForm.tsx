@@ -106,7 +106,17 @@ export function AddStaffForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex max-w-lg flex-col gap-4" noValidate>
+    // Issue 4 fix: autoComplete="off" on the form + autoComplete="new-password"
+    // on the password field stop the browser's saved-credentials manager from
+    // auto-filling this "create a NEW staff member" form with the currently
+    // logged-in Owner/Manager's own saved email + password (which was making
+    // it look like the form was showing "my profile" with the wrong role).
+    <form
+      onSubmit={handleSubmit}
+      className="flex max-w-lg flex-col gap-4"
+      noValidate
+      autoComplete="off"
+    >
       {formError && <Alert variant="error">{formError}</Alert>}
       {successMessage && <Alert variant="success">{successMessage}</Alert>}
 
@@ -116,6 +126,7 @@ export function AddStaffForm() {
           value={form.fullName}
           onChange={(e) => update("fullName", e.target.value)}
           placeholder="e.g. Ahtesham Raza"
+          autoComplete="off"
         />
       </FormField>
 
@@ -126,6 +137,7 @@ export function AddStaffForm() {
           value={form.email}
           onChange={(e) => update("email", e.target.value)}
           placeholder="staff@club.com"
+          autoComplete="off"
         />
       </FormField>
 
@@ -135,6 +147,7 @@ export function AddStaffForm() {
           value={form.phone}
           onChange={(e) => update("phone", e.target.value)}
           placeholder="+92 3XX XXXXXXX"
+          autoComplete="off"
         />
       </FormField>
 
@@ -154,6 +167,7 @@ export function AddStaffForm() {
           value={form.password}
           onChange={(e) => update("password", e.target.value)}
           placeholder="At least 8 characters"
+          autoComplete="new-password"
         />
       </FormField>
 
@@ -166,6 +180,7 @@ export function AddStaffForm() {
             value={form.pin}
             onChange={(e) => update("pin", e.target.value.replace(/\D/g, ""))}
             placeholder="4-6 digits"
+            autoComplete="off"
           />
         </FormField>
       )}
