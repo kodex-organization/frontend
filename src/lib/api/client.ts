@@ -61,15 +61,22 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const tokens = tokenStorage.get();
 
-  const doFetch = () =>
-    fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
+  const getTokens = () => tokenStorage.get();
+
+  const doFetch = () => {
+    const latestTokens = getTokens();
+
+    return fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
       ...options,
       headers: {
-        "Content-Type": "application/json",
-        ...(tokens?.accessToken ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
+        ...(options?.body ? { "Content-Type": "application/json" } : {}),
+        ...(latestTokens?.accessToken
+          ? { Authorization: `Bearer ${latestTokens.accessToken}` }
+          : {}),
         ...options?.headers,
       },
     });
+  };
 
   let response: Response;
   try {
@@ -82,7 +89,11 @@ export async function apiFetch<T>(
     );
   }
 
-  if (response.status === 401 && !options?.skipAuthRetry && tokens?.refreshToken) {
+  if (
+    response.status === 401 &&
+    !options?.skipAuthRetry &&
+    tokens?.refreshToken
+  ) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
       try {
@@ -97,7 +108,7 @@ export async function apiFetch<T>(
     }
   }
 
-  const body = await response.json().catch(() => null) as Envelope<T> | null;
+  const body = (await response.json().catch(() => null)) as Envelope<T> | null;
 
   if (!response.ok || !body || body.success === false) {
     throw new ApiError(
