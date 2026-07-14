@@ -6,11 +6,14 @@ import {
   type LoginHistoryItem,
 } from "../api";
 
+const ITEMS_PER_PAGE = 10;
 //const loginHistory: any[] = []; //for testing empty state
 
 export default function LoginHistory() {
   const [loginHistory, setLoginHistory] = useState<LoginHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [currentPage, setCurrentPage] = useState(1);
 
   const loadHistory = async () => {
     try {
@@ -28,12 +31,21 @@ export default function LoginHistory() {
   }, []);
 
   const hasLoginHistory = loginHistory.length > 0;
+
+  const totalPages = Math.ceil(loginHistory.length / ITEMS_PER_PAGE);
+
+const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+
+const paginatedHistory = loginHistory.slice(
+  startIndex,
+  startIndex + ITEMS_PER_PAGE
+);
    
   if (loading) //loading state
   {
     return (
       <div className="mt-12">
-        <h2 className="mb-6 text-2xl font-semibold text-slate-900">
+        <h2 className="mb-8 text-2xl font-semibold text-left text-slate-900 border-b-2 border-gray-200 pb-2 ">
           Login History
         </h2>
 
@@ -47,22 +59,27 @@ export default function LoginHistory() {
 
   return (
     <div className="mt-12">
-      <h2 className="mb-6 text-2xl font-semibold text-slate-900">Login History</h2>
+        <h2 className="mb-8 text-2xl font-semibold text-left text-slate-900 border-b-2 border-gray-200 pb-2 ">
+            Login History
+        </h2>
       <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse">
-          <thead className="bg-gray-200 border-b border-gray-400">
+          <table className="min-w-full overflow-hidden rounded-xl">
+         {/* <thead className="bg-gray-200 border-b border-gray-400"> */}
+           <thead className="border-b border-green-700 bg-white">
             <tr>
-              <th className="px-6 py-4 text-left font-semibold text-gray-700">Device</th>
-              <th className="px-6 py-4 text-left font-semibold text-gray-700">IP Address</th>
-              <th className="px-6 py-4 text-left font-semibold text-gray-700">Login Time</th>
-              <th className="px-6 py-4 text-left font-semibold text-gray-700">Status</th>
+              <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider text-green-700">Device</th>
+              <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider text-green-700">IP Address</th>
+              <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider text-green-700">Login Time</th>
+              <th className="px-6 py-4 text-left text-sm font-medium uppercase tracking-wider text-green-700">Status</th>
             </tr>
-          </thead>
+          </thead> 
+          
+      
 
           <tbody>
             {
               hasLoginHistory ? (
-              loginHistory.map((item) => (
+              paginatedHistory.map((item) => (
               <tr key={item.id} className="hover:bg-gray-50">
 
                 <td className="border-b border-gray-200 bg-white px-6 py-5 text-sm text-gray-800">
@@ -111,6 +128,42 @@ export default function LoginHistory() {
             }
           </tbody>
         </table>
+
+        {hasLoginHistory && totalPages > 1 && (
+  <div className="mt-8 flex items-center justify-center gap-2">
+    <button
+      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+      disabled={currentPage === 1}
+      className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 hover:bg-gray-300"
+    >
+      Previous
+    </button>
+
+    {Array.from({ length: totalPages }, (_, index) => (
+      <button
+        key={index}
+        onClick={() => setCurrentPage(index + 1)}
+        className={`h-10 w-10 rounded-md text-sm font-medium transition ${
+          currentPage === index + 1
+            ? "bg-[#15803D] text-white"
+            : "border border-gray-300 bg-white hover:bg-gray-300"
+        }`}
+      >
+        {index + 1}
+      </button>
+    ))}
+
+    <button
+      onClick={() =>
+        setCurrentPage((p) => Math.min(p + 1, totalPages))
+      }
+      disabled={currentPage === totalPages}
+      className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 hover:bg-gray-300"
+    >
+      Next
+    </button>
+  </div>
+)}
       </div>
     </div>
   );
