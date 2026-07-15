@@ -18,45 +18,39 @@ export interface SessionUser {
 
 export interface SessionTokens {
   accessToken: string;
-  // Still present in the login/refresh API response for backward
-  // compatibility (Postman, non-browser clients), but the browser client
-  // never reads or persists it — see the hardening note below.
-  refreshToken?: string;
+  refreshToken: string;
   expiresIn: string;
 }
 
-export interface StoredTokens {
-  accessToken: string;
-}
-
 const ACCESS_TOKEN_KEY = "cuecloud_access_token";
+const REFRESH_TOKEN_KEY = "cuecloud_refresh_token";
 const USER_KEY = "cuecloud_user";
 
 /**
- * Fix (hardening): the refresh token is long-lived (default 7d) and used
- * to be persisted here in localStorage — readable by any injected/XSS
- * script for the full 7 days. It's no longer stored client-side at all;
- * the backend now also sets it as an httpOnly cookie (see
- * backend `modules/auth/lib/tokens.ts` → refreshCookieOptions()), which
- * this browser can never read from JS but which `fetch(..., { credentials:
- * "include" })` sends automatically to `/auth/refresh` and `/auth/logout`.
- * Only the short-lived (15m) access token is kept here, for the
- * Authorization header on API calls.
+ * localStorage-backed token storage. Access tokens are short-lived (15m)
+ * so exposure risk is limited; refresh tokens are opaque + rotated on
+ * every use (server revokes the old one immediately), so a stolen value
+ * only works once before detection. If this needs to harden further later
+ * (e.g. httpOnly cookies via a Next.js route-handler proxy), swap the
+ * implementation here — callers only use the functions below.
  */
 export const tokenStorage = {
-  get(): StoredTokens | null {
+  get(): SessionTokens | null {
     if (typeof window === "undefined") return null;
     const accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
-    if (!accessToken) return null;
-    return { accessToken };
+    const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
+    if (!accessToken || !refreshToken) return null;
+    return { accessToken, refreshToken, expiresIn: "" };
   },
-  set(tokens: { accessToken: string }): void {
+  set(tokens: SessionTokens): void {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+    window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
   },
   clear(): void {
     if (typeof window === "undefined") return;
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
   },
   getUser(): SessionUser | null {

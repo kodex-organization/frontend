@@ -10,16 +10,7 @@ import { Alert } from "@/components/ui/alert";
 import { createStaff, type CreateStaffInput } from "@/features/auth";
 import { useAuth, ApiError } from "@/lib/auth/auth-context";
 
-const ALL_ROLES: CreateStaffInput["role"][] = ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"];
-
-// Fix (privilege escalation): a Manager must never be able to mint a new
-// Owner account. Only an Owner can assign the OWNER role. Manager still sees
-// Manager/Accountant/Cashier. Backend enforces the same rule independently —
-// this is defence-in-depth, not the only guard.
-function assignableRoles(actingRoles: string[] | undefined): CreateStaffInput["role"][] {
-  if (actingRoles?.includes("OWNER")) return ALL_ROLES;
-  return ALL_ROLES.filter((role) => role !== "OWNER");
-}
+const ROLES: CreateStaffInput["role"][] = ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"];
 
 const addStaffSchema = z.object({
   fullName: z.string().min(2, "Enter the staff member's full name"),
@@ -57,7 +48,6 @@ export function AddStaffForm() {
   // Only an Owner or Manager should ever reach this form — the route itself
   // is also gated, this is a defence-in-depth UI check.
   const canManageStaff = user?.roles.some((r) => r === "OWNER" || r === "MANAGER");
-  const roleOptions = assignableRoles(user?.roles);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -78,14 +68,6 @@ export function AddStaffForm() {
       return;
     }
     setFieldErrors({});
-
-    if (!roleOptions.includes(parsed.data.role)) {
-      // Defence-in-depth: a Manager should never be able to submit OWNER
-      // even if the select were tampered with client-side. Backend rejects
-      // this too, but fail fast here with a clear message.
-      setFieldErrors({ role: "You are not allowed to assign this role." });
-      return;
-    }
 
     if (!user?.branchId) {
       setFormError("Could not determine your branch. Please sign in again.");
@@ -171,7 +153,7 @@ export function AddStaffForm() {
 
       <FormField label="Role" htmlFor="role" error={fieldErrors.role}>
         <Select id="role" value={form.role} onChange={(e) => update("role", e.target.value as FormState["role"])}>
-          {roleOptions.map((role) => (
+          {ROLES.map((role) => (
             <option key={role} value={role}>
               {role.charAt(0) + role.slice(1).toLowerCase()}
             </option>
