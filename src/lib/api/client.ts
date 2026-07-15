@@ -15,7 +15,7 @@ export class ApiError extends Error {
 interface Envelope<T> {
   success: boolean;
   data: T;
-  error: { message: string; code?: string } | null;
+  error: { message: string; code?: string } | string | null;
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
@@ -100,13 +100,22 @@ export async function apiFetch<T>(
   const body = await response.json().catch(() => null) as Envelope<T> | null;
 
   if (!response.ok || !body || body.success === false) {
+    const errorMessage =
+      typeof body?.error === "string"
+        ? body.error
+        : body?.error?.message;
+    const errorCode =
+      typeof body?.error === "object" && body.error
+        ? body.error.code
+        : undefined;
+
     throw new ApiError(
-      body?.error?.message ??
+      errorMessage ??
         (response.ok
           ? "Unexpected response from server"
           : `Request failed (${response.status}). The server may have restarted — please try again.`),
       response.status,
-      body?.error?.code,
+      errorCode,
     );
   }
 
