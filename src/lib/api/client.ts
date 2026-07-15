@@ -39,14 +39,17 @@ async function refreshAccessToken(): Promise<boolean> {
         credentials: "include",
         body: JSON.stringify({}),
       });
+
       if (!response.ok) {
         tokenStorage.clear();
         return false;
       }
+
       const body = (await response.json()) as Envelope<{
         accessToken: string;
         expiresIn: string;
       }>;
+
       tokenStorage.set(body.data);
       return true;
     } catch {
@@ -82,6 +85,7 @@ export async function apiFetch<T>(
   };
 
   let response: Response;
+
   try {
     response = await doFetch();
   } catch {
@@ -97,6 +101,7 @@ export async function apiFetch<T>(
   // and we fall through to the original response's error below.
   if (response.status === 401 && !options?.skipAuthRetry) {
     const refreshed = await refreshAccessToken();
+
     if (refreshed) {
       try {
         response = await doFetch();
