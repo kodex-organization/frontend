@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applySession = useCallback(
-    (sessionUser: SessionUser, tokens: { accessToken: string; refreshToken: string; expiresIn: string }) => {
+    (sessionUser: SessionUser, tokens: { accessToken: string; refreshToken?: string; expiresIn: string }) => {
       tokenStorage.set(tokens);
       tokenStorage.setUser(sessionUser);
       setUser(sessionUser);
@@ -55,11 +55,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    const tokens = tokenStorage.get();
     try {
-      if (tokens?.refreshToken) {
-        await logoutRequest(tokens.refreshToken);
-      }
+      await logoutRequest();
     } catch {
       // Best-effort — clear local session regardless of server response.
     } finally {
