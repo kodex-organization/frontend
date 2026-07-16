@@ -68,13 +68,3 @@ export async function listSessions() {
 export async function listPendingCancellationRequests() {
   return apiFetch('/governance/cancellation-requests');
 }
-// ─── Sessions (for session picker) — calling apiFetch directly since
-// Dev 4's sessionApi.active()/paused() double-unwrap the response and
-// always return undefined 
-export async function listActiveSessions() {
-  return apiFetch('/sessions?status=active&limit=100');
-}
-
-export async function listPausedSessions() {
-  return apiFetch('/sessions?status=paused&limit=100');
-}

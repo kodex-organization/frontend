@@ -7,12 +7,8 @@ import RateOverrideModal from '@/features/governance/RateOverrideModal';
 import TakeoverModal from '@/features/governance/TakeoverModal';
 import ShiftHandoverScreen from '@/features/governance/ShiftHandoverScreen';
 import AuditLogViewer from '@/features/governance/AuditLogViewer';
-import {
-  listActiveSessions,
-  listPausedSessions,
-  listPendingCancellationRequests,
-} from '@/features/governance/governance.api';
-
+import { sessionApi } from '@/features/sessions/session-api';
+import { listPendingCancellationRequests } from '@/features/governance/governance.api';
 export default function GovernancePage() {
   const [showCancellation, setShowCancellation] = useState(false);
   const [showApproval, setShowApproval] = useState(false);
@@ -51,9 +47,10 @@ export default function GovernancePage() {
     async function fetchSessions() {
       try {
         const [activeRes, pausedRes] = await Promise.all([
-          listActiveSessions(),
-          listPausedSessions(),
-        ]);
+  sessionApi.active(),
+  sessionApi.paused(),
+]);
+        
 
         const activeList = (activeRes as any) ?? [];
         const pausedList = (pausedRes as any) ?? [];
