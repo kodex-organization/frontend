@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { getAuditLogs } from './governance.api';
 import { AuditLog } from './governance.types';
+import { ApiError } from '@/lib/api/client';
 
 interface Props {
   sessionId: string;
@@ -17,14 +18,14 @@ export default function AuditLogViewer({ sessionId, onClose }: Props) {
   useEffect(() => {
     async function fetchLogs() {
       try {
-        const res = await getAuditLogs(sessionId);
-        if (res.success) {
-          setLogs(res.data);
-        } else {
-          setError(res.error || 'Failed to load logs');
-        }
+        const data = await getAuditLogs(sessionId) as AuditLog[];
+        setLogs(data);
       } catch (err) {
-        setError('Failed to fetch audit logs');
+        if (err instanceof ApiError) {
+          setError(err.message);
+        } else {
+          setError('Failed to fetch audit logs');
+        }
       } finally {
         setLoading(false);
       }

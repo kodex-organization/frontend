@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { shiftHandover } from './governance.api';
+import { ApiError } from '@/lib/api/client';
 
 interface Props {
   fromUserId: string;
@@ -30,17 +31,17 @@ export default function ShiftHandoverScreen({
     setError('');
     setSuccess('');
     try {
-      const res = await shiftHandover({ fromUserId, toUserId });
-      if (res.success) {
-       setSuccess(
-  `Successfully transferred ${res.data.transferredCount} sessions!`
-);
-        onSuccess();
-      } else {
-        setError(res.error || 'Something went wrong');
-      }
+      const data = await shiftHandover({ fromUserId, toUserId }) as { transferredCount: number };
+      setSuccess(
+        `Successfully transferred ${data.transferredCount} sessions!`
+      );
+      onSuccess();
     } catch (err) {
-      setError('Failed to process handover');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to process handover');
+      }
     } finally {
       setLoading(false);
     }

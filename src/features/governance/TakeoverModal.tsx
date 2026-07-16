@@ -2,17 +2,16 @@
 
 import { useState } from 'react';
 import { managerTakeover } from './governance.api';
+import { ApiError } from '@/lib/api/client';
 
 interface Props {
   sessionId: string;
-  newDeviceId: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
 export default function TakeoverModal({
   sessionId,
-  newDeviceId,
   onClose,
   onSuccess,
 }: Props) {
@@ -28,15 +27,22 @@ export default function TakeoverModal({
     setLoading(true);
     setError('');
     try {
-      const res = await managerTakeover({ sessionId, newDeviceId, reason });
-      if (res.success) {
-        onSuccess();
-        onClose();
-      } else {
-        setError(res.error || 'Something went wrong');
-      }
+      // newDeviceId is no longer sent from the client — the backend uses
+      // actor.deviceId (the manager's own authenticated device, resolved
+      // server-side from the JWT via requireAuth) instead. The frontend
+      // never had access to a valid user_devices.id anyway — it only ever
+      // knew its own self-generated deviceIdentifier from localStorage,
+      // which doesn't match the DB primary key sessions.opened_by_device_id
+      // requires. See governance.service.ts managerTakeover() for details.
+      await managerTakeover({ sessionId, reason });
+      onSuccess();
+      onClose();
     } catch (err) {
-      setError('Failed to process takeover');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to process takeover');
+      }
     } finally {
       setLoading(false);
     }

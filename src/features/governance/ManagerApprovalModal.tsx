@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { reviewCancellationRequest } from './governance.api';
+import { ApiError } from '@/lib/api/client';
 
 interface Props {
   requestId: string;
@@ -28,18 +29,18 @@ export default function ManagerApprovalModal({
     setLoading(true);
     setError('');
     try {
-      const res = await reviewCancellationRequest(requestId, {
+      await reviewCancellationRequest(requestId, {
         status,
         reviewReason,
       });
-      if (res.success) {
-        onSuccess();
-        onClose();
-      } else {
-        setError(res.error || 'Something went wrong');
-      }
+      onSuccess();
+      onClose();
     } catch (err) {
-      setError('Failed to process request');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to process request');
+      }
     } finally {
       setLoading(false);
     }

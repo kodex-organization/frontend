@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { overrideRate } from './governance.api';
+import { ApiError } from '@/lib/api/client';
 
 interface Props {
   sessionId: string;
@@ -33,15 +34,15 @@ export default function RateOverrideModal({
     setLoading(true);
     setError('');
     try {
-      const res = await overrideRate({ sessionId, newRate, reason });
-      if (res.success) {
-        onSuccess();
-        onClose();
-      } else {
-        setError(res.error || 'Something went wrong');
-      }
+      await overrideRate({ sessionId, newRate, reason });
+      onSuccess();
+      onClose();
     } catch (err) {
-      setError('Failed to override rate');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to override rate');
+      }
     } finally {
       setLoading(false);
     }

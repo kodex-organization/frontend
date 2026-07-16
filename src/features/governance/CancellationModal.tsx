@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createCancellationRequest } from './governance.api';
+import { ApiError } from '@/lib/api/client';
 
 interface Props {
   sessionId: string;
@@ -22,15 +23,15 @@ export default function CancellationModal({ sessionId, onClose, onSuccess }: Pro
     setLoading(true);
     setError('');
     try {
-      const res = await createCancellationRequest({ sessionId, reason });
-      if (res.success) {
-        onSuccess();
-        onClose();
-      } else {
-        setError(res.error || 'Something went wrong');
-      }
+      await createCancellationRequest({ sessionId, reason });
+      onSuccess();
+      onClose();
     } catch (err) {
-      setError('Failed to submit request');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to submit request');
+      }
     } finally {
       setLoading(false);
     }
