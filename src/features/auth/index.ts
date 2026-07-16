@@ -60,10 +60,10 @@ export async function loginWithPin(pin: string, identifier: { email?: string; us
   } as RequestInit & { skipAuthRetry: boolean });
 }
 
-export async function logoutRequest(refreshToken: string) {
+export async function logoutRequest() {
   return apiFetch<{ loggedOut: boolean }>("/auth/logout", {
     method: "POST",
-    body: JSON.stringify({ refreshToken }),
+    body: JSON.stringify({}),
   });
 }
 
