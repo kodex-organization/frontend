@@ -1,6 +1,6 @@
 // src/modules/floor-view/api.ts
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 export async function fetchFloorView(token: string) {
   const response = await fetch(`${API_BASE_URL}/api/v1/floor-view`, {
@@ -28,32 +28,6 @@ export async function fetchNotifications(token: string) {
       "Content-Type": "application/json",
     },
   });
-
-  if (response.status === 401) {
-    throw new Error("Unauthorized");
-  }
-
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  return response.json();
-}
-
-export async function markNotificationAsRead(
-  token: string,
-  notificationId: string,
-) {
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/notifications/${notificationId}/read`,
-    {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    },
-  );
 
   if (response.status === 401) {
     throw new Error("Unauthorized");

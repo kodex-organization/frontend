@@ -1,8 +1,9 @@
-// app/dashboard/page.tsx
-"use client";
+const Dashboard = () => {
+  return (
+    <div>
+      <h3>Dashboard</h3>
+    </div>
+  );
+};
 
-import { FloorViewDashboard } from "../../floor-view";
-
-export default function DashboardPage() {
-  return <FloorViewDashboard />;
-}
+export default Dashboard;

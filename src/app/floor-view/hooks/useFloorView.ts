@@ -1,5 +1,9 @@
 // src/modules/floor-view/hooks/useFloorView.ts
+"use client";
 
+import { useAuth } from "@/lib/auth/auth-context";
+import { tokenStorage } from "@/lib/auth/session"; // ✅ Import tokenStorage
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import {
@@ -10,6 +14,8 @@ import {
 import type { FloorViewTable, Notification } from "../types";
 
 export function useFloorView() {
+  const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
   const [tables, setTables] = useState<FloorViewTable[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -20,12 +26,32 @@ export function useFloorView() {
   );
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const getToken = () => localStorage.getItem("accessToken");
+  // ✅ Use tokenStorage to get the token correctly
+  const getToken = () => {
+    const stored = tokenStorage.get();
+    return stored?.accessToken || null;
+  };
+
+  const clearAuthAndRedirect = () => {
+    tokenStorage.clear(); // ✅ Use tokenStorage.clear() instead of manual removal
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    router.push("/login");
+  };
 
   const fetchData = useCallback(async () => {
+    // ✅ Check auth state first
+    if (!user) {
+      console.log("❌ No user authenticated");
+      clearAuthAndRedirect();
+      return;
+    }
+
     const token = getToken();
     if (!token) {
-      window.location.href = "/login";
+      console.log("❌ No token found");
+      clearAuthAndRedirect();
       return;
     }
 
@@ -63,13 +89,19 @@ export function useFloorView() {
             .length,
         );
       }
-    } catch (error) {
-      console.error("Failed to fetch:", error);
+    } catch (error: any) {
+      console.error("❌ Failed to fetch:", error);
+
+      if (error.message === "Unauthorized" || error.message?.includes("401")) {
+        clearAuthAndRedirect();
+        return;
+      }
+
       toast.error("Failed to load data");
     } finally {
       setLoading(false);
     }
-  }, [notifiedOvertime]);
+  }, [user, notifiedOvertime, router]);
 
   const markAsRead = useCallback(
     async (id: string) => {
@@ -93,27 +125,32 @@ export function useFloorView() {
     }
   }, [notifications, markAsRead]);
 
-  // Auto-refresh every 30 seconds (polling)
+  // ✅ Use auth loading state
   useEffect(() => {
-    // Initial fetch
-    fetchData();
+    if (!authLoading && user) {
+      fetchData();
+    }
+  }, [authLoading, user, fetchData]);
 
-    // Set up polling
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    if (!user) return;
+
+    fetchData();
     intervalRef.current = setInterval(fetchData, 30000);
 
-    // Cleanup on unmount
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, [fetchData]);
+  }, [user, fetchData]);
 
   return {
     tables,
     notifications,
     unreadCount,
-    loading,
+    loading: loading || authLoading,
     lastUpdated,
     fetchData,
     markAsRead,
