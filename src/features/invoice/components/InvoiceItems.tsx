@@ -1,10 +1,10 @@
 interface Props {
   items: {
     id: string;
-    itemName: string;
+    description: string;
     quantity: number;
     unitPrice: number;
-    lineTotal: number;
+    totalPrice: number;
   }[];
 }
 
@@ -157,7 +157,7 @@ export default function InvoiceItems({ items }: Props) {
                       "
                     >
 
-                      {item.itemName}
+                      {item.description}
 
                     </td>
 
@@ -205,7 +205,7 @@ export default function InvoiceItems({ items }: Props) {
                       "
                     >
 
-                      Rs. {Number(item.lineTotal).toLocaleString()}
+                      Rs. {Number(item.totalPrice).toLocaleString()}
 
                     </td>
 
