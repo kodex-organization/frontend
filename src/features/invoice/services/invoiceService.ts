@@ -1,18 +1,13 @@
 import api from "@/lib/axios";
 import { Invoice } from "../types/invoice";
 
-
 export const invoiceService = {
 
 
-  // =========================
   // Get all invoices
-  // =========================
   async getInvoices(): Promise<Invoice[]> {
 
-    const res = await api.get(
-      "/billing/invoices"
-    );
+    const res = await api.get("/invoices");
 
     return res.data.data as Invoice[];
 
@@ -20,14 +15,10 @@ export const invoiceService = {
 
 
 
-  // =========================
   // Get single invoice
-  // =========================
   async getInvoice(id: string): Promise<Invoice> {
 
-    const res = await api.get(
-      `/billing/invoices/${id}`
-    );
+    const res = await api.get(`/invoices/${id}`);
 
     return res.data.data as Invoice;
 
@@ -87,10 +78,8 @@ export const invoiceService = {
 
 
     const res = await api.patch(
-      `/billing/invoices/${invoiceId}/void`,
-      {}
+      `/invoices/${invoiceId}/void`
     );
-
 
     return res.data;
 
@@ -98,21 +87,19 @@ export const invoiceService = {
 
 
 
-  // =========================
-  // Add Payment
-  // =========================
+  // Add payment
   async addPayment(
     invoiceId: string,
     amount: number,
     paymentMethod: "CASH" = "CASH"
   ) {
 
-
     const res = await api.post(
-      `/billing/invoices/${invoiceId}/payments`,
+      "/payments",
       {
+        invoiceId,
         amount,
-        tenderType: paymentMethod,
+        paymentMethod,
       }
     );
 

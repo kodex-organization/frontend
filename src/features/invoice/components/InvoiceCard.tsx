@@ -81,7 +81,7 @@ export default function InvoiceCard({ invoice }: Props) {
 
         <p>
           <strong>Total:</strong>{" "}
-          {formatCurrency(invoice.total)}
+          {formatCurrency(invoice.totalAmount)}
         </p>
 
 

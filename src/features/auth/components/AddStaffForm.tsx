@@ -10,7 +10,16 @@ import { Alert } from "@/components/ui/alert";
 import { createStaff, type CreateStaffInput } from "@/features/auth";
 import { useAuth, ApiError } from "@/lib/auth/auth-context";
 
-const ROLES: CreateStaffInput["role"][] = ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"];
+const ALL_ROLES: CreateStaffInput["role"][] = ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"];
+
+// Fix (privilege escalation): a Manager must never be able to mint a new
+// Owner account. Only an Owner can assign the OWNER role. Manager still sees
+// Manager/Accountant/Cashier. Backend enforces the same rule independently —
+// this is defence-in-depth, not the only guard.
+function assignableRoles(actingRoles: string[] | undefined): CreateStaffInput["role"][] {
+  if (actingRoles?.includes("OWNER")) return ALL_ROLES;
+  return ALL_ROLES.filter((role) => role !== "OWNER");
+}
 
 const addStaffSchema = z.object({
   fullName: z.string().min(2, "Enter the staff member's full name"),
@@ -48,6 +57,7 @@ export function AddStaffForm() {
   // Only an Owner or Manager should ever reach this form — the route itself
   // is also gated, this is a defence-in-depth UI check.
   const canManageStaff = user?.roles.some((r) => r === "OWNER" || r === "MANAGER");
+  const roleOptions = assignableRoles(user?.roles);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -68,6 +78,14 @@ export function AddStaffForm() {
       return;
     }
     setFieldErrors({});
+
+    if (!roleOptions.includes(parsed.data.role)) {
+      // Defence-in-depth: a Manager should never be able to submit OWNER
+      // even if the select were tampered with client-side. Backend rejects
+      // this too, but fail fast here with a clear message.
+      setFieldErrors({ role: "You are not allowed to assign this role." });
+      return;
+    }
 
     if (!user?.branchId) {
       setFormError("Could not determine your branch. Please sign in again.");
@@ -106,7 +124,17 @@ export function AddStaffForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex max-w-lg flex-col gap-4" noValidate>
+    // Issue 4 fix: autoComplete="off" on the form + autoComplete="new-password"
+    // on the password field stop the browser's saved-credentials manager from
+    // auto-filling this "create a NEW staff member" form with the currently
+    // logged-in Owner/Manager's own saved email + password (which was making
+    // it look like the form was showing "my profile" with the wrong role).
+    <form
+      onSubmit={handleSubmit}
+      className="flex max-w-lg flex-col gap-4"
+      noValidate
+      autoComplete="off"
+    >
       {formError && <Alert variant="error">{formError}</Alert>}
       {successMessage && <Alert variant="success">{successMessage}</Alert>}
 
@@ -116,6 +144,7 @@ export function AddStaffForm() {
           value={form.fullName}
           onChange={(e) => update("fullName", e.target.value)}
           placeholder="e.g. Ahtesham Raza"
+          autoComplete="off"
         />
       </FormField>
 
@@ -126,6 +155,7 @@ export function AddStaffForm() {
           value={form.email}
           onChange={(e) => update("email", e.target.value)}
           placeholder="staff@club.com"
+          autoComplete="off"
         />
       </FormField>
 
@@ -135,12 +165,13 @@ export function AddStaffForm() {
           value={form.phone}
           onChange={(e) => update("phone", e.target.value)}
           placeholder="+92 3XX XXXXXXX"
+          autoComplete="off"
         />
       </FormField>
 
       <FormField label="Role" htmlFor="role" error={fieldErrors.role}>
         <Select id="role" value={form.role} onChange={(e) => update("role", e.target.value as FormState["role"])}>
-          {ROLES.map((role) => (
+          {roleOptions.map((role) => (
             <option key={role} value={role}>
               {role.charAt(0) + role.slice(1).toLowerCase()}
             </option>
@@ -154,6 +185,7 @@ export function AddStaffForm() {
           value={form.password}
           onChange={(e) => update("password", e.target.value)}
           placeholder="At least 8 characters"
+          autoComplete="new-password"
         />
       </FormField>
 
@@ -166,6 +198,7 @@ export function AddStaffForm() {
             value={form.pin}
             onChange={(e) => update("pin", e.target.value.replace(/\D/g, ""))}
             placeholder="4-6 digits"
+            autoComplete="off"
           />
         </FormField>
       )}

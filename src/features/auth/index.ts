@@ -25,9 +25,17 @@ export function getDeviceInfo(): DeviceInfo {
   }
   return {
     deviceIdentifier,
-    deviceName: typeof navigator !== "undefined" ? navigator.platform : undefined,
+    // navigator.platform is short and safe as-is, but we still guard it the
+    // same way for consistency across browsers.
+    deviceName: typeof navigator !== "undefined" ? navigator.platform?.slice(0, 120) : undefined,
     deviceType: "desktop",
-    os: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
+    // Issue 6 fix: navigator.userAgent length varies by browser — Chrome's
+    // is ~111 chars, but Edge appends an extra "Edg/x.x.x.x" token that
+    // pushes it past 120, which the backend's deviceInfoSchema.os field
+    // (max length, see schemas.ts) was rejecting with a 400. We truncate
+    // here as a safety net in addition to raising the backend limit, so a
+    // long user-agent from any browser can never break login again.
+    os: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 255) : undefined,
     appVersion: "0.1.0",
   };
 }
@@ -52,10 +60,10 @@ export async function loginWithPin(pin: string, identifier: { email?: string; us
   } as RequestInit & { skipAuthRetry: boolean });
 }
 
-export async function logoutRequest(refreshToken: string) {
+export async function logoutRequest() {
   return apiFetch<{ loggedOut: boolean }>("/auth/logout", {
     method: "POST",
-    body: JSON.stringify({ refreshToken }),
+    body: JSON.stringify({}),
   });
 }
 

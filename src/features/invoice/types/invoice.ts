@@ -1,37 +1,41 @@
 export interface InvoiceItem {
   id: string;
-  itemName: string;
+  description: string;
   quantity: number;
   unitPrice: number;
-  lineTotal: number;
+  totalPrice: number;
 }
 
 export interface InvoicePayment {
   id: string;
-  tenderType: "cash";
+  paymentMethod: "CASH";
   amount: number;
-  createdAt: string;
+  paidAt: string;
 }
 
 export interface Invoice {
   id: string;
 
-  invoiceNumber: number | null;
+  invoiceNumber: number;
 
   branchId: string;
-  sessionId: string | null;
-  customerId?: string | null;
+  sessionId: string;
 
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
   serviceCharge: number;
 
-  total: number;
+  totalAmount: number;
 
-  status: "open" | "paid" | "void";
+  status: "PENDING" | "PAID" | "VOIDED";
+
+  isVoided: boolean;
+
+  voidedInvoiceId?: string | null;
 
   createdAt: string;
+  updatedAt: string;
 
   items: InvoiceItem[];
 

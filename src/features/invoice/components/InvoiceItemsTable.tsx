@@ -27,7 +27,7 @@ export default function InvoiceItems({
         <tbody>
           {items.map((item) => (
             <tr key={item.id} className="border-b">
-              <td>item.itemName</td>
+              <td>{item.description}</td>
 
               <td>{item.quantity}</td>
 
@@ -36,7 +36,7 @@ export default function InvoiceItems({
               </td>
 
               <td>
-                {formatCurrency(item.lineTotal)}
+                {formatCurrency(item.totalPrice)}
               </td>
             </tr>
           ))}
