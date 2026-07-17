@@ -56,7 +56,7 @@ export default function InvoiceTable({ invoices }: Props) {
             >
 
               <td className="px-6 py-5 font-semibold">
-                #{invoice.invoiceNumber}
+                #{invoice.invoiceNumber ?? invoice.id.slice(0, 8)}
               </td>
 
               <td className="px-6 py-5">
@@ -64,7 +64,7 @@ export default function InvoiceTable({ invoices }: Props) {
               </td>
 
               <td className="px-6 py-5">
-                Rs. {Number(invoice.totalAmount).toLocaleString()}
+                Rs. {Number(invoice.total).toLocaleString()}
               </td>
 
               <td className="px-6 py-5">

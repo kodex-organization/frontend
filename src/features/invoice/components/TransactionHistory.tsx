@@ -5,24 +5,22 @@ import { useMemo, useState } from "react";
 interface Payment {
   id: string;
   amount: number | string;
-  paymentMethod: string;
-  paidAt: string;
+  tenderType: string;
+  createdAt: string;
 }
 
 interface Props {
   payments: Payment[];
 }
 
-export default function TransactionHistory({
-  payments,
-}: Props) {
+export default function TransactionHistory({ payments }: Props) {
   const [selectedDate, setSelectedDate] = useState("");
 
   const filteredPayments = useMemo(() => {
     if (!selectedDate) return payments;
 
     return payments.filter((payment) => {
-      const paymentDate = new Date(payment.paidAt)
+      const paymentDate = new Date(payment.createdAt)
         .toISOString()
         .split("T")[0];
 
@@ -32,16 +30,7 @@ export default function TransactionHistory({
 
   return (
     <div className="mb-6">
-      <div
-        className="
-          bg-white
-          rounded-2xl
-          border
-          border-green-100
-          shadow-sm
-          p-6
-        "
-      >
+      <div className="bg-white rounded-2xl border border-green-100 shadow-sm p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
             <h2 className="text-xl font-semibold text-gray-800">
@@ -61,32 +50,14 @@ export default function TransactionHistory({
             <input
               type="date"
               value={selectedDate}
-              onChange={(e) =>
-                setSelectedDate(e.target.value)
-              }
-              className="
-                rounded-lg
-                border
-                border-gray-300
-                px-3
-                py-2
-                text-sm
-                focus:border-green-500
-                focus:outline-none
-              "
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
 
             {selectedDate && (
               <button
                 onClick={() => setSelectedDate("")}
-                className="
-                  rounded-lg
-                  bg-gray-200
-                  px-3
-                  py-2
-                  text-sm
-                  hover:bg-gray-300
-                "
+                className="rounded-lg bg-gray-200 px-3 py-2 text-sm"
               >
                 Clear
               </button>
@@ -95,44 +66,18 @@ export default function TransactionHistory({
         </div>
 
         {filteredPayments.length === 0 ? (
-          <div
-            className="
-              rounded-xl
-              bg-gray-50
-              p-8
-              text-center
-              text-gray-500
-            "
-          >
+          <div className="rounded-xl bg-gray-50 p-8 text-center text-gray-500">
             No transactions found.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr
-                  className="
-                    bg-green-50
-                    border-b
-                    text-sm
-                    text-gray-600
-                  "
-                >
-                  <th className="p-4 text-left font-medium">
-                    Date
-                  </th>
-
-                  <th className="p-4 text-left font-medium">
-                    Type
-                  </th>
-
-                  <th className="p-4 text-left font-medium">
-                    Method
-                  </th>
-
-                  <th className="p-4 text-right font-medium">
-                    Amount
-                  </th>
+                <tr className="bg-green-50 border-b text-sm text-gray-600">
+                  <th className="p-4 text-left">Date</th>
+                  <th className="p-4 text-left">Type</th>
+                  <th className="p-4 text-left">Method</th>
+                  <th className="p-4 text-right">Amount</th>
                 </tr>
               </thead>
 
@@ -140,42 +85,24 @@ export default function TransactionHistory({
                 {filteredPayments.map((payment) => (
                   <tr
                     key={payment.id}
-                    className="
-                      border-b
-                      last:border-none
-                      hover:bg-green-50
-                      transition
-                    "
+                    className="border-b last:border-none hover:bg-green-50"
                   >
                     <td className="p-4">
-                      {new Date(
-                        payment.paidAt
-                      ).toLocaleDateString()}
+                      {new Date(payment.createdAt).toLocaleDateString()}
                     </td>
 
                     <td className="p-4">
-                      <span
-                        className="
-                          rounded-full
-                          bg-green-100
-                          px-3
-                          py-1
-                          text-sm
-                          font-medium
-                          text-green-700
-                        "
-                      >
+                      <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
                         Payment
                       </span>
                     </td>
 
                     <td className="p-4">
-                      {payment.paymentMethod}
+                      {payment.tenderType}
                     </td>
 
                     <td className="p-4 text-right font-semibold text-green-700">
-                      Rs.{" "}
-                      {Number(payment.amount).toLocaleString()}
+                      Rs. {Number(payment.amount).toLocaleString()}
                     </td>
                   </tr>
                 ))}

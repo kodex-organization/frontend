@@ -1,13 +1,18 @@
 import api from "@/lib/axios";
 import { Invoice } from "../types/invoice";
 
+
 export const invoiceService = {
 
 
+  // =========================
   // Get all invoices
+  // =========================
   async getInvoices(): Promise<Invoice[]> {
 
-    const res = await api.get("/invoices");
+    const res = await api.get(
+      "/billing/invoices"
+    );
 
     return res.data.data as Invoice[];
 
@@ -15,10 +20,14 @@ export const invoiceService = {
 
 
 
+  // =========================
   // Get single invoice
+  // =========================
   async getInvoice(id: string): Promise<Invoice> {
 
-    const res = await api.get(`/invoices/${id}`);
+    const res = await api.get(
+      `/billing/invoices/${id}`
+    );
 
     return res.data.data as Invoice;
 
@@ -26,12 +35,61 @@ export const invoiceService = {
 
 
 
-  // Void invoice
-  async voidInvoice(invoiceId: string) {
+  // =========================
+  // Get active session
+  // =========================
+  async getActiveSession() {
+
+    const res = await api.get(
+      "/sessions/active"
+    );
+
+
+    return res.data.data;
+
+  },
+
+
+
+  // =========================
+  // Create Invoice
+  // =========================
+ async createInvoice(data: {
+  branchId: string;
+  sessionId?: string;
+  customerId?: string;
+  items: {
+    itemName: string;
+    quantity: number;
+    unitPrice: number;
+  }[];
+}): Promise<Invoice> {
+
+
+  const res = await api.post(
+    "/billing/invoices",
+    data
+  );
+
+
+  return res.data.data as Invoice;
+
+},
+
+
+  // =========================
+  // Void Invoice
+  // =========================
+  async voidInvoice(
+    invoiceId: string
+  ) {
+
 
     const res = await api.patch(
-      `/invoices/${invoiceId}/void`
+      `/billing/invoices/${invoiceId}/void`,
+      {}
     );
+
 
     return res.data;
 
@@ -39,19 +97,21 @@ export const invoiceService = {
 
 
 
-  // Add payment
+  // =========================
+  // Add Payment
+  // =========================
   async addPayment(
     invoiceId: string,
     amount: number,
     paymentMethod: "CASH" = "CASH"
   ) {
 
+
     const res = await api.post(
-      "/payments",
+      `/billing/invoices/${invoiceId}/payments`,
       {
-        invoiceId,
         amount,
-        paymentMethod,
+        tenderType: paymentMethod,
       }
     );
 
