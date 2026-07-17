@@ -22,11 +22,8 @@ export default function InvoiceDetails({
 }: Props) {
   const router = useRouter();
 
-  const [showVoidModal, setShowVoidModal] =
-    useState(false);
-
-  const [showPaymentModal, setShowPaymentModal] =
-    useState(false);
+  const [showVoidModal, setShowVoidModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   const {
     invoice,
@@ -51,14 +48,18 @@ export default function InvoiceDetails({
   }
 
   const paidAmount = invoice.payments.reduce(
-    (sum, payment) =>
-      sum + Number(payment.amount),
+    (sum, payment) => sum + Number(payment.amount),
     0
   );
 
-  const total = Number(invoice.totalAmount);
+  const total = Number(invoice.total);
 
-  const balance = total - paidAmount;
+  const balance =
+    invoice.status === "void"
+      ? 0
+      : total - paidAmount;
+
+  const isVoided = invoice.status === "void";
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -69,7 +70,7 @@ export default function InvoiceDetails({
 
         <button
           onClick={() => router.push("/billing")}
-          className="mb-5 flex items-center gap-2 font-medium text-gray-600 transition hover:text-green-700"
+          className="mb-5 flex items-center gap-2 font-medium text-gray-600 hover:text-green-700"
         >
           <span className="text-xl">←</span>
           Back to Billing
@@ -84,18 +85,16 @@ export default function InvoiceDetails({
             </h1>
 
             <p className="mt-1 text-gray-500">
-              Invoice #{invoice.invoiceNumber}
+              Invoice #{invoice.invoiceNumber ?? invoice.id.slice(0, 8)}
             </p>
 
           </div>
 
-          {!invoice.isVoided && (
+          {!isVoided && (
 
             <button
-              onClick={() =>
-                setShowVoidModal(true)
-              }
-              className="rounded-xl border border-red-400 px-5 py-2.5 font-medium text-red-600 transition hover:bg-red-50"
+              onClick={() => setShowVoidModal(true)}
+              className="rounded-xl border border-red-400 px-5 py-2.5 font-medium text-red-600 hover:bg-red-50"
             >
               Void Invoice
             </button>
@@ -128,8 +127,8 @@ export default function InvoiceDetails({
             Invoice State
           </p>
 
-          <p className="mt-1 font-semibold text-gray-700">
-           {invoice.status === "PENDING" ? "PENDING" : "PAID"}
+          <p className="mt-1 font-semibold text-gray-700 capitalize">
+            {invoice.status}
           </p>
 
         </div>
@@ -138,7 +137,7 @@ export default function InvoiceDetails({
 
       {/* VOID WARNING */}
 
-      {invoice.isVoided && (
+      {isVoided && (
 
         <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4">
 
@@ -147,8 +146,7 @@ export default function InvoiceDetails({
           </p>
 
           <p className="mt-1 text-sm text-red-600">
-            Payments cannot be recorded and
-            this invoice cannot be modified.
+            Payments cannot be recorded and this invoice cannot be modified.
           </p>
 
         </div>
@@ -171,9 +169,7 @@ export default function InvoiceDetails({
               <span className="text-gray-500">
                 Branch ID:
               </span>{" "}
-              <strong>
-                {invoice.branchId}
-              </strong>
+              <strong>{invoice.branchId}</strong>
             </p>
 
             <p>
@@ -181,7 +177,7 @@ export default function InvoiceDetails({
                 Invoice Number:
               </span>{" "}
               <strong>
-                {invoice.invoiceNumber}
+                {invoice.invoiceNumber ?? "-"}
               </strong>
             </p>
 
@@ -190,7 +186,7 @@ export default function InvoiceDetails({
                 Session ID:
               </span>{" "}
               <strong>
-                {invoice.sessionId}
+                {invoice.sessionId ?? "-"}
               </strong>
             </p>
 
@@ -211,9 +207,7 @@ export default function InvoiceDetails({
                 Created:
               </span>{" "}
               <strong>
-                {new Date(
-                  invoice.createdAt
-                ).toLocaleDateString()}
+                {new Date(invoice.createdAt).toLocaleDateString()}
               </strong>
             </p>
 
@@ -250,22 +244,16 @@ export default function InvoiceDetails({
 
       </div>
 
-      <InvoiceItems
-        items={invoice.items}
-      />
+      <InvoiceItems items={invoice.items} />
 
-      <InvoicePayments
-        payments={invoice.payments}
-      />
+      <InvoicePayments payments={invoice.payments} />
 
-      {!invoice.isVoided && (
+      {!isVoided && (
 
         <PaymentSection
           total={total}
           paid={paidAmount}
-          onPayment={() =>
-            setShowPaymentModal(true)
-          }
+          onPayment={() => setShowPaymentModal(true)}
         />
 
       )}
@@ -278,12 +266,8 @@ export default function InvoiceDetails({
 
         <RecordPaymentModal
           invoiceId={invoice.id}
-          onClose={() =>
-            setShowPaymentModal(false)
-          }
-          onSuccess={() =>
-            window.location.reload()
-          }
+          onClose={() => setShowPaymentModal(false)}
+          onSuccess={() => window.location.reload()}
         />
 
       )}
@@ -292,12 +276,8 @@ export default function InvoiceDetails({
 
         <VoidInvoiceModal
           invoiceId={invoice.id}
-          onClose={() =>
-            setShowVoidModal(false)
-          }
-          onSuccess={() =>
-            window.location.reload()
-          }
+          onClose={() => setShowVoidModal(false)}
+          onSuccess={() => window.location.reload()}
         />
 
       )}
