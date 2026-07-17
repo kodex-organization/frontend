@@ -26,8 +26,56 @@ export const invoiceService = {
 
 
 
-  // Void invoice
-  async voidInvoice(invoiceId: string) {
+  // =========================
+  // Get active session
+  // =========================
+  async getActiveSession() {
+
+    const res = await api.get(
+      "/sessions/active"
+    );
+
+
+    return res.data.data;
+
+  },
+
+
+
+  // =========================
+  // Create Invoice
+  // =========================
+ async createInvoice(data: {
+  branchId: string;
+  sessionId?: string;
+  customerId?: string;
+  items: {
+    itemName: string;
+    quantity: number;
+    unitPrice: number;
+  }[];
+}): Promise<Invoice> {
+//invoices
+//invoice
+
+  const res = await api.post(
+    "/billing/invoices",
+    data
+  );
+
+
+  return res.data.data as Invoice;
+
+},
+
+
+  // =========================
+  // Void Invoice
+  // =========================
+  async voidInvoice(
+    invoiceId: string
+  ) {
+
 
     const res = await api.patch(
       `/invoices/${invoiceId}/void`
