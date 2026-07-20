@@ -1,14 +1,9 @@
-import ProtectedRoute from "@/components/security/ProtectedRoute";
-
-export default function DashboardPage() {
+const Dashboard = () => {
   return (
-    <ProtectedRoute allowedRoles={["OWNER", "MANAGER"]}>
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="mt-2 text-slate-600">
-          Live multi-branch overview — revenue, tables, udhaar, staff activity.
-        </p>
-      </div>
-    </ProtectedRoute>
+    <div>
+      <h3>Dashboard</h3>
+    </div>
   );
-}
+};
+
+export default Dashboard;
