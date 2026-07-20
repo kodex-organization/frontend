@@ -20,6 +20,19 @@ interface Envelope<T> {
 
 let refreshInFlight: Promise<boolean> | null = null;
 
+const getApiBaseUrl = () => {
+  if (typeof window === "undefined") return env.NEXT_PUBLIC_API_URL;
+
+  const configuredPath = new URL(env.NEXT_PUBLIC_API_URL).pathname.replace(
+    /\/$/,
+    "",
+  );
+
+  return configuredPath && configuredPath !== "/"
+    ? configuredPath
+    : "/api/backend";
+};
+
 /**
  * Calls POST /auth/refresh once; de-duped so concurrent 401s don't race.
  * No refresh token is read from storage — the browser holds none. The
@@ -33,7 +46,7 @@ async function refreshAccessToken(): Promise<boolean> {
 
   refreshInFlight = (async () => {
     try {
-      const response = await fetch(`${env.NEXT_PUBLIC_API_URL}/auth/refresh`, {
+      const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -69,7 +82,7 @@ export async function apiFetch<T>(
   const doFetch = () => {
     const latestTokens = tokenStorage.get();
 
-    return fetch(`${env.NEXT_PUBLIC_API_URL}${path}`, {
+    return fetch(`${getApiBaseUrl()}${path}`, {
       ...options,
       // Needed so the httpOnly refresh-token cookie is sent to /auth/refresh
       // and /auth/logout; harmless no-op for every other route.
