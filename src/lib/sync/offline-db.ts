@@ -115,71 +115,22 @@ export async function queueInvoiceChange(
   });
 }
 
-export async function addDemoSessionQueueItem() {
-  const now = new Date().toISOString();
-  const sessionId = crypto.randomUUID();
-
-  return queueSessionChange(
-    {
-      id: sessionId,
-      branchId: crypto.randomUUID(),
-      tableId: crypto.randomUUID(),
-      customerId: null,
-      ratePlanId: crypto.randomUUID(),
-      appliedHourlyRate: "500.00",
-      openedByUserId: crypto.randomUUID(),
-      openedByDeviceId: crypto.randomUUID(),
-      startedAt: now,
-      expectedEndTime: null,
-      endedAt: null,
-      status: "active",
-      rateOverrideById: null,
-      rateOverrideReason: null,
-      createdAt: now,
-    },
-    "create",
-  );
-}
-
-export async function addDemoInvoiceQueueItem() {
-  const now = new Date().toISOString();
-  const invoiceId = crypto.randomUUID();
-
-  return queueInvoiceChange(
-    {
-      id: invoiceId,
-      branchId: crypto.randomUUID(),
-      invoiceNumber: null,
-      sessionId: crypto.randomUUID(),
-      customerId: null,
-      subtotal: "1000.00",
-      discountAmount: "0.00",
-      discountReasonCode: null,
-      discountApprovedById: null,
-      taxAmount: "0.00",
-      serviceCharge: "0.00",
-      total: "1000.00",
-      status: "draft",
-      voidedInvoiceId: null,
-      createdById: crypto.randomUUID(),
-      createdAt: now,
-    },
-    "create",
-  );
-}
-
 export async function getPendingSyncCount() {
   return offlineDB.pendingQueue
     .where("status")
-    .equals("pending")
+    .anyOf("pending", "failed")
     .count();
 }
 
 export async function getPendingSyncItems() {
   return offlineDB.pendingQueue
     .where("status")
-    .equals("pending")
+    .anyOf("pending", "failed")
     .toArray();
+}
+
+export async function removePendingQueueItem(itemId: number) {
+  return offlineDB.pendingQueue.delete(itemId);
 }
 
 export async function markItemsAsSynced(itemIds: number[]) {

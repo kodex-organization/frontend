@@ -21,6 +21,24 @@ for (const envPath of envCandidates) {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  outputFileTracingRoot: frontendRoot,
+  async rewrites() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+
+    if (!apiUrl) return [];
+
+    const configuredPath = new URL(apiUrl).pathname.replace(/\/$/, "");
+    const proxyPath = configuredPath && configuredPath !== "/"
+      ? configuredPath
+      : "/api/backend";
+
+    return [
+      {
+        source: `${proxyPath}/:path*`,
+        destination: `${apiUrl}/:path*`,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -1,22 +1,14 @@
 import { apiFetch } from "@/lib/api/client";
 
 type ServerTimeResponse = {
-  success: boolean;
-  data: {
-    serverTime: string;
-  };
-  error: string | null;
+  serverTime: string;
 };
 
 type HeartbeatResponse = {
-  success: boolean;
-  data: {
-    deviceId: string;
-    branchId: string;
-    lastHeartbeatAt: string;
-    lastSyncedAt: string | null;
-  };
-  error: string | null;
+  deviceId: string;
+  branchId: string;
+  lastHeartbeatAt: string;
+  lastSyncedAt: string | null;
 };
 
 type SyncPushChange = {
@@ -29,28 +21,20 @@ type SyncPushChange = {
 };
 
 type SyncPushResponse = {
-  success: boolean;
-  data: {
-    batchId: string;
-    deviceId: string;
-    receivedChanges: number;
-    acceptedChanges: unknown[];
-    rejectedChanges: unknown[];
-    serverTime: string;
-  };
-  error: string | null;
+  batchId: string;
+  deviceId: string;
+  receivedChanges: number;
+  acceptedChanges: unknown[];
+  rejectedChanges: unknown[];
+  serverTime: string;
 };
 
 type SyncPullResponse = {
-  success: boolean;
-  data: {
-    deviceId: string;
-    since: string | null;
-    changes: unknown[];
-    changeCount: number;
-    serverTime: string;
-  };
-  error: string | null;
+  deviceId: string;
+  since: string | null;
+  changes: unknown[];
+  changeCount: number;
+  serverTime: string;
 };
 
 export async function getServerTime() {
