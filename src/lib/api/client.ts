@@ -76,6 +76,9 @@ export async function apiFetch<T>(
       credentials: "include",
       headers: {
         ...(options?.body ? { "Content-Type": "application/json" } : {}),
+        ...(process.env.NEXT_PUBLIC_SYNC_DEVICE_ID
+          ? { "X-Device-Id": process.env.NEXT_PUBLIC_SYNC_DEVICE_ID }
+          : {}),
         ...(latestTokens?.accessToken
           ? { Authorization: `Bearer ${latestTokens.accessToken}` }
           : {}),

@@ -7,7 +7,7 @@ export interface Customer {
 export interface TableOption {
   id: string;
   tableNumber: string;
-  defaultHourlyRate: string;
+  defaultHourlyRate: number | string;
 }
 export interface SessionPause {
   id: string;
@@ -19,13 +19,8 @@ export interface ActiveSession {
   status: "active" | "paused" | "ended";
   startedAt: string;
   endedAt: string | null;
-  appliedHourlyRate: string;
+  appliedHourlyRate: number | string;
   table: TableOption;
   customer: Customer | null;
   pauses: SessionPause[];
-}
-export interface ApiResponse<T> {
-  success: boolean;
-  data: T;
-  error: { message: string } | null;
 }

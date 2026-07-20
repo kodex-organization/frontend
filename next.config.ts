@@ -21,6 +21,7 @@ for (const envPath of envCandidates) {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  outputFileTracingRoot: frontendRoot,
 };
 
 export default nextConfig;
