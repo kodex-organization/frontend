@@ -24,6 +24,7 @@ import {
   markItemAsFailed,
   markItemsAsSynced,
   removePendingQueueItem,
+  seedReviewSyncItems,
   type InvoiceOfflinePayload,
   type PendingSyncItem,
   type SessionOfflinePayload,
@@ -111,6 +112,9 @@ export default function SyncStatusPage() {
   const syncBranchId = isAuthenticated
     ? user?.branchId
     : null;
+  const isReviewAccount =
+    process.env.NODE_ENV === "development" &&
+    user?.email?.toLowerCase() === "reviewer@cuecloud.local";
   const [pendingItems, setPendingItems] = useState<PendingSyncItem[]>([]);
   const [pulledChanges, setPulledChanges] = useState(0);
   const [serverTime, setServerTime] = useState<string | null>(null);
@@ -268,6 +272,47 @@ export default function SyncStatusPage() {
   }, [loadQueue]);
 
   useEffect(() => {
+    if (
+      !isReviewAccount ||
+      !user ||
+      !syncDeviceId ||
+      !syncBranchId
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    void seedReviewSyncItems({
+      branchId: syncBranchId,
+      userId: user.id,
+      deviceId: syncDeviceId,
+    })
+      .then((seeded) => {
+        if (!cancelled && seeded) return loadQueue();
+      })
+      .catch((seedError: unknown) => {
+        if (!cancelled) {
+          setError(
+            getErrorMessage(
+              seedError,
+              "Review sync examples could not be prepared.",
+            ),
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isReviewAccount,
+    loadQueue,
+    syncBranchId,
+    syncDeviceId,
+    user,
+  ]);
+
+  useEffect(() => {
     if (!isOnline) return;
 
     let cancelled = false;
@@ -401,7 +446,11 @@ export default function SyncStatusPage() {
         <div className="flex flex-col justify-between gap-3 p-5 sm:flex-row sm:items-center sm:px-6">
           <div>
             <h2 className="font-bold text-slate-950">Pending module changes</h2>
-            <p className="mt-1 text-sm text-slate-500">Only real locally queued records appear here—no sample data is generated.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {isReviewAccount
+                ? "Two development-only examples are included for reviewer walkthroughs."
+                : "Only real locally queued records appear here—no sample data is generated."}
+            </p>
           </div>
           <div className="flex gap-2">
             <Link href="/sessions" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Sessions</Link>
