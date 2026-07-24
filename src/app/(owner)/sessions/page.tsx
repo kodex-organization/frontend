@@ -6,6 +6,7 @@ import { SessionClock } from "@/features/sessions/session-clock";
 import { sessionApi } from "@/features/sessions/session-api";
 import { StartSessionModal } from "@/features/sessions/start-session-modal";
 import type { ActiveSession, TableOption } from "@/features/sessions/types";
+import { useAuth } from "@/lib/auth/auth-context";
 
 interface SwitchTableState {
   session: ActiveSession;
@@ -17,6 +18,7 @@ interface SwitchTableState {
 }
 
 export default function SessionsPage() {
+  const { isLoading: authLoading, isAuthenticated } = useAuth();
   const [items, setItems] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -24,6 +26,8 @@ export default function SessionsPage() {
   const [switchState, setSwitchState] = useState<SwitchTableState | null>(null);
 
   const load = useCallback(async () => {
+    if (authLoading || !isAuthenticated) return;
+
     setError("");
     try {
       const [active, paused] = await Promise.all([
@@ -36,11 +40,13 @@ export default function SessionsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!authLoading && isAuthenticated) {
+      void load();
+    }
+  }, [authLoading, isAuthenticated, load]);
 
   async function action(id: string, nextAction: "pause" | "resume" | "end") {
     try {

@@ -8,7 +8,13 @@ export interface InvoiceItem {
 
 export interface InvoicePayment {
   id: string;
-  paymentMethod: "CASH";
+  paymentMethod:
+    | "CASH"
+    | "CARD"
+    | "UDHAAR"
+    | "BANK_TRANSFER"
+    | "MOBILE_WALLET"
+    | "OTHER";
   amount: number;
   paidAt: string;
 }
@@ -16,7 +22,7 @@ export interface InvoicePayment {
 export interface Invoice {
   id: string;
 
-  invoiceNumber: number;
+  invoiceNumber: string | number;
 
   branchId: string;
   sessionId: string;

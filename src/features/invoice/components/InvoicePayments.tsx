@@ -1,23 +1,10 @@
 "use client";
 
-
-interface Payment {
-
-  id: string;
-
-  amount: number;
-
-  paymentMethod: "CASH";
-
-  paidAt: string;
-
-}
-
-
+import type { InvoicePayment } from "../types/invoice";
 
 interface Props {
 
-  payments: Payment[];
+  payments: InvoicePayment[];
 
 }
 

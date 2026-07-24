@@ -3,12 +3,18 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loginWithPassword, loginWithPin, logoutRequest } from "@/features/auth";
-import { redirectPathForRoles, tokenStorage, type SessionUser } from "@/lib/auth/session";
+import {
+  AUTH_SESSION_CLEARED_EVENT,
+  redirectPathForRoles,
+  tokenStorage,
+  type SessionUser,
+} from "@/lib/auth/session";
 import { ApiError } from "@/lib/api/client";
 
 interface AuthContextValue {
   user: SessionUser | null;
   isLoading: boolean;
+  isAuthenticated: boolean;
   loginPassword: (email: string, password: string) => Promise<void>;
   loginPin: (pin: string, identifier: { email?: string; userId?: string }) => Promise<void>;
   logout: () => Promise<void>;
@@ -22,10 +28,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // Rehydrate from localStorage on first mount (page refresh, new tab).
-    setUser(tokenStorage.getUser());
+    const clearSession = () => {
+      setUser(null);
+      setIsLoading(false);
+      router.replace("/login");
+    };
+
+    const syncSessionFromStorage = () => {
+      const storedUser = tokenStorage.getUser();
+      const storedTokens = tokenStorage.get();
+
+      if (storedUser && storedTokens?.accessToken) {
+        setUser(storedUser);
+        return;
+      }
+
+      if (storedUser || storedTokens) {
+        tokenStorage.clear();
+      } else {
+        setUser(null);
+      }
+    };
+
+    window.addEventListener(AUTH_SESSION_CLEARED_EVENT, clearSession);
+    window.addEventListener("storage", syncSessionFromStorage);
+
+    // A user record without an access token is not an authenticated session.
+    syncSessionFromStorage();
     setIsLoading(false);
-  }, []);
+
+    return () => {
+      window.removeEventListener(AUTH_SESSION_CLEARED_EVENT, clearSession);
+      window.removeEventListener("storage", syncSessionFromStorage);
+    };
+  }, [router]);
 
   const applySession = useCallback(
     (sessionUser: SessionUser, tokens: { accessToken: string; refreshToken?: string; expiresIn: string }) => {
@@ -67,7 +103,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const value = useMemo(
-    () => ({ user, isLoading, loginPassword, loginPin, logout }),
+    () => ({
+      user,
+      isLoading,
+      isAuthenticated: !isLoading && user !== null,
+      loginPassword,
+      loginPin,
+      logout,
+    }),
     [user, isLoading, loginPassword, loginPin, logout],
   );
 

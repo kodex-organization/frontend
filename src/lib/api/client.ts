@@ -44,7 +44,7 @@ const getApiBaseUrl = () => {
 async function refreshAccessToken(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
 
-  refreshInFlight = (async () => {
+  const refreshRequest = (async () => {
     try {
       const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
         method: "POST",
@@ -54,14 +54,21 @@ async function refreshAccessToken(): Promise<boolean> {
       });
 
       if (!response.ok) {
-        tokenStorage.clear();
         return false;
       }
 
-      const body = (await response.json()) as Envelope<{
+      const body = (await response.json().catch(() => null)) as Envelope<{
         accessToken: string;
         expiresIn: string;
-      }>;
+      }> | null;
+
+      if (
+        !body ||
+        body.success === false ||
+        !body.data?.accessToken
+      ) {
+        return false;
+      }
 
       tokenStorage.set(body.data);
       return true;
@@ -70,9 +77,21 @@ async function refreshAccessToken(): Promise<boolean> {
     }
   })();
 
-  const result = await refreshInFlight;
-  refreshInFlight = null;
-  return result;
+  refreshInFlight = refreshRequest;
+
+  try {
+    const refreshed = await refreshRequest;
+
+    if (!refreshed) {
+      tokenStorage.clear();
+    }
+
+    return refreshed;
+  } finally {
+    if (refreshInFlight === refreshRequest) {
+      refreshInFlight = null;
+    }
+  }
 }
 
 export async function apiFetch<T>(
@@ -115,7 +134,11 @@ export async function apiFetch<T>(
   // No client-held refresh token to gate on anymore — if there's a valid
   // refresh cookie, /auth/refresh will succeed; if not, it 401s harmlessly
   // and we fall through to the original response's error below.
-  if (response.status === 401 && !options?.skipAuthRetry) {
+  if (
+    response.status === 401 &&
+    tokenStorage.get()?.accessToken &&
+    !options?.skipAuthRetry
+  ) {
     const refreshed = await refreshAccessToken();
 
     if (refreshed) {
@@ -127,6 +150,10 @@ export async function apiFetch<T>(
           0,
           "NETWORK_ERROR",
         );
+      }
+
+      if (response.status === 401) {
+        tokenStorage.clear();
       }
     }
   }

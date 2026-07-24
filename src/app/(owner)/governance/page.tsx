@@ -9,7 +9,9 @@ import ShiftHandoverScreen from '@/features/governance/ShiftHandoverScreen';
 import AuditLogViewer from '@/features/governance/AuditLogViewer';
 import { sessionApi } from '@/features/sessions/session-api';
 import { listPendingCancellationRequests } from '@/features/governance/governance.api';
+import { useAuth } from '@/lib/auth/auth-context';
 export default function GovernancePage() {
+  const { isLoading: authLoading, isAuthenticated } = useAuth();
   const [showCancellation, setShowCancellation] = useState(false);
   const [showApproval, setShowApproval] = useState(false);
   const [showRateOverride, setShowRateOverride] = useState(false);
@@ -44,6 +46,8 @@ export default function GovernancePage() {
   const demoCurrentRate = 200;
 
   useEffect(() => {
+    if (authLoading || !isAuthenticated) return;
+
     async function fetchSessions() {
       try {
         const [activeRes, pausedRes] = await Promise.all([
@@ -67,9 +71,11 @@ export default function GovernancePage() {
       }
     }
     fetchSessions();
-  }, []);
+  }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
+    if (authLoading || !isAuthenticated) return;
+
     async function fetchPendingRequests() {
       try {
         const data = await listPendingCancellationRequests() as any[];
@@ -84,7 +90,7 @@ export default function GovernancePage() {
       }
     }
     fetchPendingRequests();
-  }, []);
+  }, [authLoading, isAuthenticated]);
 
   return (
     <div className="p-6">

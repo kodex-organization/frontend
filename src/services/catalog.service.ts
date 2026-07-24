@@ -1,89 +1,69 @@
-// src/services/catalog.service.ts
-
-import {
-  SnookerTable,
-  RatePlan,
-  CreateTableInput,
+import type {
   CreateRatePlanInput,
+  CreateTableInput,
+  RatePlan,
+  SnookerTable,
 } from "@/features/catalog/types/catalog.types";
+import { apiFetch } from "@/lib/api/client";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-
-// ── helper ────────────────────────────────────
-async function apiFetch(url: string, options?: RequestInit) {
-  const res = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      // Dev 2 will replace this with real JWT later
-      "x-branch-id": "00000000-0000-0000-0000-000000000002",
-    },
-    ...options,
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Something went wrong");
-  return data;
+export function getTables(): Promise<SnookerTable[]> {
+  return apiFetch<SnookerTable[]>("/catalog");
 }
 
-// ── get all tables ────────────────────────────
-export async function getTables(): Promise<SnookerTable[]> {
-  const data = await apiFetch(`${BASE_URL}/api/v1/tables`);
-  return data.data;
-}
-
-// ── create table ──────────────────────────────
-export async function createTable(
-  input: CreateTableInput
+export function createTable(
+  input: CreateTableInput,
 ): Promise<SnookerTable> {
-  const data = await apiFetch(`${BASE_URL}/api/v1/tables`, {
+  return apiFetch<SnookerTable>("/catalog", {
     method: "POST",
     body: JSON.stringify({
       tableNumber: input.tableNumber,
       defaultHourlyRate: input.hourlyRate,
     }),
   });
-  return data.data;
 }
 
-// ── update table ──────────────────────────────
-export async function updateTable(
+export function updateTable(
   id: string,
-  input: Partial<CreateTableInput>
+  input: Partial<CreateTableInput>,
 ): Promise<SnookerTable> {
-  const data = await apiFetch(`${BASE_URL}/api/v1/tables/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      ...(input.tableNumber && { tableNumber: input.tableNumber }),
-      ...(input.hourlyRate && { defaultHourlyRate: input.hourlyRate }),
-      ...(input.status && { status: input.status }),
-    }),
-  });
-  return data.data;
+  return apiFetch<SnookerTable>(
+    `/catalog/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...(input.tableNumber && { tableNumber: input.tableNumber }),
+        ...(input.hourlyRate && {
+          defaultHourlyRate: input.hourlyRate,
+        }),
+        ...(input.status && { status: input.status }),
+      }),
+    },
+  );
 }
 
-// ── delete table ──────────────────────────────
 export async function deleteTable(id: string): Promise<void> {
-  await apiFetch(`${BASE_URL}/api/v1/tables/${id}`, {
+  await apiFetch<null>(`/catalog/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 }
 
-// ── get rate history ──────────────────────────
-export async function getRateHistory(tableId: string): Promise<RatePlan[]> {
-  const data = await apiFetch(`${BASE_URL}/api/v1/tables/${tableId}/rates`);
-  return data.data;
+export function getRateHistory(
+  tableId: string,
+): Promise<RatePlan[]> {
+  return apiFetch<RatePlan[]>(
+    `/catalog/${encodeURIComponent(tableId)}/rates`,
+  );
 }
 
-// ── create rate plan ──────────────────────────
-export async function createRatePlan(
+export function createRatePlan(
   tableId: string,
-  input: CreateRatePlanInput
+  input: CreateRatePlanInput,
 ): Promise<RatePlan> {
-  const data = await apiFetch(
-    `${BASE_URL}/api/v1/tables/${tableId}/rates`,
+  return apiFetch<RatePlan>(
+    `/catalog/${encodeURIComponent(tableId)}/rates`,
     {
       method: "POST",
       body: JSON.stringify(input),
-    }
+    },
   );
-  return data.data;
 }

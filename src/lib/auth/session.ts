@@ -32,6 +32,8 @@ export interface StoredTokens {
 const ACCESS_TOKEN_KEY = "cuecloud_access_token";
 const USER_KEY = "cuecloud_user";
 
+export const AUTH_SESSION_CLEARED_EVENT = "cuecloud:session-cleared";
+
 /**
  * Fix (hardening): the refresh token is long-lived (default 7d) and used
  * to be persisted here in localStorage — readable by any injected/XSS
@@ -56,8 +58,14 @@ export const tokenStorage = {
   },
   clear(): void {
     if (typeof window === "undefined") return;
+    const hadSession =
+      window.localStorage.getItem(ACCESS_TOKEN_KEY) !== null ||
+      window.localStorage.getItem(USER_KEY) !== null;
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
+    if (hadSession) {
+      window.dispatchEvent(new Event(AUTH_SESSION_CLEARED_EVENT));
+    }
   },
   getUser(): SessionUser | null {
     if (typeof window === "undefined") return null;
