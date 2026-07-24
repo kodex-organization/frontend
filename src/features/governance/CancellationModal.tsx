@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createCancellationRequest } from './governance.api';
 import { ApiError } from '@/lib/api/client';
+import { useOnlineStatus } from '@/lib/connectivity/online-status';
 
 interface Props {
   sessionId: string;
@@ -11,19 +12,24 @@ interface Props {
 }
 
 export default function CancellationModal({ sessionId, onClose, onSuccess }: Props) {
+  const isOnline = useOnlineStatus();
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function handleSubmit() {
-    if (!reason.trim()) {
-      setError('Please provide a reason');
+    if (!isOnline) {
+      setError('Reconnect before submitting a cancellation request');
+      return;
+    }
+    if (reason.trim().length < 5) {
+      setError('Reason must be at least 5 characters');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      await createCancellationRequest({ sessionId, reason });
+      await createCancellationRequest({ sessionId, reason: reason.trim() });
       onSuccess();
       onClose();
     } catch (err) {
@@ -67,6 +73,7 @@ export default function CancellationModal({ sessionId, onClose, onSuccess }: Pro
             placeholder="Enter reason..."
             value={reason}
             onChange={(e) => setReason(e.target.value)}
+            maxLength={500}
           />
         </div>
 
@@ -80,7 +87,7 @@ export default function CancellationModal({ sessionId, onClose, onSuccess }: Pro
           </button>
           <button
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={loading || !isOnline}
             className="px-4 py-2 text-sm text-white bg-red-500 rounded-md hover:bg-red-600 disabled:opacity-50"
           >
             {loading ? 'Submitting...' : 'Submit Request'}

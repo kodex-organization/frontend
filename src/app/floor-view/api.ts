@@ -1,65 +1,36 @@
-// src/modules/floor-view/api.ts
+import { apiFetch } from "@/lib/api/client";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import type {
+  FloorViewTable,
+  Notification,
+  NotificationReadResult,
+} from "./types";
 
-export async function fetchFloorView(token: string) {
-  const response = await fetch(`${API_BASE_URL}/api/v1/floor-view`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (response.status === 401) {
-    throw new Error("Unauthorized");
-  }
-
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  return response.json();
+interface RequestOptions {
+  signal?: AbortSignal;
 }
 
-export async function fetchNotifications(token: string) {
-  const response = await fetch(`${API_BASE_URL}/api/v1/notifications`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+export function fetchFloorView(options: RequestOptions = {}) {
+  return apiFetch<FloorViewTable[]>("/floor-view", {
+    signal: options.signal,
   });
-
-  if (response.status === 401) {
-    throw new Error("Unauthorized");
-  }
-
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  return response.json();
 }
 
-export async function loginUser(email: string, password: string) {
-  const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      email,
-      password,
-      device: {
-        deviceIdentifier: "web-app",
-        deviceName: "Web Browser",
-        deviceType: "desktop",
-      },
-    }),
+export function fetchNotifications(options: RequestOptions = {}) {
+  return apiFetch<Notification[]>("/notifications", {
+    signal: options.signal,
   });
+}
 
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  return response.json();
+export function markNotificationAsRead(
+  id: string,
+  options: RequestOptions = {},
+) {
+  return apiFetch<NotificationReadResult>(
+    `/notifications/${encodeURIComponent(id)}/read`,
+    {
+      method: "PATCH",
+      signal: options.signal,
+    },
+  );
 }

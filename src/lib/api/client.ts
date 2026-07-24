@@ -100,6 +100,7 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const doFetch = () => {
     const latestTokens = tokenStorage.get();
+    const accessContext = tokenStorage.getAccessContext();
 
     return fetch(`${getApiBaseUrl()}${path}`, {
       ...options,
@@ -108,8 +109,11 @@ export async function apiFetch<T>(
       credentials: "include",
       headers: {
         ...(options?.body ? { "Content-Type": "application/json" } : {}),
-        ...(process.env.NEXT_PUBLIC_SYNC_DEVICE_ID
-          ? { "X-Device-Id": process.env.NEXT_PUBLIC_SYNC_DEVICE_ID }
+        ...(accessContext?.deviceId
+          ? { "X-Device-Id": accessContext.deviceId }
+          : {}),
+        ...(accessContext?.branchId
+          ? { "X-Branch-Id": accessContext.branchId }
           : {}),
         ...(latestTokens?.accessToken
           ? { Authorization: `Bearer ${latestTokens.accessToken}` }

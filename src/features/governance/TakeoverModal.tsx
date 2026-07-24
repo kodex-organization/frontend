@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { managerTakeover } from './governance.api';
 import { ApiError } from '@/lib/api/client';
+import { useOnlineStatus } from '@/lib/connectivity/online-status';
 
 interface Props {
   sessionId: string;
@@ -15,13 +16,18 @@ export default function TakeoverModal({
   onClose,
   onSuccess,
 }: Props) {
+  const isOnline = useOnlineStatus();
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function handleSubmit() {
-    if (!reason.trim()) {
-      setError('Please provide a reason');
+    if (!isOnline) {
+      setError('Reconnect before taking over a session');
+      return;
+    }
+    if (reason.trim().length < 5) {
+      setError('Reason must be at least 5 characters');
       return;
     }
     setLoading(true);
@@ -34,7 +40,7 @@ export default function TakeoverModal({
       // knew its own self-generated deviceIdentifier from localStorage,
       // which doesn't match the DB primary key sessions.opened_by_device_id
       // requires. See governance.service.ts managerTakeover() for details.
-      await managerTakeover({ sessionId, reason });
+      await managerTakeover({ sessionId, reason: reason.trim() });
       onSuccess();
       onClose();
     } catch (err) {
@@ -81,6 +87,7 @@ export default function TakeoverModal({
             placeholder="Enter reason..."
             value={reason}
             onChange={(e) => setReason(e.target.value)}
+            maxLength={500}
           />
         </div>
 
@@ -94,7 +101,7 @@ export default function TakeoverModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={loading || !isOnline}
             className="px-4 py-2 text-sm text-white bg-orange-500 rounded-md hover:bg-orange-600 disabled:opacity-50"
           >
             {loading ? 'Processing...' : 'Confirm Takeover'}

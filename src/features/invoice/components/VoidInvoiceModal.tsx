@@ -1,242 +1,127 @@
 "use client";
 
 import { useState } from "react";
-import { invoiceService } from "../services/invoiceService";
 
-interface Props {
-  invoiceId: string;
-  onClose: () => void;
-  onSuccess?: () => void;
-}
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { invoiceService } from "../services/invoiceService";
+import type { Invoice } from "../types/invoice";
 
 export default function VoidInvoiceModal({
-  invoiceId,
+  invoice,
   onClose,
   onSuccess,
-}: Props) {
-  const [managerEmail, setManagerEmail] = useState("");
-  const [managerPassword, setManagerPassword] = useState("");
+}: {
+  invoice: Invoice;
+  onClose: () => void;
+  onSuccess: (invoice: Invoice) => void;
+}) {
+  const isOnline = useOnlineStatus();
   const [reason, setReason] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   async function confirmVoid() {
-    if (
-      !managerEmail.trim() ||
-      !managerPassword.trim() ||
-      !reason.trim()
-    ) {
-      alert("Please complete all fields.");
+    if (reason.trim().length < 3) {
+      setError("Enter a clear reason of at least 3 characters.");
       return;
     }
 
+    if (!isOnline) {
+      setError("Reconnect before voiding an invoice.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+
     try {
-      setLoading(true);
-
-      // Backend currently ignores these fields.
-      // They are collected here for future integration
-      // with Developer 2 & Developer 6.
-
-      await invoiceService.voidInvoice(invoiceId);
-
-      alert("Invoice voided successfully.");
-
-      onSuccess?.();
-      onClose();
-    } catch (error) {
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Unable to void invoice."
+      onSuccess(
+        await invoiceService.voidInvoice(
+          invoice.id,
+          reason.trim(),
+        ),
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "The invoice could not be voided.",
       );
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
   return (
     <div
-      className="
-        fixed
-        inset-0
-        z-50
-        flex
-        items-center
-        justify-center
-        bg-black/40
-        px-4
-      "
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="void-invoice-title"
     >
-      <div
-        className="
-          w-full
-          max-w-md
-          rounded-2xl
-          bg-white
-          shadow-xl
-        "
-      >
-        {/* Header */}
-
-        <div className="border-b p-5">
-          <div className="flex items-center gap-3">
-            <div
-              className="
-                flex
-                h-11
-                w-11
-                items-center
-                justify-center
-                rounded-full
-                bg-red-100
-                text-xl
-              "
-            >
-              ⚠️
-            </div>
-
-            <div>
-              <h2 className="text-lg font-semibold text-gray-800">
-                Void Invoice
-              </h2>
-
-              <p className="text-sm text-gray-500">
-                Manager approval is required.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Body */}
-
-        <div className="space-y-4 p-5">
-          <div className="rounded-xl bg-green-50 border border-green-100 p-4">
-            <p className="text-xs text-gray-500">
-              Invoice ID
-            </p>
-
-            <p className="mt-1 break-all font-semibold text-gray-800">
-              {invoiceId}
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm text-gray-700">
-              Manager Email
-            </label>
-
-            <input
-              type="email"
-              value={managerEmail}
-              onChange={(e) =>
-                setManagerEmail(e.target.value)
-              }
-              placeholder="manager@example.com"
-              className="
-                w-full
-                rounded-xl
-                border
-                p-3
-                outline-none
-                focus:border-green-500
-              "
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm text-gray-700">
-              Manager Password
-            </label>
-
-            <input
-              type="password"
-              value={managerPassword}
-              onChange={(e) =>
-                setManagerPassword(e.target.value)
-              }
-              placeholder="Enter password"
-              className="
-                w-full
-                rounded-xl
-                border
-                p-3
-                outline-none
-                focus:border-green-500
-              "
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm text-gray-700">
-              Reason
-            </label>
-
-            <textarea
-              rows={3}
-              value={reason}
-              onChange={(e) =>
-                setReason(e.target.value)
-              }
-              placeholder="Reason for voiding this invoice"
-              className="
-                w-full
-                rounded-xl
-                border
-                p-3
-                outline-none
-                resize-none
-                focus:border-green-500
-              "
-            />
-          </div>
-
-          <div
-            className="
-              rounded-xl
-              border
-              border-red-200
-              bg-red-50
-              p-3
-            "
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+        <div className="border-b border-slate-200 px-6 py-5">
+          <h2
+            id="void-invoice-title"
+            className="text-lg font-semibold text-slate-950"
           >
-            <p className="text-sm text-red-700">
-              This invoice will remain in history and be
-              marked as VOIDED. It cannot be edited after
-              being voided.
-            </p>
-          </div>
+            Void invoice {invoice.invoiceNumber ?? ""}
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Your authenticated OWNER or MANAGER role authorizes this
+            action. No manager password is collected in the browser.
+          </p>
         </div>
 
-        {/* Footer */}
+        <div className="space-y-4 px-6 py-5">
+          <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            The invoice and its payment history remain in the audit
+            trail, but no further payments or prints will be allowed.
+          </p>
 
-        <div className="flex justify-end gap-3 border-t p-5">
+          {!isOnline && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Invoice voiding is unavailable offline.
+            </p>
+          )}
+
+          {error && (
+            <p
+              className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              role="alert"
+            >
+              {error}
+            </p>
+          )}
+
+          <label className="block text-sm font-medium text-slate-700">
+            Reason
+            <textarea
+              rows={4}
+              maxLength={500}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              className="mt-1.5 w-full resize-none rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+            />
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
           <button
+            type="button"
             onClick={onClose}
-            disabled={loading}
-            className="
-              rounded-xl
-              border
-              px-5
-              py-2
-              hover:bg-gray-100
-            "
+            disabled={submitting}
+            className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             Cancel
           </button>
-
           <button
-            onClick={confirmVoid}
-            disabled={loading}
-            className="
-              rounded-xl
-              bg-red-600
-              px-5
-              py-2
-              text-white
-              hover:bg-red-700
-              disabled:opacity-50
-            "
+            type="button"
+            onClick={() => void confirmVoid()}
+            disabled={submitting || !isOnline}
+            className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? "Voiding..." : "Void Invoice"}
+            {submitting ? "Voiding…" : "Confirm void"}
           </button>
         </div>
       </div>

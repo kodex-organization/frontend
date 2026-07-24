@@ -1,268 +1,73 @@
-"use client";
-
 import type { InvoicePayment } from "../types/invoice";
+import { formatCurrency } from "../utils/formatCurrency";
 
-interface Props {
-
-  payments: InvoicePayment[];
-
+function labelTender(value: InvoicePayment["tenderType"]) {
+  return value
+    ? value
+        .split("_")
+        .map((part) => part[0]?.toUpperCase() + part.slice(1))
+        .join(" ")
+    : "Unspecified";
 }
 
-
-
-
-export default function InvoicePayments({ payments }: Props) {
-
+export default function InvoicePayments({
+  payments,
+  currency,
+}: {
+  payments: InvoicePayment[];
+  currency?: string | null;
+}) {
+  const formatAmount = (value: number) =>
+    formatCurrency(value, currency);
 
   return (
-
-    <div
-      className="
-        bg-white
-        rounded-2xl
-        shadow-sm
-        border
-        border-gray-100
-        p-6
-        mb-6
-      "
-    >
-
-
-
-      <div className="mb-5">
-
-
-        <h2
-          className="
-            text-xl
-            font-semibold
-            text-gray-800
-          "
-        >
-          Payment History
-        </h2>
-
-
-
-        <p
-          className="
-            text-sm
-            text-gray-500
-            mt-1
-          "
-        >
-          Recorded payments for this invoice
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="px-5 py-4 sm:px-6">
+        <h2 className="font-semibold text-slate-950">Payments</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Real payment transactions recorded against this invoice.
         </p>
-
-
       </div>
 
-
-
-
-
-      <div className="overflow-x-auto">
-
-
-        <table className="w-full">
-
-
-          <thead>
-
-
-            <tr
-              className="
-                bg-gray-50
-                border-b
-                text-gray-600
-                text-sm
-              "
-            >
-
-
-              <th
-                className="
-                  text-left
-                  p-4
-                  font-medium
-                "
-              >
-                Date
-              </th>
-
-
-
-
-              <th
-                className="
-                  text-left
-                  p-4
-                  font-medium
-                "
-              >
-                Method
-              </th>
-
-
-
-
-              <th
-                className="
-                  text-right
-                  p-4
-                  font-medium
-                "
-              >
-                Amount
-              </th>
-
-
-            </tr>
-
-
-          </thead>
-
-
-
-
-
-          <tbody>
-
-
-            {
-              payments.length > 0 ? (
-
-                payments.map((payment) => (
-
-
-                  <tr
-
-                    key={payment.id}
-
-                    className="
-                      border-b
-                      last:border-none
-                      hover:bg-green-50
-                      transition
-                    "
-
-                  >
-
-
-
-                    <td
-                      className="
-                        p-4
-                        text-gray-700
-                      "
-                    >
-
-                      {
-                        new Date(
-                          payment.paidAt
-                        ).toLocaleDateString()
-                      }
-
-                    </td>
-
-
-
-
-
-
-                    <td
-                      className="
-                        p-4
-                      "
-                    >
-
-                      <span
-                        className="
-                          inline-flex
-                          items-center
-                          bg-green-100
-                          text-green-700
-                          px-3
-                          py-1
-                          rounded-full
-                          text-sm
-                          font-medium
-                        "
-                      >
-
-                        {payment.paymentMethod}
-
-                      </span>
-
-
-                    </td>
-
-
-
-
-
-
-                    <td
-                      className="
-                        p-4
-                        text-right
-                        font-semibold
-                        text-gray-800
-                      "
-                    >
-
-                      Rs. {Number(payment.amount).toLocaleString()}
-
-                    </td>
-
-
-
-                  </tr>
-
-
-                ))
-
-
-              ) : (
-
-
-                <tr>
-
-                  <td
-                    colSpan={3}
-                    className="
-                      p-6
-                      text-center
-                      text-gray-500
-                    "
-                  >
-
-                    No payments recorded yet
-
+      {payments.length === 0 ? (
+        <p className="border-t border-slate-200 px-6 py-8 text-center text-sm text-slate-500">
+          No payments have been recorded.
+        </p>
+      ) : (
+        <div className="overflow-x-auto border-t border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-5 py-3">Date</th>
+                <th className="px-5 py-3">Tender</th>
+                <th className="px-5 py-3">Reference</th>
+                <th className="px-5 py-3 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {payments.map((payment) => (
+                <tr key={payment.id}>
+                  <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                    {new Intl.DateTimeFormat(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    }).format(new Date(payment.createdAt))}
                   </td>
-
-
+                  <td className="px-5 py-4 font-medium text-slate-900">
+                    {labelTender(payment.tenderType)}
+                  </td>
+                  <td className="px-5 py-4 text-slate-600">
+                    {payment.paymentReference ?? "—"}
+                  </td>
+                  <td className="px-5 py-4 text-right font-semibold text-emerald-700">
+                    {formatAmount(payment.amount)}
+                  </td>
                 </tr>
-
-
-              )
-            }
-
-
-
-          </tbody>
-
-
-        </table>
-
-
-      </div>
-
-
-
-    </div>
-
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
-
 }

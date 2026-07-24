@@ -6,20 +6,60 @@ import { useAuth } from "@/lib/auth/auth-context";
 export function OwnerShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
 
-const navItems = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/catalog", label: "Tables" },
-    { href: "/sessions", label: "Sessions" },
+  const canManageGovernance = user?.roles.some(
+    (role) => role === "OWNER" || role === "MANAGER",
+  );
+  const canRequestCancellation = user?.roles.includes("CASHIER");
+  const hasBackOfficeAccess = user?.roles.some(
+    (role) =>
+      role === "OWNER" || role === "MANAGER" || role === "ACCOUNTANT",
+  );
+  const canOperateFloor = user?.roles.some(
+    (role) =>
+      role === "OWNER" || role === "MANAGER" || role === "CASHIER",
+  );
+  const canManageCatalog = user?.roles.some(
+    (role) => role === "OWNER" || role === "MANAGER",
+  );
+
+  const navItems = [
+    ...(hasBackOfficeAccess
+      ? [{ href: "/dashboard", label: "Dashboard" }]
+      : []),
+    ...(canOperateFloor
+      ? [
+          { href: "/floor-view", label: "Floor View" },
+          { href: "/sessions", label: "Sessions" },
+        ]
+      : []),
+    ...(canManageCatalog
+      ? [{ href: "/catalog", label: "Tables" }]
+      : []),
     { href: "/billing", label: "Billing" },
-    { href: "/udhaar", label: "Udhaar" },
-    { href: "/customers", label: "Customers" },
-    { href: "/reports", label: "Reports" },
-    { href: "/governance", label: "Governance" },
+    ...(hasBackOfficeAccess
+      ? [
+        { href: "/udhaar", label: "Udhaar" },
+        { href: "/customers", label: "Customers" },
+        { href: "/reports", label: "Reports" },
+      ]
+      : []),
+    ...(canManageGovernance || canRequestCancellation
+      ? [
+          {
+            href: "/governance",
+            label: canManageGovernance
+              ? "Governance"
+              : "Request Cancellation",
+          },
+        ]
+      : []),
     { href: "/sync-status", label: "Sync Status" },
     ...(user?.roles.includes("OWNER")
       ? [{ href: "/settings/security", label: "Security & Devices" }]
       : []),
-    { href: "/settings/staff", label: "Settings" },
+    ...(hasBackOfficeAccess
+      ? [{ href: "/settings/staff", label: "Settings" }]
+      : []),
   ];
     
   return (

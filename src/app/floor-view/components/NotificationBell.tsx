@@ -1,14 +1,18 @@
-// src/modules/floor-view/components/NotificationBell.tsx
 "use client";
 
 import { useState } from "react";
-import { Notification } from "../types";
+
+import {
+  isUnreadNotification,
+  notificationMessage,
+  type Notification,
+} from "../types";
 
 interface NotificationBellProps {
   notifications: Notification[];
   unreadCount: number;
-  onMarkAsRead: (id: string) => void;
-  onMarkAllAsRead: () => void;
+  onMarkAsRead: (id: string) => Promise<void>;
+  onMarkAllAsRead: () => Promise<void>;
 }
 
 export function NotificationBell({
@@ -18,25 +22,86 @@ export function NotificationBell({
   onMarkAllAsRead,
 }: NotificationBellProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const [markingAll, setMarkingAll] = useState(false);
+
+  async function handleMarkAsRead(id: string) {
+    if (busyIds.has(id)) return;
+    setBusyIds((current) => new Set(current).add(id));
+    try {
+      await onMarkAsRead(id);
+    } finally {
+      setBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  async function handleMarkAllAsRead() {
+    if (markingAll) return;
+    setMarkingAll(true);
+    try {
+      await onMarkAllAsRead();
+    } finally {
+      setMarkingAll(false);
+    }
+  }
+
+  async function handleNotificationClick(
+    notification: Notification,
+  ) {
+    setIsOpen(false);
+
+    if (notification.payload) {
+      try {
+        const payload: unknown = JSON.parse(notification.payload);
+        const tableId =
+          typeof payload === "object" &&
+          payload !== null &&
+          "tableId" in payload &&
+          typeof payload.tableId === "string"
+            ? payload.tableId
+            : null;
+        if (tableId) {
+          document
+            .getElementById(`floor-table-${tableId}`)
+            ?.scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+            });
+        }
+      } catch {
+        // A malformed legacy payload still remains readable and markable.
+      }
+    }
+
+    if (isUnreadNotification(notification)) {
+      await handleMarkAsRead(notification.id);
+    }
+  }
 
   return (
     <div className="relative">
-      {/* Sleek UI Trigger with Interactive Badge Accent */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={`relative p-2.5 rounded-lg border transition-all duration-200 outline-none ${
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        className={`relative rounded-lg border p-2.5 outline-none transition-colors ${
           isOpen
-            ? "bg-slate-100 border-slate-300 text-slate-800 shadow-inner"
-            : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 hover:border-slate-300 shadow-sm"
+            ? "border-slate-300 bg-slate-100 text-slate-800"
+            : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700"
         }`}
-        aria-label="Toggle Operations Log Notification Stream"
+        aria-label="Notifications"
+        aria-expanded={isOpen}
       >
         <svg
-          className="w-4 h-4"
+          className="h-4 w-4"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
           strokeWidth={2}
+          aria-hidden="true"
         >
           <path
             strokeLinecap="round"
@@ -45,143 +110,105 @@ export function NotificationBell({
           />
         </svg>
         {unreadCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white text-[10px] rounded-md h-4 min-w-[16px] px-1 flex items-center justify-center font-bold tracking-tight border border-white animate-pulse">
-            {unreadCount}
+          <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-md border border-white bg-rose-600 px-1 text-[10px] font-bold text-white">
+            {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>
 
       {isOpen && (
         <>
-          {/* Canvas Dismissal Underlay Overlay */}
-          <div
-            className="fixed inset-0 z-40 bg-transparent"
+          <button
+            type="button"
+            aria-label="Close notifications"
+            className="fixed inset-0 z-40 cursor-default"
             onClick={() => setIsOpen(false)}
           />
-
-          {/* Floating Dropdown System Matrix panel */}
-          <div className="absolute right-0 mt-2.5 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-slate-200/90 z-50 max-h-[440px] overflow-y-auto flex flex-col transform origin-top-right transition-all duration-300">
-            {/* Header Control Sub-Panel Layer */}
-            <div className="p-3.5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/95 backdrop-blur-md rounded-t-xl z-10">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm text-slate-900 tracking-tight">
-                  System Events
-                </span>
-                {unreadCount > 0 && (
-                  <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 border border-rose-100 rounded text-[10px] font-bold">
-                    {unreadCount} Urgent
-                  </span>
-                )}
+          <section
+            aria-label="Notification list"
+            className="absolute right-0 z-50 mt-2.5 flex max-h-[440px] w-80 origin-top-right flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl sm:w-96"
+          >
+            <header className="flex items-center justify-between border-b border-slate-100 p-3.5">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  Notifications
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {unreadCount
+                    ? `${unreadCount} unread`
+                    : "You are all caught up"}
+                </p>
               </div>
               {unreadCount > 0 && (
                 <button
-                  onClick={() => {
-                    onMarkAllAsRead();
-                    setIsOpen(false);
-                  }}
-                  className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold tracking-tight transition-colors py-1 px-2 rounded-md hover:bg-blue-50/60"
+                  type="button"
+                  onClick={() => void handleMarkAllAsRead()}
+                  disabled={markingAll}
+                  className="rounded-md px-2 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
                 >
-                  Clear all alerts
+                  {markingAll ? "Marking…" : "Mark all read"}
                 </button>
               )}
-            </div>
+            </header>
 
-            {/* Scrollable Notification Item List Pipeline Container */}
-            <div className="divide-y divide-slate-50 overflow-y-auto">
+            <div className="divide-y divide-slate-100 overflow-y-auto">
               {notifications.length === 0 ? (
-                <div className="p-12 text-slate-400 text-center flex flex-col items-center justify-center">
-                  <svg
-                    className="w-8 h-8 text-slate-200 mb-2.5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-                    />
-                  </svg>
-                  <p className="text-xs font-medium text-slate-700">
-                    Operational Log Clean
+                <div className="p-10 text-center">
+                  <p className="text-sm font-medium text-slate-700">
+                    No notifications
                   </p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    No asynchronous hardware event logs registered.
+                  <p className="mt-1 text-xs text-slate-400">
+                    Overtime alerts will appear here.
                   </p>
                 </div>
               ) : (
-                notifications.map((n) => {
-                  let alertMessage =
-                    "Hardware pipeline dispatch event notification broadcasted.";
-                  try {
-                    const payload = JSON.parse(n.payload);
-                    if (payload?.message) alertMessage = payload.message;
-                  } catch {
-                    // Fail-safe fallthrough text context logic bounds handled properly
-                  }
-
-                  const isUnread = n.status === "queued";
+                notifications.map((notification) => {
+                  const isUnread = isUnreadNotification(notification);
+                  const isBusy = busyIds.has(notification.id);
 
                   return (
-                    <div
-                      key={n.id}
-                      className={`p-3.5 hover:bg-slate-50/80 cursor-pointer transition-all duration-150 flex gap-3 group relative ${
+                    <button
+                      key={notification.id}
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() =>
+                        void handleNotificationClick(notification)
+                      }
+                      className={`flex w-full gap-3 p-3.5 text-left transition-colors ${
                         isUnread
-                          ? "bg-blue-50/20 border-l-2 border-blue-500"
-                          : ""
-                      }`}
-                      onClick={() => {
-                        onMarkAsRead(n.id);
-                        setIsOpen(false);
-                      }}
+                          ? "border-l-2 border-blue-500 bg-blue-50/40 hover:bg-blue-50"
+                          : "bg-white hover:bg-slate-50"
+                      } disabled:opacity-75`}
                     >
-                      {/* Operational Context Graphical Indicators */}
-                      <div className="mt-0.5 flex-shrink-0">
-                        {isUnread ? (
-                          <div className="h-6 w-6 rounded-md bg-blue-50 border border-blue-100 flex items-center justify-center">
-                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping"></span>
-                          </div>
-                        ) : (
-                          <div className="h-6 w-6 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-center">
-                            <div className="w-1 h-1 bg-slate-400 rounded-full"></div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Content Structural Grid Blocks */}
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className={`text-xs leading-relaxed text-slate-700 tracking-tight break-words ${isUnread ? "font-medium text-slate-900" : ""}`}
+                      <span
+                        className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                          isUnread ? "bg-blue-500" : "bg-slate-300"
+                        }`}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span
+                          className={`block text-xs leading-relaxed ${
+                            isUnread
+                              ? "font-medium text-slate-900"
+                              : "text-slate-600"
+                          }`}
                         >
-                          {alertMessage}
-                        </p>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-[10px] text-slate-400 font-medium tracking-wide">
-                            {new Date(n.createdAt).toLocaleDateString([], {
-                              month: "short",
-                              day: "numeric",
-                            })}{" "}
-                            •{" "}
-                            {new Date(n.createdAt).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-
-                          {isUnread && (
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50/60 px-1.5 py-0.5 border border-blue-100 rounded opacity-80 group-hover:opacity-100 transition-opacity">
-                              Awaiting Verification
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                          {notificationMessage(notification)}
+                        </span>
+                        <span className="mt-1.5 block text-[10px] text-slate-400">
+                          {new Date(notification.createdAt).toLocaleString([], {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}
+                          {isBusy ? " · Marking as read…" : ""}
+                        </span>
+                      </span>
+                    </button>
                   );
                 })
               )}
             </div>
-          </div>
+          </section>
         </>
       )}
     </div>

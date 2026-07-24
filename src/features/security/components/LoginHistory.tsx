@@ -7,7 +7,6 @@ import {
 } from "../api";
 
 const ITEMS_PER_PAGE = 10;
-//const loginHistory: any[] = []; //for testing empty state
 
 export default function LoginHistory() {
   const [loginHistory, setLoginHistory] = useState<LoginHistoryItem[]>([]);

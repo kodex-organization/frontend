@@ -4,7 +4,7 @@ type ServerTimeResponse = {
   serverTime: string;
 };
 
-type HeartbeatResponse = {
+export type HeartbeatResponse = {
   deviceId: string;
   branchId: string;
   lastHeartbeatAt: string;
@@ -20,12 +20,25 @@ type SyncPushChange = {
   originTimestamp?: string;
 };
 
+export type SyncPushChangeResult = {
+  id?: string;
+  idempotencyKey: string;
+  entityType: "session" | "invoice";
+  entityId: string | null;
+  action: "create" | "update" | "delete";
+  status: "accepted" | "ignored" | "rejected";
+  conflictResolution: string;
+  serverTimestamp: string;
+  errorCode?: string;
+  error?: string;
+};
+
 type SyncPushResponse = {
   batchId: string;
   deviceId: string;
   receivedChanges: number;
-  acceptedChanges: unknown[];
-  rejectedChanges: unknown[];
+  acceptedChanges: SyncPushChangeResult[];
+  rejectedChanges: SyncPushChangeResult[];
   serverTime: string;
 };
 
@@ -44,9 +57,11 @@ export async function getServerTime() {
 export async function sendHeartbeat(
   deviceId: string,
   branchId: string,
+  signal?: AbortSignal,
 ) {
   return apiFetch<HeartbeatResponse>("/sync/heartbeat", {
     method: "POST",
+    signal,
     body: JSON.stringify({
       deviceId,
       branchId,

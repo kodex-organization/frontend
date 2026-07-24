@@ -6,8 +6,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { invoiceService } from "../services/invoiceService";
 import type {
-  Invoice,
-  InvoiceListFilters,
+  BillingTransaction,
   Pagination,
 } from "../types/invoice";
 
@@ -18,38 +17,37 @@ const emptyPagination: Pagination = {
   totalPages: 1,
 };
 
-export function useInvoices(filters: InvoiceListFilters = {}) {
+export function useTransactions({
+  page = 1,
+  pageSize = 25,
+  from,
+  to,
+}: {
+  page?: number;
+  pageSize?: number;
+  from?: string;
+  to?: string;
+}) {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const isOnline = useOnlineStatus();
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [transactions, setTransactions] = useState<
+    BillingTransaction[]
+  >([]);
   const [pagination, setPagination] =
     useState<Pagination>(emptyPagination);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const {
-    page = 1,
-    pageSize = 25,
-    search,
-    status,
-    from,
-    to,
-  } = filters;
-
-  const fetchInvoices = useCallback(async () => {
+  const refresh = useCallback(async () => {
     if (authLoading) return;
 
     if (!isAuthenticated || !user?.branchId) {
-      setInvoices([]);
-      setPagination(emptyPagination);
       setLoading(false);
       return;
     }
 
     if (!isOnline) {
-      setError(
-        "Reconnect to load current billing data. Transactional billing actions are unavailable offline.",
-      );
+      setError("Reconnect to load transaction history.");
       setLoading(false);
       return;
     }
@@ -58,21 +56,19 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
     setError(null);
 
     try {
-      const response = await invoiceService.getInvoices({
+      const response = await invoiceService.getTransactions({
         page,
         pageSize,
-        search,
-        status,
         from,
         to,
       });
-      setInvoices(response.items);
+      setTransactions(response.items);
       setPagination(response.pagination);
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Invoices could not be loaded.",
+          : "Transactions could not be loaded.",
       );
     } finally {
       setLoading(false);
@@ -84,21 +80,19 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
     isOnline,
     page,
     pageSize,
-    search,
-    status,
     to,
     user?.branchId,
   ]);
 
   useEffect(() => {
-    void fetchInvoices();
-  }, [fetchInvoices]);
+    void refresh();
+  }, [refresh]);
 
   return {
-    invoices,
+    transactions,
     pagination,
     loading,
     error,
-    refresh: fetchInvoices,
+    refresh,
   };
 }

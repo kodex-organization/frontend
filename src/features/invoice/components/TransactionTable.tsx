@@ -1,111 +1,81 @@
-"use client";
+import Link from "next/link";
 
-import { Invoice } from "../types/invoice";
-import StatusBadge from "./StatusBadge";
+import type { BillingTransaction } from "../types/invoice";
 import { formatCurrency } from "../utils/formatCurrency";
+import StatusBadge from "./StatusBadge";
 
-interface Props {
-  invoices: Invoice[];
+function tenderLabel(value: BillingTransaction["tenderType"]) {
+  return value
+    ? value
+        .split("_")
+        .map((part) => part[0]?.toUpperCase() + part.slice(1))
+        .join(" ")
+    : "Unspecified";
 }
 
 export default function TransactionTable({
-  invoices,
-}: Props) {
+  transactions,
+}: {
+  transactions: BillingTransaction[];
+}) {
+  if (transactions.length === 0) {
+    return (
+      <p className="border-t border-slate-200 px-6 py-10 text-center text-sm text-slate-500">
+        No payment transactions match this date range.
+      </p>
+    );
+  }
+
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-
-      <table className="min-w-full divide-y divide-gray-200">
-
-        <thead className="bg-slate-50">
-
+    <div className="overflow-x-auto border-t border-slate-200">
+      <table className="min-w-full divide-y divide-slate-200 text-sm">
+        <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
-
-            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">
-              Date
-            </th>
-
-            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">
-              Invoice #
-            </th>
-
-            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">
-              Branch
-            </th>
-
-            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">
-              Payment Method
-            </th>
-
-            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">
-              Amount
-            </th>
-
-            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">
-              Invoice Status
-            </th>
-
+            <th className="px-5 py-3">Date</th>
+            <th className="px-5 py-3">Invoice</th>
+            <th className="px-5 py-3">Method</th>
+            <th className="px-5 py-3">Reference</th>
+            <th className="px-5 py-3 text-right">Amount</th>
+            <th className="px-5 py-3">Invoice status</th>
           </tr>
-
         </thead>
-
-        <tbody className="divide-y divide-gray-100 bg-white">
-
-          {invoices.flatMap((invoice) =>
-            invoice.payments.map((payment) => (
-
-              <tr
-                key={payment.id}
-                className="transition hover:bg-slate-50"
-              >
-
-                <td className="px-6 py-4">
-                  {new Date(payment.paidAt).toLocaleDateString()}
-                </td>
-
-                <td className="px-6 py-4 font-semibold text-slate-800">
-                  #{invoice.invoiceNumber}
-                </td>
-
-                <td className="px-6 py-4">
-                  {invoice.branchId}
-                </td>
-
-                <td className="px-6 py-4">
-                  {payment.paymentMethod}
-                </td>
-
-                <td className="px-6 py-4 font-medium">
-                  {formatCurrency(payment.amount)}
-                </td>
-
-                <td className="px-6 py-4">
-                  <StatusBadge status={invoice.status} />
-                </td>
-
-              </tr>
-
-            ))
-          )}
-
-          {invoices.flatMap(i => i.payments).length === 0 && (
-
-            <tr>
-
-              <td
-                colSpan={6}
-                className="py-8 text-center text-gray-500"
-              >
-                No transaction history found.
+        <tbody className="divide-y divide-slate-100 bg-white">
+          {transactions.map((transaction) => (
+            <tr key={transaction.id}>
+              <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                {new Intl.DateTimeFormat(undefined, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(new Date(transaction.createdAt))}
               </td>
-
+              <td className="px-5 py-4">
+                <Link
+                  href={`/billing/${transaction.invoice.id}`}
+                  className="font-semibold text-emerald-700 hover:text-emerald-800"
+                >
+                  {transaction.invoice.invoiceNumber ??
+                    transaction.invoice.id.slice(0, 8)}
+                </Link>
+              </td>
+              <td className="px-5 py-4 text-slate-700">
+                {tenderLabel(transaction.tenderType)}
+              </td>
+              <td className="px-5 py-4 text-slate-500">
+                {transaction.paymentReference ?? "—"}
+              </td>
+              <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-slate-900">
+                {formatCurrency(
+                  transaction.amount,
+                  transaction.invoice.branch.currency,
+                )}
+              </td>
+              <td className="px-5 py-4">
+                <StatusBadge status={transaction.invoice.status} />
+              </td>
             </tr>
-
-          )}
-
+          ))}
         </tbody>
-
       </table>
-
     </div>
   );
 }
