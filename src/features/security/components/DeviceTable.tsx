@@ -53,14 +53,17 @@ export default function DeviceTable() {
   const currentDeviceIdentifier = getDeviceInfo().deviceIdentifier;
 
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
   const loadDevices = async (): Promise<void> => {
+    setError(null);
     try {
       const data = await getDevices();
       setDevices(data);
     } catch (error) {
       console.error("Failed to load devices:", error);
+      setError("Could not load devices. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -127,6 +130,20 @@ if (!result.isConfirmed) return;
             <div className="h-4 w-36 rounded bg-gray-200"></div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center text-red-700">
+        <p className="mb-3">{error}</p>
+        <button
+          onClick={loadDevices}
+          className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -216,4 +233,3 @@ if (!result.isConfirmed) return;
     </div>
   );
 }
-
