@@ -1,5 +1,5 @@
 // src/services/catalog.service.ts
-
+import { apiFetch } from "@/lib/api/client";
 import {
   SnookerTable,
   RatePlan,
@@ -7,41 +7,30 @@ import {
   CreateRatePlanInput,
 } from "@/features/catalog/types/catalog.types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-
-// ── helper ────────────────────────────────────
-async function apiFetch(url: string, options?: RequestInit) {
-  const res = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      // Dev 2 will replace this with real JWT later
-      "x-branch-id": "00000000-0000-0000-0000-000000000002",
-    },
-    ...options,
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Something went wrong");
-  return data;
-}
+// Fix: this used to have its own local apiFetch() that sent a hardcoded
+// fake `x-branch-id` header instead of a real JWT, and called
+// `/api/v1/tables` — a path the backend never registered (catalog routes
+// are actually mounted at `/api/v1/catalog`). Every request here was
+// 404ing. Now using the shared apiFetch (same one auth/sessions/etc. use)
+// so branch/tenant scoping comes from the verified access token, and the
+// paths match the backend's real prefix.
 
 // ── get all tables ────────────────────────────
 export async function getTables(): Promise<SnookerTable[]> {
-  const data = await apiFetch(`${BASE_URL}/api/v1/tables`);
-  return data.data;
+  return apiFetch<SnookerTable[]>("/catalog");
 }
 
 // ── create table ──────────────────────────────
 export async function createTable(
   input: CreateTableInput
 ): Promise<SnookerTable> {
-  const data = await apiFetch(`${BASE_URL}/api/v1/tables`, {
+  return apiFetch<SnookerTable>("/catalog", {
     method: "POST",
     body: JSON.stringify({
       tableNumber: input.tableNumber,
       defaultHourlyRate: input.hourlyRate,
     }),
   });
-  return data.data;
 }
 
 // ── update table ──────────────────────────────
@@ -49,7 +38,7 @@ export async function updateTable(
   id: string,
   input: Partial<CreateTableInput>
 ): Promise<SnookerTable> {
-  const data = await apiFetch(`${BASE_URL}/api/v1/tables/${id}`, {
+  return apiFetch<SnookerTable>(`/catalog/${id}`, {
     method: "PATCH",
     body: JSON.stringify({
       ...(input.tableNumber && { tableNumber: input.tableNumber }),
@@ -57,20 +46,18 @@ export async function updateTable(
       ...(input.status && { status: input.status }),
     }),
   });
-  return data.data;
 }
 
 // ── delete table ──────────────────────────────
 export async function deleteTable(id: string): Promise<void> {
-  await apiFetch(`${BASE_URL}/api/v1/tables/${id}`, {
+  await apiFetch<null>(`/catalog/${id}`, {
     method: "DELETE",
   });
 }
 
 // ── get rate history ──────────────────────────
 export async function getRateHistory(tableId: string): Promise<RatePlan[]> {
-  const data = await apiFetch(`${BASE_URL}/api/v1/tables/${tableId}/rates`);
-  return data.data;
+  return apiFetch<RatePlan[]>(`/catalog/${tableId}/rates`);
 }
 
 // ── create rate plan ──────────────────────────
@@ -78,12 +65,8 @@ export async function createRatePlan(
   tableId: string,
   input: CreateRatePlanInput
 ): Promise<RatePlan> {
-  const data = await apiFetch(
-    `${BASE_URL}/api/v1/tables/${tableId}/rates`,
-    {
-      method: "POST",
-      body: JSON.stringify(input),
-    }
-  );
-  return data.data;
+  return apiFetch<RatePlan>(`/catalog/${tableId}/rates`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
