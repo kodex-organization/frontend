@@ -26,19 +26,14 @@ export function updateTable(
   id: string,
   input: Partial<CreateTableInput>,
 ): Promise<SnookerTable> {
-  return apiFetch<SnookerTable>(
-    `/catalog/${encodeURIComponent(id)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        ...(input.tableNumber && { tableNumber: input.tableNumber }),
-        ...(input.hourlyRate && {
-          defaultHourlyRate: input.hourlyRate,
-        }),
-        ...(input.status && { status: input.status }),
-      }),
-    },
-  );
+  return apiFetch<SnookerTable>(`/catalog/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      ...(input.tableNumber && { tableNumber: input.tableNumber }),
+      ...(input.hourlyRate && { defaultHourlyRate: input.hourlyRate }),
+      ...(input.status && { status: input.status }),
+    }),
+  });
 }
 
 export async function deleteTable(id: string): Promise<void> {
@@ -47,9 +42,7 @@ export async function deleteTable(id: string): Promise<void> {
   });
 }
 
-export function getRateHistory(
-  tableId: string,
-): Promise<RatePlan[]> {
+export function getRateHistory(tableId: string): Promise<RatePlan[]> {
   return apiFetch<RatePlan[]>(
     `/catalog/${encodeURIComponent(tableId)}/rates`,
   );
