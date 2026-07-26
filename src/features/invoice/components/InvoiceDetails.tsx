@@ -1,307 +1,386 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { toast, ToastContainer } from "react-toastify";
 
+import { useAuth } from "@/lib/auth/auth-context";
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { useInvoice } from "../hooks/useInvoice";
-
-import StatusBadge from "./StatusBadge";
+import { formatCurrency } from "../utils/formatCurrency";
 import InvoiceItems from "./InvoiceItems";
 import InvoicePayments from "./InvoicePayments";
-import PaymentSection from "./PaymentSection";
-import VoidInvoiceModal from "./VoidInvoiceModal";
-import TransactionHistory from "./TransactionHistory";
 import RecordPaymentModal from "./RecordPaymentModal";
-
-interface Props {
-  invoiceId: string;
-}
+import StatusBadge from "./StatusBadge";
+import VoidInvoiceModal from "./VoidInvoiceModal";
 
 export default function InvoiceDetails({
   invoiceId,
-}: Props) {
-  const router = useRouter();
-
-  const [showVoidModal, setShowVoidModal] =
-    useState(false);
-
+  backHref = "/billing",
+}: {
+  invoiceId: string;
+  backHref?: string;
+}) {
+  const { user } = useAuth();
+  const isOnline = useOnlineStatus();
+  const [showVoidModal, setShowVoidModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] =
     useState(false);
-
   const {
     invoice,
     loading,
     error,
+    refresh,
+    setInvoice,
   } = useInvoice(invoiceId);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-500">
-        Loading invoice...
+      <div
+        className="space-y-4"
+        aria-label="Loading invoice details"
+      >
+        <div className="h-24 animate-pulse rounded-2xl bg-slate-200" />
+        <div className="grid gap-4 md:grid-cols-3">
+          {[0, 1, 2].map((item) => (
+            <div
+              key={item}
+              className="h-28 animate-pulse rounded-2xl bg-slate-200"
+            />
+          ))}
+        </div>
+        <div className="h-64 animate-pulse rounded-2xl bg-slate-200" />
       </div>
     );
   }
 
   if (error || !invoice) {
     return (
-      <div className="p-6 text-red-600">
-        {error || "Invoice not found"}
-      </div>
+      <section className="rounded-2xl border border-red-200 bg-red-50 p-6">
+        <h1 className="font-semibold text-red-900">
+          Invoice details are unavailable
+        </h1>
+        <p className="mt-2 text-sm text-red-700">
+          {error ?? "Invoice not found."}
+        </p>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="mt-4 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800"
+        >
+          Retry
+        </button>
+      </section>
     );
   }
 
-  const paidAmount = invoice.payments.reduce(
-    (sum, payment) =>
-      sum + Number(payment.amount),
-    0
-  );
-
-  const total = Number(invoice.totalAmount);
-
-  const balance = total - paidAmount;
+  const currency = invoice.branch.currency;
+  const formatAmount = (value: number) =>
+    formatCurrency(value, currency);
+  const canVoid =
+    invoice.status !== "void" &&
+    invoice.paidAmount === 0 &&
+    !!user?.roles.some((role) =>
+      ["OWNER", "MANAGER"].includes(role),
+    );
+  const canPay =
+    !!user?.roles.some((role) =>
+      ["OWNER", "MANAGER", "CASHIER"].includes(role),
+    ) &&
+    invoice.remainingAmount > 0 &&
+    (invoice.status === "open" ||
+      invoice.status === "partially_paid");
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <main className="mx-auto w-full max-w-6xl pb-12">
+      <ToastContainer position="top-right" />
 
-      {/* HEADER */}
+      <Link
+        href={backHref}
+        className="text-sm font-semibold text-slate-600 hover:text-emerald-700"
+      >
+        ← Back to billing
+      </Link>
 
-      <div className="mb-8">
-
-        <button
-          onClick={() => router.push("/billing")}
-          className="mb-5 flex items-center gap-2 font-medium text-gray-600 transition hover:text-green-700"
-        >
-          <span className="text-xl">←</span>
-          Back to Billing
-        </button>
-
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-
-          <div>
-
-            <h1 className="text-3xl font-bold text-gray-800">
-              Invoice Details
-            </h1>
-
-            <p className="mt-1 text-gray-500">
-              Invoice #{invoice.invoiceNumber}
-            </p>
-
-          </div>
-
-          {!invoice.isVoided && (
-
-            <button
-              onClick={() =>
-                setShowVoidModal(true)
-              }
-              className="rounded-xl border border-red-400 px-5 py-2.5 font-medium text-red-600 transition hover:bg-red-50"
-            >
-              Void Invoice
-            </button>
-
-          )}
-
-        </div>
-
-      </div>
-
-      {/* STATUS */}
-
-      <div className="mb-6 flex items-center justify-between rounded-2xl border border-green-100 bg-white p-6 shadow-sm">
-
+      <header className="mt-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-
-          <p className="mb-2 text-sm text-gray-500">
-            Payment Status
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">
+            Billing
           </p>
-
-          <StatusBadge
-            status={invoice.status}
-          />
-
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
+            {invoice.invoiceNumber ?? "Invoice details"}
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Created{" "}
+            {new Intl.DateTimeFormat(undefined, {
+              dateStyle: "medium",
+              timeStyle: "short",
+            }).format(new Date(invoice.createdAt))}
+            {" · "}
+            {invoice.branch.name ?? "Current branch"}
+          </p>
         </div>
 
-        <div className="text-right">
-
-          <p className="text-sm text-gray-500">
-            Invoice State
-          </p>
-
-          <p className="mt-1 font-semibold text-gray-700">
-           {invoice.status === "PENDING" ? "PENDING" : "PAID"}
-          </p>
-
+        <div className="flex flex-wrap gap-2">
+          {invoice.receiptId &&
+            user?.roles.some((role) =>
+              ["OWNER", "MANAGER", "CASHIER"].includes(role),
+            ) && (
+            <Link
+              href={`/receipts/${invoice.receiptId}`}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              View receipt
+            </Link>
+          )}
+          {canPay && (
+            <button
+              type="button"
+              onClick={() => setShowPaymentModal(true)}
+              disabled={!isOnline}
+              title={
+                isOnline
+                  ? undefined
+                  : "Reconnect to record a payment"
+              }
+              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Record payment
+            </button>
+          )}
+          {canVoid && (
+            <button
+              type="button"
+              onClick={() => setShowVoidModal(true)}
+              disabled={!isOnline}
+              title={
+                isOnline
+                  ? undefined
+                  : "Reconnect to void this invoice"
+              }
+              className="rounded-xl border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Void invoice
+            </button>
+          )}
         </div>
+      </header>
 
-      </div>
-
-      {/* VOID WARNING */}
-
-      {invoice.isVoided && (
-
-        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4">
-
-          <p className="font-semibold text-red-700">
-            This invoice has been voided.
-          </p>
-
-          <p className="mt-1 text-sm text-red-600">
-            Payments cannot be recorded and
-            this invoice cannot be modified.
-          </p>
-
-        </div>
-
+      {!isOnline && (
+        <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          You are offline. Current data remains visible, but payments,
+          voids, and receipt printing are disabled.
+        </p>
       )}
 
-      {/* INFO */}
-
-      <div className="mb-6 grid gap-6 md:grid-cols-2">
-
-        <div className="rounded-2xl border border-green-100 bg-white p-6 shadow-sm">
-
-          <h2 className="mb-5 text-xl font-semibold text-gray-800">
-            Branch Information
-          </h2>
-
-          <div className="space-y-3">
-
-            <p>
-              <span className="text-gray-500">
-                Branch ID:
-              </span>{" "}
-              <strong>
-                {invoice.branchId}
-              </strong>
-            </p>
-
-            <p>
-              <span className="text-gray-500">
-                Invoice Number:
-              </span>{" "}
-              <strong>
-                {invoice.invoiceNumber}
-              </strong>
-            </p>
-
-            <p>
-              <span className="text-gray-500">
-                Session ID:
-              </span>{" "}
-              <strong>
-                {invoice.sessionId}
-              </strong>
-            </p>
-
+      {invoice.status === "void" && (
+        <section className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-red-900">
+                This invoice is voided
+              </h2>
+              <p className="mt-1 text-sm text-red-700">
+                {invoice.voidReason ?? "No void reason was recorded."}
+              </p>
+            </div>
+            {invoice.voidedAt && (
+              <time className="text-xs font-medium text-red-700">
+                {new Intl.DateTimeFormat(undefined, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(new Date(invoice.voidedAt))}
+              </time>
+            )}
           </div>
+        </section>
+      )}
 
-        </div>
-
-        <div className="rounded-2xl border border-green-100 bg-white p-6 shadow-sm">
-
-          <h2 className="mb-5 text-xl font-semibold text-gray-800">
-            Invoice Summary
-          </h2>
-
-          <div className="space-y-3">
-
-            <p>
-              <span className="text-gray-500">
-                Created:
-              </span>{" "}
-              <strong>
-                {new Date(
-                  invoice.createdAt
-                ).toLocaleDateString()}
-              </strong>
-            </p>
-
-            <p>
-              <span className="text-gray-500">
-                Total:
-              </span>{" "}
-              <strong>
-                Rs. {total.toLocaleString()}
-              </strong>
-            </p>
-
-            <p>
-              <span className="text-gray-500">
-                Paid:
-              </span>{" "}
-              <strong className="text-green-600">
-                Rs. {paidAmount.toLocaleString()}
-              </strong>
-            </p>
-
-            <p>
-              <span className="text-gray-500">
-                Balance:
-              </span>{" "}
-              <strong className="text-red-500">
-                Rs. {balance.toLocaleString()}
-              </strong>
-            </p>
-
-          </div>
-
-        </div>
-
-      </div>
-
-      <InvoiceItems
-        items={invoice.items}
-      />
-
-      <InvoicePayments
-        payments={invoice.payments}
-      />
-
-      {!invoice.isVoided && (
-
-        <PaymentSection
-          total={total}
-          paid={paidAmount}
-          onPayment={() =>
-            setShowPaymentModal(true)
-          }
+      <section
+        className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+        aria-label="Invoice totals"
+      >
+        <Summary
+          label="Total"
+          value={formatAmount(invoice.total)}
         />
+        <Summary
+          label="Paid"
+          value={formatAmount(invoice.paidAmount)}
+        />
+        <Summary
+          label="Remaining"
+          value={formatAmount(invoice.remainingAmount)}
+        />
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm font-medium text-slate-500">Status</p>
+          <div className="mt-4">
+            <StatusBadge status={invoice.status} />
+          </div>
+        </article>
+      </section>
 
-      )}
+      <section className="mt-5 grid gap-4 lg:grid-cols-2">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="font-semibold text-slate-950">
+            Session context
+          </h2>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <Detail
+              label="Table"
+              value={
+                invoice.session?.table?.tableNumber
+                  ? `Table ${invoice.session.table.tableNumber}`
+                  : "Not linked"
+              }
+            />
+            <Detail
+              label="Session"
+              value={
+                invoice.sessionId
+                  ? invoice.sessionId
+                  : "Not linked"
+              }
+            />
+          </dl>
+        </article>
 
-      <TransactionHistory
-        payments={invoice.payments}
-      />
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="font-semibold text-slate-950">
+            Customer context
+          </h2>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <Detail
+              label="Customer"
+              value={
+                invoice.customer?.fullName ?? "Walk-in customer"
+              }
+            />
+            <Detail
+              label="Phone"
+              value={invoice.customer?.phone ?? "Not recorded"}
+            />
+          </dl>
+        </article>
+      </section>
+
+      <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-slate-950">
+          Amount breakdown
+        </h2>
+        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
+          <Detail
+            label="Subtotal"
+            value={formatAmount(invoice.subtotal)}
+          />
+          <Detail
+            label="Discount"
+            value={formatAmount(invoice.discountAmount)}
+          />
+          <Detail
+            label="Tax"
+            value={formatAmount(invoice.taxAmount)}
+          />
+          <Detail
+            label="Service charge"
+            value={formatAmount(invoice.serviceCharge)}
+          />
+          <Detail
+            label="Total"
+            value={formatAmount(invoice.total)}
+          />
+        </dl>
+      </section>
+
+      <div className="mt-5 space-y-5">
+        <InvoiceItems
+          items={invoice.items}
+          currency={currency}
+        />
+        <InvoicePayments
+          payments={invoice.payments}
+          currency={currency}
+        />
+      </div>
 
       {showPaymentModal && (
-
         <RecordPaymentModal
           invoiceId={invoice.id}
-          onClose={() =>
-            setShowPaymentModal(false)
-          }
-          onSuccess={() =>
-            window.location.reload()
-          }
-        />
+          remainingAmount={invoice.remainingAmount}
+          currency={currency}
+          onClose={() => setShowPaymentModal(false)}
+          onSuccess={(result) => {
+            setInvoice(result.invoice);
+            setShowPaymentModal(false);
+            toast.success("Payment recorded successfully.");
 
+            if (result.cashDrawer) {
+              const drawer = result.cashDrawer;
+              if (drawer.status === "opened") {
+                toast.success(drawer.message);
+              } else if (
+                drawer.status === "failed" ||
+                drawer.status === "disabled"
+              ) {
+                toast.warning(drawer.message);
+              } else {
+                toast.info(drawer.message);
+              }
+            }
+          }}
+        />
       )}
 
       {showVoidModal && (
-
         <VoidInvoiceModal
-          invoiceId={invoice.id}
-          onClose={() =>
-            setShowVoidModal(false)
-          }
-          onSuccess={() =>
-            window.location.reload()
-          }
+          invoice={invoice}
+          onClose={() => setShowVoidModal(false)}
+          onSuccess={(updated) => {
+            setInvoice(updated);
+            setShowVoidModal(false);
+            toast.success("Invoice voided and audit record created.");
+          }}
         />
-
       )}
+    </main>
+  );
+}
 
+function Summary({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-sm font-medium text-slate-500">{label}</p>
+      <p className="mt-3 text-2xl font-bold tracking-tight text-slate-950">
+        {value}
+      </p>
+    </article>
+  );
+}
+
+function Detail({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </dt>
+      <dd
+        className="mt-1 break-words font-medium text-slate-800"
+        title={value}
+      >
+        {value}
+      </dd>
     </div>
   );
 }

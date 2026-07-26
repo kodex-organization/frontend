@@ -1,11 +1,10 @@
 // src/modules/floor-view/components/FloorViewDashboard.tsx
 "use client";
 
-import { useState } from "react";
 import { ToastContainer } from "react-toastify";
 
 import { useFloorView } from "../hooks/useFloorView";
-import { Stats } from "../types";
+import type { Stats } from "../types";
 import { FloorCard } from "./FloorCard";
 import { NotificationBell } from "./NotificationBell";
 import { OvertimeAlert } from "./OvertimeAlert";
@@ -17,13 +16,14 @@ export function FloorViewDashboard() {
     notifications,
     unreadCount,
     loading,
+    refreshing,
+    error,
+    isOnline,
     lastUpdated,
     fetchData,
     markAsRead,
     markAllAsRead,
   } = useFloorView();
-
-  const [showOvertimeAlert, setShowOvertimeAlert] = useState(true);
 
   const stats: Stats = {
     total: tables.length,
@@ -38,14 +38,13 @@ export function FloorViewDashboard() {
       <div className="flex flex-col items-center justify-center min-h-[70vh] bg-slate-50/50 rounded-2xl border border-slate-100 m-4">
         <div className="text-center p-8 max-w-sm">
           <div className="relative flex items-center justify-center h-12 w-12 mx-auto mb-4">
-            <div className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-25"></div>
             <div className="relative rounded-full h-8 w-8 border-2 border-t-blue-600 border-r-blue-600 border-b-slate-200 border-l-slate-200 animate-spin"></div>
           </div>
           <h4 className="text-sm font-semibold text-slate-800">
-            Synchronizing Floor System
+            Loading floor view
           </h4>
           <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-            Fetching runtime system states and spatial layouts...
+            Fetching current table and session information…
           </p>
         </div>
       </div>
@@ -61,14 +60,25 @@ export function FloorViewDashboard() {
             <h1 className="text-2xl font-bold tracking-tight text-slate-950">
               Floor Plan Management
             </h1>
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-md text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-              Live Link
+            <div
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+                isOnline && !error
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  : "bg-amber-50 border-amber-200 text-amber-700"
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isOnline && !error
+                    ? "bg-emerald-500"
+                    : "bg-amber-500"
+                }`}
+              />
+              {isOnline && !error ? "Live" : "Connection issue"}
             </div>
           </div>
           <p className="text-xs text-slate-400 mt-0.5 tracking-wide">
-            Automated backend socket synchronization active (30s refresh
-            interval)
+            Authenticated API polling every 30 seconds while this page is visible
           </p>
         </div>
 
@@ -82,15 +92,28 @@ export function FloorViewDashboard() {
         </div>
       </div>
 
-      {/* Critical Monitoring System */}
-      {showOvertimeAlert && (
-        <div className="mb-6 shadow-sm rounded-xl overflow-hidden border border-rose-100">
-          <OvertimeAlert
-            tables={tables}
-            onDismiss={() => setShowOvertimeAlert(false)}
-          />
+      {error && (
+        <div
+          role="status"
+          className="mb-5 flex items-center justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
+          <span>{error}</span>
+          {isOnline && (
+            <button
+              type="button"
+              onClick={() => void fetchData()}
+              disabled={refreshing}
+              className="font-semibold underline underline-offset-2 disabled:opacity-50"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
+
+      <div className="mb-6 shadow-sm rounded-xl overflow-hidden border border-rose-100 empty:hidden">
+        <OvertimeAlert tables={tables} />
+      </div>
 
       {/* Analytical Telemetry Data Ribbon */}
       <div className="mb-6">
@@ -98,6 +121,7 @@ export function FloorViewDashboard() {
           stats={stats}
           onRefresh={fetchData}
           lastUpdated={lastUpdated}
+          refreshing={refreshing}
         />
       </div>
 
@@ -118,11 +142,10 @@ export function FloorViewDashboard() {
             />
           </svg>
           <h5 className="font-semibold text-slate-800 text-sm">
-            No Hardware Targets Listed
+            No tables configured
           </h5>
           <p className="text-xs text-slate-400 mt-1 max-w-xs">
-            There are no hardware table elements configured for this spatial
-            segment zone yet.
+            This branch does not have any floor tables configured yet.
           </p>
         </div>
       ) : (

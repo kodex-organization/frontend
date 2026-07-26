@@ -164,3 +164,103 @@ export async function markItemAsFailed(
 export async function clearPendingQueue() {
   return offlineDB.pendingQueue.clear();
 }
+
+const REVIEW_SYNC_SEED_KEY = "review-sync-examples-v1";
+
+/**
+ * Adds two browser-local examples for the dedicated development reviewer
+ * account. The marker makes this idempotent and prevents discarded examples
+ * from reappearing on every page load.
+ */
+export async function seedReviewSyncItems(context: {
+  branchId: string;
+  userId: string;
+  deviceId: string;
+}) {
+  let seeded = false;
+
+  await offlineDB.transaction(
+    "rw",
+    offlineDB.pendingQueue,
+    offlineDB.syncMeta,
+    async () => {
+      const existingMarker = await offlineDB.syncMeta.get(
+        REVIEW_SYNC_SEED_KEY,
+      );
+      if (existingMarker) return;
+
+      const now = Date.now();
+      const sessionTimestamp = new Date(now - 8 * 60_000).toISOString();
+      const invoiceTimestamp = new Date(now - 4 * 60_000).toISOString();
+      const sessionId = crypto.randomUUID();
+      const invoiceId = crypto.randomUUID();
+
+      await offlineDB.pendingQueue.bulkAdd([
+        {
+          entity: "session",
+          entityId: sessionId,
+          action: "create",
+          payload: {
+            id: sessionId,
+            branchId: context.branchId,
+            tableId: null,
+            customerId: null,
+            ratePlanId: null,
+            appliedHourlyRate: "700.00",
+            openedByUserId: context.userId,
+            openedByDeviceId: context.deviceId,
+            startedAt: sessionTimestamp,
+            expectedEndTime: null,
+            endedAt: null,
+            status: "active",
+            rateOverrideById: null,
+            rateOverrideReason: "Reviewer offline-sync example",
+            createdAt: sessionTimestamp,
+          },
+          status: "pending",
+          idempotencyKey: crypto.randomUUID(),
+          originTimestamp: sessionTimestamp,
+          retryCount: 0,
+          lastError: null,
+        },
+        {
+          entity: "invoice",
+          entityId: invoiceId,
+          action: "update",
+          payload: {
+            id: invoiceId,
+            branchId: context.branchId,
+            invoiceNumber: "INV-REVIEW-OFFLINE",
+            sessionId: null,
+            customerId: null,
+            subtotal: "950.00",
+            discountAmount: "0.00",
+            discountReasonCode: null,
+            discountApprovedById: null,
+            taxAmount: "0.00",
+            serviceCharge: "0.00",
+            total: "950.00",
+            status: "open",
+            voidedInvoiceId: null,
+            createdById: context.userId,
+            createdAt: invoiceTimestamp,
+          },
+          status: "failed",
+          idempotencyKey: crypto.randomUUID(),
+          originTimestamp: invoiceTimestamp,
+          retryCount: 1,
+          lastError:
+            "Review example: this offline invoice needs conflict review.",
+        },
+      ]);
+
+      await offlineDB.syncMeta.put({
+        key: REVIEW_SYNC_SEED_KEY,
+        value: new Date(now).toISOString(),
+      });
+      seeded = true;
+    },
+  );
+
+  return seeded;
+}

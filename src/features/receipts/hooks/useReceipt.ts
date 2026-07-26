@@ -27,5 +27,16 @@ export const useReceipt = (id: string) => {
     fetchReceipt();
   }, [fetchReceipt]);
 
-  return { receipt, loading, error, refresh: fetchReceipt };
+  const replaceReceipt = useCallback((nextReceipt: Receipt) => {
+    setReceipt(nextReceipt);
+    setError(null);
+  }, []);
+
+  return {
+    receipt,
+    loading,
+    error,
+    refresh: fetchReceipt,
+    replaceReceipt,
+  };
 };

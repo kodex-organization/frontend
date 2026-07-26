@@ -8,6 +8,7 @@ export interface TableOption {
   id: string;
   tableNumber: string;
   defaultHourlyRate: number | string;
+  currency?: string | null;
 }
 export interface SessionPause {
   id: string;
@@ -21,6 +22,9 @@ export interface ActiveSession {
   endedAt: string | null;
   appliedHourlyRate: number | string;
   table: TableOption;
+  branch: {
+    currency: string | null;
+  };
   customer: Customer | null;
   pauses: SessionPause[];
 }

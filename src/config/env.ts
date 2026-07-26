@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const envSchema = z.object({
-  NEXT_PUBLIC_API_URL: z.string().url().default("http://localhost:3000/api/v1"),
+  NEXT_PUBLIC_API_URL: z.string().url(),
   NEXT_PUBLIC_APP_NAME: z.string().default("CueCloud"),
 });
 

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { reviewCancellationRequest } from './governance.api';
 import { ApiError } from '@/lib/api/client';
+import { useOnlineStatus } from '@/lib/connectivity/online-status';
 
 interface Props {
   requestId: string;
@@ -17,13 +18,18 @@ export default function ManagerApprovalModal({
   onClose,
   onSuccess,
 }: Props) {
+  const isOnline = useOnlineStatus();
   const [reviewReason, setReviewReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function handleDecision(status: 'approved' | 'rejected') {
-    if (!reviewReason.trim()) {
-      setError('Please provide a reason');
+    if (!isOnline) {
+      setError('Reconnect before reviewing this request');
+      return;
+    }
+    if (reviewReason.trim().length < 5) {
+      setError('Review reason must be at least 5 characters');
       return;
     }
     setLoading(true);
@@ -31,7 +37,7 @@ export default function ManagerApprovalModal({
     try {
       await reviewCancellationRequest(requestId, {
         status,
-        reviewReason,
+        reviewReason: reviewReason.trim(),
       });
       onSuccess();
       onClose();
@@ -79,6 +85,7 @@ export default function ManagerApprovalModal({
             placeholder="Enter your reason..."
             value={reviewReason}
             onChange={(e) => setReviewReason(e.target.value)}
+            maxLength={500}
           />
         </div>
 
@@ -92,14 +99,14 @@ export default function ManagerApprovalModal({
           </button>
           <button
             onClick={() => handleDecision('rejected')}
-            disabled={loading}
+            disabled={loading || !isOnline}
             className="px-4 py-2 text-sm text-white bg-red-500 rounded-md hover:bg-red-600 disabled:opacity-50"
           >
             Reject
           </button>
           <button
             onClick={() => handleDecision('approved')}
-            disabled={loading}
+            disabled={loading || !isOnline}
             className="px-4 py-2 text-sm text-white bg-green-500 rounded-md hover:bg-green-600 disabled:opacity-50"
           >
             Approve

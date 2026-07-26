@@ -1,99 +1,100 @@
-"use client";
-
 import Link from "next/link";
-import { Invoice } from "../types/invoice";
+
+import type { Invoice } from "../types/invoice";
+import { formatCurrency } from "../utils/formatCurrency";
 import StatusBadge from "./StatusBadge";
 
-interface Props {
-  invoices: Invoice[];
+function currency(invoice: Invoice, value: number) {
+  return formatCurrency(value, invoice.branch.currency);
 }
 
-export default function InvoiceTable({ invoices }: Props) {
+export default function InvoiceTable({
+  invoices,
+  detailBasePath = "/billing",
+}: {
+  invoices: Invoice[];
+  detailBasePath?: string;
+}) {
+  if (invoices.length === 0) {
+    return (
+      <div className="border-t border-slate-200 px-6 py-12 text-center">
+        <h3 className="text-sm font-semibold text-slate-900">
+          No invoices match these filters
+        </h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Completed sessions will appear here after the backend creates
+          their invoice.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-x-auto">
-
-      <table className="w-full">
-
-        <thead className="bg-gray-50">
-
+      <table className="min-w-full divide-y divide-slate-200 text-sm">
+        <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
-
-            <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
-              Invoice #
+            <th className="px-5 py-3">Invoice</th>
+            <th className="px-5 py-3">Session / table</th>
+            <th className="px-5 py-3 text-right">Total</th>
+            <th className="px-5 py-3 text-right">Remaining</th>
+            <th className="px-5 py-3">Status</th>
+            <th className="px-5 py-3">Created</th>
+            <th className="px-5 py-3 text-right">
+              <span className="sr-only">Actions</span>
             </th>
-
-            <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
-              Branch
-            </th>
-
-            <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
-              Amount
-            </th>
-
-            <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
-              Status
-            </th>
-
-            <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
-              Date
-            </th>
-
-            <th className="px-6 py-4 text-center text-sm font-semibold text-gray-600">
-              Action
-            </th>
-
           </tr>
-
         </thead>
-
-        <tbody>
-
+        <tbody className="divide-y divide-slate-100 bg-white">
           {invoices.map((invoice) => (
-
-            <tr
-              key={invoice.id}
-              className="border-t hover:bg-gray-50 transition"
-            >
-
-              <td className="px-6 py-5 font-semibold">
-                #{invoice.invoiceNumber}
+            <tr key={invoice.id} className="hover:bg-slate-50">
+              <td className="whitespace-nowrap px-5 py-4">
+                <p className="font-semibold text-slate-900">
+                  {invoice.invoiceNumber ?? "Number pending"}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {invoice.branch.name ?? "Current branch"}
+                </p>
               </td>
-
-              <td className="px-6 py-5">
-                {invoice.branchId}
+              <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                <p>
+                  {invoice.session?.table?.tableNumber
+                    ? `Table ${invoice.session.table.tableNumber}`
+                    : "No table reference"}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  {invoice.sessionId
+                    ? `Session ${invoice.sessionId.slice(0, 8)}`
+                    : "Non-session invoice"}
+                </p>
               </td>
-
-              <td className="px-6 py-5">
-                Rs. {Number(invoice.totalAmount).toLocaleString()}
+              <td className="whitespace-nowrap px-5 py-4 text-right font-medium text-slate-900">
+                {currency(invoice, invoice.total)}
               </td>
-
-              <td className="px-6 py-5">
+              <td className="whitespace-nowrap px-5 py-4 text-right text-slate-700">
+                {currency(invoice, invoice.remainingAmount)}
+              </td>
+              <td className="whitespace-nowrap px-5 py-4">
                 <StatusBadge status={invoice.status} />
               </td>
-
-              <td className="px-6 py-5">
-                {new Date(invoice.createdAt).toLocaleDateString()}
+              <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                {new Intl.DateTimeFormat(undefined, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(new Date(invoice.createdAt))}
               </td>
-
-              <td className="px-6 py-5 text-center">
-
+              <td className="whitespace-nowrap px-5 py-4 text-right">
                 <Link
-                  href={`/billing/${invoice.id}`}
-                  className="inline-flex items-center rounded-lg bg-green-800 px-5 py-2 text-white hover:bg-grey-700 transition"
+                  href={`${detailBasePath}/${invoice.id}`}
+                  className="inline-flex rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                 >
-                  View
+                  View details
                 </Link>
-
               </td>
-
             </tr>
-
           ))}
-
         </tbody>
-
       </table>
-
     </div>
   );
 }

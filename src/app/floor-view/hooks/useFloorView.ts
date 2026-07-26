@@ -1,156 +1,302 @@
-// src/modules/floor-view/hooks/useFloorView.ts
 "use client";
 
 import { useAuth } from "@/lib/auth/auth-context";
-import { tokenStorage } from "@/lib/auth/session"; // ✅ Import tokenStorage
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "@/lib/api/client";
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
+
 import {
   fetchFloorView,
   fetchNotifications,
   markNotificationAsRead,
 } from "../api";
-import type { FloorViewTable, Notification } from "../types";
+import {
+  isUnreadNotification,
+  type FloorViewTable,
+  type Notification,
+} from "../types";
+
+const POLL_INTERVAL_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 15_000;
+
+function requestErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code === "NETWORK_ERROR") {
+    return "The floor service could not be reached. Existing data is still available.";
+  }
+  return error instanceof Error
+    ? error.message
+    : "The floor view could not be refreshed.";
+}
 
 export function useFloorView() {
-  const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading: authLoading,
+    user,
+  } = useAuth();
+  const isOnline = useOnlineStatus();
+  const authScope = user ? `${user.id}:${user.branchId}` : null;
   const [tables, setTables] = useState<FloorViewTable[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [notifiedOvertime, setNotifiedOvertime] = useState<Set<string>>(
-    new Set(),
-  );
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ✅ Use tokenStorage to get the token correctly
-  const getToken = () => {
-    const stored = tokenStorage.get();
-    return stored?.accessToken || null;
-  };
+  const mountedRef = useRef(false);
+  const requestRef = useRef<Promise<void> | null>(null);
+  const activeControllerRef = useRef<AbortController | null>(null);
+  const overtimeToastIdsRef = useRef<Set<string>>(new Set());
+  const notificationMutationsRef = useRef<Set<string>>(new Set());
 
-  const clearAuthAndRedirect = () => {
-    tokenStorage.clear(); // ✅ Use tokenStorage.clear() instead of manual removal
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    router.push("/login");
-  };
-
-  const fetchData = useCallback(async () => {
-    // ✅ Check auth state first
-    if (!user) {
-      console.log("❌ No user authenticated");
-      clearAuthAndRedirect();
-      return;
-    }
-
-    const token = getToken();
-    if (!token) {
-      console.log("❌ No token found");
-      clearAuthAndRedirect();
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      // Fetch floor view
-      const floorData = await fetchFloorView(token);
-      if (floorData.success) {
-        setTables(floorData.data);
-        setLastUpdated(new Date());
-
-        // Check for overtime notifications
-        floorData.data.forEach((table: FloorViewTable) => {
-          if (
-            table.session?.isOvertime &&
-            !notifiedOvertime.has(table.tableId)
-          ) {
-            toast.error(`Table ${table.tableNumber} session is over`, {
-              autoClose: false,
-              toastId: `overtime-${table.tableId}`,
-              position: "top-right",
-            });
-            setNotifiedOvertime((prev) => new Set(prev).add(table.tableId));
-          }
-        });
-      }
-
-      // Fetch notifications
-      const notifData = await fetchNotifications(token);
-      if (notifData.success) {
-        setNotifications(notifData.data);
-        setUnreadCount(
-          notifData.data.filter((n: Notification) => n.status === "queued")
-            .length,
-        );
-      }
-    } catch (error: any) {
-      console.error("❌ Failed to fetch:", error);
-
-      if (error.message === "Unauthorized" || error.message?.includes("401")) {
-        clearAuthAndRedirect();
-        return;
-      }
-
-      toast.error("Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  }, [user, notifiedOvertime, router]);
-
-  const markAsRead = useCallback(
-    async (id: string) => {
-      const token = getToken();
-      if (!token) return;
-
-      try {
-        await markNotificationAsRead(token, id);
-        await fetchData();
-      } catch (error) {
-        console.error("Failed to mark as read:", error);
-      }
-    },
-    [fetchData],
-  );
-
-  const markAllAsRead = useCallback(async () => {
-    const unread = notifications.filter((n) => n.status === "queued");
-    for (const n of unread) {
-      await markAsRead(n.id);
-    }
-  }, [notifications, markAsRead]);
-
-  // ✅ Use auth loading state
   useEffect(() => {
-    if (!authLoading && user) {
-      fetchData();
-    }
-  }, [authLoading, user, fetchData]);
-
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    if (!user) return;
-
-    fetchData();
-    intervalRef.current = setInterval(fetchData, 30000);
+    mountedRef.current = true;
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+      mountedRef.current = false;
+      for (const toastId of overtimeToastIdsRef.current) {
+        toast.dismiss(toastId);
+      }
+      overtimeToastIdsRef.current.clear();
+    };
+  }, []);
+
+  const fetchData = useCallback(async (): Promise<void> => {
+    if (authLoading) return;
+    if (!isAuthenticated || !authScope) {
+      if (mountedRef.current) setLoading(false);
+      return;
+    }
+    if (!isOnline) {
+      if (mountedRef.current) {
+        setLoading(false);
+        setError("You are offline. Polling will resume when the connection returns.");
+      }
+      return;
+    }
+    if (
+      requestRef.current &&
+      !activeControllerRef.current?.signal.aborted
+    ) {
+      return requestRef.current;
+    }
+
+    const controller = new AbortController();
+    activeControllerRef.current = controller;
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
+
+    const operation = (async () => {
+      if (mountedRef.current) setRefreshing(true);
+
+      try {
+        // Fetching notifications after the floor ensures an overtime
+        // notification created by this floor read is visible immediately.
+        const nextTables = await fetchFloorView({ signal: controller.signal });
+        if (!mountedRef.current) return;
+
+        setTables(nextTables);
+        setLastUpdated(new Date());
+
+        const activeOvertimeToastIds = new Set(
+          nextTables.flatMap((table) =>
+            table.session?.isOvertime
+              ? [
+                  `overtime-${table.session.sessionId}-${table.session.expectedEndTime ?? "unbounded"}`,
+                ]
+              : [],
+          ),
+        );
+
+        for (const toastId of overtimeToastIdsRef.current) {
+          if (!activeOvertimeToastIds.has(toastId)) {
+            toast.dismiss(toastId);
+            overtimeToastIdsRef.current.delete(toastId);
+          }
+        }
+
+        for (const table of nextTables) {
+          const session = table.session;
+          if (!session?.isOvertime) continue;
+
+          const toastId =
+            `overtime-${session.sessionId}-` +
+            `${session.expectedEndTime ?? "unbounded"}`;
+          if (overtimeToastIdsRef.current.has(toastId)) continue;
+
+          overtimeToastIdsRef.current.add(toastId);
+          toast.error(
+            `Table ${table.tableNumber ?? "N/A"} has exceeded its expected end time.`,
+            {
+              autoClose: false,
+              toastId,
+              position: "top-right",
+            },
+          );
+        }
+
+        const nextNotifications = await fetchNotifications({
+          signal: controller.signal,
+        });
+        if (!mountedRef.current) return;
+
+        setNotifications(nextNotifications);
+        setError(null);
+        toast.dismiss("floor-view-fetch-error");
+      } catch (requestError) {
+        if (!mountedRef.current) return;
+        if (controller.signal.aborted && !timedOut) return;
+
+        if (
+          requestError instanceof ApiError &&
+          requestError.status === 401
+        ) {
+          activeControllerRef.current?.abort();
+          return;
+        }
+
+        const message = timedOut
+          ? "The floor service timed out. Existing data is still available."
+          : requestErrorMessage(requestError);
+        setError(message);
+        toast.error(message, { toastId: "floor-view-fetch-error" });
+      } finally {
+        window.clearTimeout(timeoutId);
+        const isCurrentRequest = activeControllerRef.current === controller;
+        if (mountedRef.current && isCurrentRequest) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+        if (isCurrentRequest) {
+          activeControllerRef.current = null;
+        }
+      }
+    })();
+
+    requestRef.current = operation;
+    try {
+      await operation;
+    } finally {
+      if (requestRef.current === operation) requestRef.current = null;
+    }
+  }, [authLoading, authScope, isAuthenticated, isOnline]);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    activeControllerRef.current?.abort();
+    setTables([]);
+    setNotifications([]);
+    setLastUpdated(null);
+    setError(null);
+    notificationMutationsRef.current.clear();
+
+    for (const toastId of overtimeToastIdsRef.current) {
+      toast.dismiss(toastId);
+    }
+    overtimeToastIdsRef.current.clear();
+    setLoading(authScope !== null);
+    setRefreshing(false);
+  }, [authLoading, authScope]);
+
+  useEffect(() => {
+    if (authLoading || !isAuthenticated || !authScope || !isOnline) {
+      if (!authLoading) setLoading(false);
+      return;
+    }
+
+    if (document.visibilityState === "visible") {
+      void fetchData();
+    }
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void fetchData();
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [authLoading, authScope, fetchData, isAuthenticated, isOnline]);
+
+  useEffect(() => {
+    if (!isOnline) {
+      setError("You are offline. Polling will resume when the connection returns.");
+      activeControllerRef.current?.abort();
+    }
+  }, [isOnline]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && isOnline) {
+        void fetchData();
       }
     };
-  }, [user, fetchData]);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [fetchData, isOnline]);
+
+  const markAsRead = useCallback(
+    async (id: string): Promise<void> => {
+      if (!authScope) return;
+      if (notificationMutationsRef.current.has(id)) return;
+      notificationMutationsRef.current.add(id);
+
+      try {
+        const result = await markNotificationAsRead(id);
+        if (!mountedRef.current) return;
+        setNotifications((current) =>
+          current.map((notification) =>
+            notification.id === id
+              ? {
+                  ...notification,
+                  status: result.status,
+                  readAt: result.readAt,
+                }
+              : notification,
+          ),
+        );
+      } catch (markError) {
+        if (markError instanceof ApiError && markError.status === 401) {
+          return;
+        } else if (mountedRef.current) {
+          toast.error(requestErrorMessage(markError), {
+            toastId: `notification-read-${id}`,
+          });
+        }
+      } finally {
+        notificationMutationsRef.current.delete(id);
+      }
+    },
+    [authScope],
+  );
+
+  const markAllAsRead = useCallback(async (): Promise<void> => {
+    const unreadIds = notifications
+      .filter(isUnreadNotification)
+      .map((notification) => notification.id);
+    await Promise.all(unreadIds.map((id) => markAsRead(id)));
+  }, [markAsRead, notifications]);
+
+  const unreadCount = useMemo(
+    () => notifications.filter(isUnreadNotification).length,
+    [notifications],
+  );
 
   return {
     tables,
     notifications,
     unreadCount,
     loading: loading || authLoading,
+    refreshing,
+    error,
+    isOnline,
     lastUpdated,
     fetchData,
     markAsRead,

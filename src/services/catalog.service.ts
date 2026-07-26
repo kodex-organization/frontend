@@ -1,28 +1,17 @@
-// src/services/catalog.service.ts
-import { apiFetch } from "@/lib/api/client";
-import {
-  SnookerTable,
-  RatePlan,
-  CreateTableInput,
+import type {
   CreateRatePlanInput,
+  CreateTableInput,
+  RatePlan,
+  SnookerTable,
 } from "@/features/catalog/types/catalog.types";
+import { apiFetch } from "@/lib/api/client";
 
-// Fix: this used to have its own local apiFetch() that sent a hardcoded
-// fake `x-branch-id` header instead of a real JWT, and called
-// `/api/v1/tables` — a path the backend never registered (catalog routes
-// are actually mounted at `/api/v1/catalog`). Every request here was
-// 404ing. Now using the shared apiFetch (same one auth/sessions/etc. use)
-// so branch/tenant scoping comes from the verified access token, and the
-// paths match the backend's real prefix.
-
-// ── get all tables ────────────────────────────
-export async function getTables(): Promise<SnookerTable[]> {
+export function getTables(): Promise<SnookerTable[]> {
   return apiFetch<SnookerTable[]>("/catalog");
 }
 
-// ── create table ──────────────────────────────
-export async function createTable(
-  input: CreateTableInput
+export function createTable(
+  input: CreateTableInput,
 ): Promise<SnookerTable> {
   return apiFetch<SnookerTable>("/catalog", {
     method: "POST",
@@ -33,12 +22,11 @@ export async function createTable(
   });
 }
 
-// ── update table ──────────────────────────────
-export async function updateTable(
+export function updateTable(
   id: string,
-  input: Partial<CreateTableInput>
+  input: Partial<CreateTableInput>,
 ): Promise<SnookerTable> {
-  return apiFetch<SnookerTable>(`/catalog/${id}`, {
+  return apiFetch<SnookerTable>(`/catalog/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify({
       ...(input.tableNumber && { tableNumber: input.tableNumber }),
@@ -48,25 +36,27 @@ export async function updateTable(
   });
 }
 
-// ── delete table ──────────────────────────────
 export async function deleteTable(id: string): Promise<void> {
-  await apiFetch<null>(`/catalog/${id}`, {
+  await apiFetch<null>(`/catalog/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 }
 
-// ── get rate history ──────────────────────────
-export async function getRateHistory(tableId: string): Promise<RatePlan[]> {
-  return apiFetch<RatePlan[]>(`/catalog/${tableId}/rates`);
+export function getRateHistory(tableId: string): Promise<RatePlan[]> {
+  return apiFetch<RatePlan[]>(
+    `/catalog/${encodeURIComponent(tableId)}/rates`,
+  );
 }
 
-// ── create rate plan ──────────────────────────
-export async function createRatePlan(
+export function createRatePlan(
   tableId: string,
-  input: CreateRatePlanInput
+  input: CreateRatePlanInput,
 ): Promise<RatePlan> {
-  return apiFetch<RatePlan>(`/catalog/${tableId}/rates`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  return apiFetch<RatePlan>(
+    `/catalog/${encodeURIComponent(tableId)}/rates`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }

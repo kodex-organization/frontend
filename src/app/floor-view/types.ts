@@ -1,4 +1,9 @@
-// src/modules/floor-view/types.ts
+export type FloorTableStatus =
+  | "available"
+  | "occupied"
+  | "maintenance"
+  | "reserved"
+  | "inactive";
 
 export interface FloorViewSession {
   sessionId: string;
@@ -6,6 +11,18 @@ export interface FloorViewSession {
   startedAt: string | null;
   expectedEndTime: string | null;
   appliedHourlyRate: number | null;
+  durationSeconds: number;
+  pauseDurationSeconds: number;
+  billableDurationSeconds: number;
+  estimatedCharge: number | null;
+  billingState:
+    | "draft"
+    | "open"
+    | "paid"
+    | "partially_paid"
+    | "void"
+    | "accruing"
+    | "paused";
   isPaused: boolean;
   isOvertime: boolean;
 }
@@ -13,53 +30,32 @@ export interface FloorViewSession {
 export interface FloorViewTable {
   tableId: string;
   tableNumber: string | null;
-  status: string | null;
+  status: FloorTableStatus | null;
+  currency: string | null;
   session: FloorViewSession | null;
 }
 
-export interface FloorViewResponse {
-  success: boolean;
-  data: FloorViewTable[];
-  error: string | null;
-}
-// src/modules/floor-view/types.ts
-
-export interface FloorViewSession {
-  sessionId: string;
-  customerName: string;
-  startedAt: string | null;
-  expectedEndTime: string | null;
-  appliedHourlyRate: number | null;
-  isPaused: boolean;
-  isOvertime: boolean;
-}
-
-export interface FloorViewTable {
-  tableId: string;
-  tableNumber: string | null;
-  status: string | null;
-  session: FloorViewSession | null;
-}
-
-export interface FloorViewResponse {
-  success: boolean;
-  data: FloorViewTable[];
-  error: string | null;
-}
+export type NotificationStatus =
+  | "queued"
+  | "pending"
+  | "sent"
+  | "failed"
+  | "read";
 
 export interface Notification {
   id: string;
-  category: string;
-  payload: string;
-  status: string;
+  branchId: string | null;
+  category: string | null;
+  payload: string | null;
+  status: NotificationStatus | null;
   createdAt: string;
   readAt: string | null;
 }
 
-export interface NotificationResponse {
-  success: boolean;
-  data: Notification[];
-  error: string | null;
+export interface NotificationReadResult {
+  id: string;
+  status: "read";
+  readAt: string;
 }
 
 export interface Stats {
@@ -68,4 +64,31 @@ export interface Stats {
   occupied: number;
   overtime: number;
   paused: number;
+}
+
+export function isUnreadNotification(notification: Notification): boolean {
+  return notification.status !== "read" && notification.readAt === null;
+}
+
+export function notificationMessage(notification: Notification): string {
+  if (notification.payload) {
+    try {
+      const payload: unknown = JSON.parse(notification.payload);
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        "message" in payload &&
+        typeof payload.message === "string" &&
+        payload.message.trim()
+      ) {
+        return payload.message;
+      }
+    } catch {
+      if (notification.payload.trim()) return notification.payload;
+    }
+  }
+
+  return notification.category === "overtime"
+    ? "A table has exceeded its expected end time."
+    : "A new notification is available.";
 }

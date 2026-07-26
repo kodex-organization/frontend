@@ -1,5 +1,235 @@
 "use client";
+
 import { useEffect, useState } from "react";
+
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
+
 import { sessionApi } from "./session-api";
 import type { Customer, TableOption } from "./types";
-export function StartSessionModal({ open, onClose, onStarted }: { open: boolean; onClose: () => void; onStarted: () => void }) { const [tables,setTables]=useState<TableOption[]>([]), [query,setQuery]=useState(""), [customers,setCustomers]=useState<Customer[]>([]), [tableId,setTable]=useState(""), [customerId,setCustomer]=useState<string|null>(null), [walkIn,setWalkIn]=useState(true), [error,setError]=useState(""), [busy,setBusy]=useState(false); useEffect(()=>{if(open) sessionApi.tables().then(setTables).catch(e=>setError(e.message));},[open]); useEffect(()=>{if(!walkIn && query.length>=2){const id=setTimeout(()=>sessionApi.customers(query).then(setCustomers).catch(e=>setError(e.message)),250);return()=>clearTimeout(id)}},[query,walkIn]); if(!open)return null; async function submit(){setBusy(true);setError("");try{await sessionApi.start({tableId,customerId:walkIn?null:customerId});onStarted();onClose()}catch(e){setError(e instanceof Error?e.message:"Could not start session")}finally{setBusy(false)}} return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"><div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Start session</h2><button onClick={onClose}>✕</button></div><label className="mt-5 block text-sm font-medium">Table<select className="mt-1 w-full rounded-lg border p-3" value={tableId} onChange={e=>setTable(e.target.value)}><option value="">Select an available table</option>{tables.map(t=><option key={t.id} value={t.id}>Table {t.tableNumber} — PKR {t.defaultHourlyRate}/hr</option>)}</select></label><label className="mt-4 flex gap-2 text-sm"><input type="checkbox" checked={walkIn} onChange={e=>{setWalkIn(e.target.checked);setCustomer(null)}}/> Walk-in customer</label>{!walkIn&&<div className="mt-4"><input className="w-full rounded-lg border p-3" placeholder="Search name or phone" value={query} onChange={e=>setQuery(e.target.value)}/><div className="mt-2 max-h-36 overflow-auto rounded-lg border">{customers.map(c=><button key={c.id} onClick={()=>setCustomer(c.id)} className={`block w-full p-3 text-left text-sm ${customerId===c.id?"bg-emerald-50":"hover:bg-slate-50"}`}><b>{c.fullName}</b><br/>{c.phone}</button>)}</div></div>}{error&&<p className="mt-3 text-sm text-red-600">{error}</p>}<button disabled={!tableId||(!walkIn&&!customerId)||busy} onClick={submit} className="mt-6 w-full rounded-lg bg-emerald-600 p-3 font-semibold text-white disabled:opacity-40">{busy?"Starting…":"Start timer"}</button></div></div> }
+
+interface StartSessionModalProps {
+  open: boolean;
+  onClose: () => void;
+  onStarted: () => void | Promise<void>;
+}
+
+function formatRate(table: TableOption) {
+  const amount = Number(table.defaultHourlyRate);
+  if (!Number.isFinite(amount)) return "Rate unavailable";
+  if (!table.currency) return `${amount.toFixed(2)}/hr`;
+
+  try {
+    return `${new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: table.currency,
+      maximumFractionDigits: 2,
+    }).format(amount)}/hr`;
+  } catch {
+    return `${table.currency} ${amount.toFixed(2)}/hr`;
+  }
+}
+
+export function StartSessionModal({
+  open,
+  onClose,
+  onStarted,
+}: StartSessionModalProps) {
+  const isOnline = useOnlineStatus();
+  const [tables, setTables] = useState<TableOption[]>([]);
+  const [query, setQuery] = useState("");
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [tableId, setTableId] = useState("");
+  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [walkIn, setWalkIn] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open || !isOnline) return;
+
+    let cancelled = false;
+    setError("");
+    void sessionApi
+      .tables()
+      .then((nextTables) => {
+        if (!cancelled) setTables(nextTables);
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Could not load available tables",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnline, open]);
+
+  useEffect(() => {
+    if (walkIn || query.trim().length < 2 || !isOnline) {
+      setCustomers([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      void sessionApi
+        .customers(query.trim())
+        .then((nextCustomers) => {
+          if (!cancelled) setCustomers(nextCustomers);
+        })
+        .catch((searchError: unknown) => {
+          if (!cancelled) {
+            setError(
+              searchError instanceof Error
+                ? searchError.message
+                : "Customer search failed",
+            );
+          }
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [isOnline, query, walkIn]);
+
+  if (!open) return null;
+
+  async function submit() {
+    if (!isOnline) {
+      setError("Starting a session requires an online connection.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      await sessionApi.start({
+        tableId,
+        customerId: walkIn ? null : customerId,
+      });
+      await onStarted();
+      onClose();
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Could not start session",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="start-session-title"
+    >
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h2 id="start-session-title" className="text-xl font-semibold">
+            Start session
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close start session dialog"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100"
+          >
+            ×
+          </button>
+        </div>
+
+        <label className="mt-5 block text-sm font-medium">
+          Table
+          <select
+            className="mt-1 w-full rounded-lg border p-3"
+            value={tableId}
+            onChange={(event) => setTableId(event.target.value)}
+            disabled={busy || !isOnline}
+          >
+            <option value="">Select an available table</option>
+            {tables.map((table) => (
+              <option key={table.id} value={table.id}>
+                Table {table.tableNumber} — {formatRate(table)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="mt-4 flex gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={walkIn}
+            onChange={(event) => {
+              setWalkIn(event.target.checked);
+              setCustomerId(null);
+            }}
+            disabled={busy}
+          />
+          Walk-in customer
+        </label>
+
+        {!walkIn && (
+          <div className="mt-4">
+            <input
+              className="w-full rounded-lg border p-3"
+              placeholder="Search name or phone"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              disabled={busy || !isOnline}
+            />
+            <div className="mt-2 max-h-36 overflow-auto rounded-lg border">
+              {customers.map((customer) => (
+                <button
+                  key={customer.id}
+                  type="button"
+                  onClick={() => setCustomerId(customer.id)}
+                  className={`block w-full p-3 text-left text-sm ${
+                    customerId === customer.id
+                      ? "bg-emerald-50"
+                      : "hover:bg-slate-50"
+                  }`}
+                >
+                  <strong>{customer.fullName}</strong>
+                  <br />
+                  {customer.phone}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!isOnline && (
+          <p className="mt-3 text-sm text-amber-700">
+            You are offline. Reconnect to start a session.
+          </p>
+        )}
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+
+        <button
+          type="button"
+          disabled={
+            !isOnline ||
+            !tableId ||
+            (!walkIn && !customerId) ||
+            busy
+          }
+          onClick={() => void submit()}
+          className="mt-6 w-full rounded-lg bg-emerald-600 p-3 font-semibold text-white disabled:opacity-40"
+        >
+          {busy ? "Starting…" : "Start timer"}
+        </button>
+      </div>
+    </div>
+  );
+}

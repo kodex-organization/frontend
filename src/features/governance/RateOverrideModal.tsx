@@ -3,28 +3,50 @@
 import { useState } from 'react';
 import { overrideRate } from './governance.api';
 import { ApiError } from '@/lib/api/client';
+import { useOnlineStatus } from '@/lib/connectivity/online-status';
 
 interface Props {
   sessionId: string;
   currentRate: number;
+  currency: string | null;
   onClose: () => void;
   onSuccess: () => void;
+}
+
+function formatRate(amount: number, currency: string | null) {
+  if (!currency) return amount.toFixed(2);
+
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
 }
 
 export default function RateOverrideModal({
   sessionId,
   currentRate,
+  currency,
   onClose,
   onSuccess,
 }: Props) {
+  const isOnline = useOnlineStatus();
   const [newRate, setNewRate] = useState<number>(currentRate);
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function handleSubmit() {
-    if (!reason.trim()) {
-      setError('Please provide a reason');
+    if (!isOnline) {
+      setError('Reconnect before applying a rate override');
+      return;
+    }
+    if (reason.trim().length < 5) {
+      setError('Reason must be at least 5 characters');
       return;
     }
     if (newRate <= 0) {
@@ -34,7 +56,12 @@ export default function RateOverrideModal({
     setLoading(true);
     setError('');
     try {
-      await overrideRate({ sessionId, newRate, reason });
+      await overrideRate({
+        sessionId,
+        newRate,
+        expectedRate: currentRate,
+        reason: reason.trim(),
+      });
       onSuccess();
       onClose();
     } catch (err) {
@@ -57,7 +84,7 @@ export default function RateOverrideModal({
           Override Session Rate
         </h2>
         <p className="text-sm text-gray-500 mb-4">
-          Current Rate: Rs. {currentRate}/hr
+          Current rate: {formatRate(currentRate, currency)}/hr
         </p>
 
         {/* Loading State */}
@@ -73,7 +100,7 @@ export default function RateOverrideModal({
         {/* New Rate Input */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            New Rate (Rs/hr)
+            New rate {currency ? `(${currency}/hr)` : "(per hour)"}
           </label>
           <input
             type="number"
@@ -81,6 +108,8 @@ export default function RateOverrideModal({
             value={newRate}
             onChange={(e) => setNewRate(Number(e.target.value))}
             min={1}
+            max={1000000}
+            step="0.01"
           />
         </div>
 
@@ -95,6 +124,7 @@ export default function RateOverrideModal({
             placeholder="Enter reason..."
             value={reason}
             onChange={(e) => setReason(e.target.value)}
+            maxLength={500}
           />
         </div>
 
@@ -108,7 +138,7 @@ export default function RateOverrideModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={loading || !isOnline}
             className="px-4 py-2 text-sm text-white bg-blue-500 rounded-md hover:bg-blue-600 disabled:opacity-50"
           >
             {loading ? 'Applying...' : 'Apply Override'}

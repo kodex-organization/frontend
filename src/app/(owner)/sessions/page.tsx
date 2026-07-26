@@ -6,6 +6,8 @@ import { SessionClock } from "@/features/sessions/session-clock";
 import { sessionApi } from "@/features/sessions/session-api";
 import { StartSessionModal } from "@/features/sessions/start-session-modal";
 import type { ActiveSession, TableOption } from "@/features/sessions/types";
+import { useAuth } from "@/lib/auth/auth-context";
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
 
 interface SwitchTableState {
   session: ActiveSession;
@@ -16,7 +18,25 @@ interface SwitchTableState {
   submitting: boolean;
 }
 
+function formatTableRate(table: TableOption) {
+  const amount = Number(table.defaultHourlyRate);
+  if (!Number.isFinite(amount)) return "Rate unavailable";
+  if (!table.currency) return `${amount.toFixed(2)}/hr`;
+
+  try {
+    return `${new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: table.currency,
+      maximumFractionDigits: 2,
+    }).format(amount)}/hr`;
+  } catch {
+    return `${table.currency} ${amount.toFixed(2)}/hr`;
+  }
+}
+
 export default function SessionsPage() {
+  const { isLoading: authLoading, isAuthenticated } = useAuth();
+  const isOnline = useOnlineStatus();
   const [items, setItems] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -24,6 +44,8 @@ export default function SessionsPage() {
   const [switchState, setSwitchState] = useState<SwitchTableState | null>(null);
 
   const load = useCallback(async () => {
+    if (authLoading || !isAuthenticated) return;
+
     setError("");
     try {
       const [active, paused] = await Promise.all([
@@ -36,13 +58,20 @@ export default function SessionsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!authLoading && isAuthenticated) {
+      void load();
+    }
+  }, [authLoading, isAuthenticated, load]);
 
   async function action(id: string, nextAction: "pause" | "resume" | "end") {
+    if (!isOnline) {
+      setError("Session changes require an online connection.");
+      return;
+    }
+
     try {
       await sessionApi.action(id, nextAction);
       await load();
@@ -52,6 +81,11 @@ export default function SessionsPage() {
   }
 
   async function openSwitchTable(session: ActiveSession) {
+    if (!isOnline) {
+      setError("Switching tables requires an online connection.");
+      return;
+    }
+
     setSwitchState({
       session,
       tables: [],
@@ -89,6 +123,17 @@ export default function SessionsPage() {
 
   async function submitSwitchTable() {
     if (!switchState?.selectedTableId) return;
+    if (!isOnline) {
+      setSwitchState((current) =>
+        current
+          ? {
+              ...current,
+              error: "Switching tables requires an online connection.",
+            }
+          : current,
+      );
+      return;
+    }
 
     setSwitchState((current) =>
       current ? { ...current, submitting: true, error: "" } : current,
@@ -134,7 +179,13 @@ export default function SessionsPage() {
         </div>
         <button
           onClick={() => setModal(true)}
-          className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white"
+          disabled={!isOnline}
+          title={
+            isOnline
+              ? "Start a session"
+              : "Reconnect to start a session"
+          }
+          className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           Start session
         </button>
@@ -148,6 +199,13 @@ export default function SessionsPage() {
           <button className="ml-3 underline" onClick={load}>
             Retry
           </button>
+        </div>
+      )}
+
+      {!isOnline && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          You are offline. Session controls are disabled until the connection
+          returns.
         </div>
       )}
 
@@ -191,14 +249,16 @@ export default function SessionsPage() {
               {session.status === "active" ? (
                 <button
                   onClick={() => action(session.id, "pause")}
-                  className="rounded-lg border px-3 py-2 text-sm"
+                  disabled={!isOnline}
+                  className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Pause
                 </button>
               ) : (
                 <button
                   onClick={() => action(session.id, "resume")}
-                  className="rounded-lg border px-3 py-2 text-sm"
+                  disabled={!isOnline}
+                  className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Resume
                 </button>
@@ -206,17 +266,19 @@ export default function SessionsPage() {
 
               <button
                 onClick={() => void openSwitchTable(session)}
-                className="rounded-lg border px-3 py-2 text-sm"
+                disabled={!isOnline}
+                className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Switch table
               </button>
 
               <button
                 onClick={() =>
-                  confirm("End this session and generate its invoice event?") &&
+                  confirm("End this session and generate its invoice?") &&
                   action(session.id, "end")
                 }
-                className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white"
+                disabled={!isOnline}
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 End session
               </button>
@@ -271,8 +333,7 @@ export default function SessionsPage() {
                     </option>
                     {switchState.tables.map((table) => (
                       <option key={table.id} value={table.id}>
-                        Table {table.tableNumber} — PKR {table.defaultHourlyRate}
-                        /hr
+                        Table {table.tableNumber} — {formatTableRate(table)}
                       </option>
                     ))}
                   </select>
@@ -304,6 +365,7 @@ export default function SessionsPage() {
                 disabled={
                   switchState.loading ||
                   switchState.submitting ||
+                  !isOnline ||
                   !switchState.selectedTableId
                 }
               >

@@ -17,15 +17,18 @@ export default function ProtectedRoute({
 }: ProtectedRouteProps) {
   const router = useRouter();
 
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isAuthenticated } = useAuth();
 
-   const hasPermission = !!user && user.roles.some((role) => allowedRoles.includes(role));
+  const hasPermission =
+    isAuthenticated &&
+    !!user &&
+    user.roles.some((role) => allowedRoles.includes(role));
 
   useEffect(() => {
     if (isLoading) return;
 
     // User is not logged in
-    if (!user) {
+    if (!isAuthenticated || !user) {
       router.replace("/login");
       return;
     }
@@ -35,7 +38,7 @@ export default function ProtectedRoute({
     if (!hasPermission) {
       router.replace(redirectPathForRoles(user.roles));
     }
-  }, [user, isLoading, hasPermission, router]);
+  }, [user, isLoading, isAuthenticated, hasPermission, router]);
 
   // Wait until auth state is loaded
 
@@ -45,7 +48,7 @@ export default function ProtectedRoute({
 
 
  // Prevent rendering while redirecting
-  if (!user || !hasPermission) {
+  if (!isAuthenticated || !user || !hasPermission) {
     return null;
   }
 

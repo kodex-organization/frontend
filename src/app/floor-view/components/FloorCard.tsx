@@ -7,18 +7,53 @@ interface FloorCardProps {
   table: FloorViewTable;
 }
 
+function formatDuration(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+function formatAmount(
+  amount: number | null,
+  currency: string | null,
+) {
+  if (amount == null) return "Unavailable";
+  if (!currency) {
+    return amount.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+}
+
+function billingStateLabel(value: string) {
+  return value
+    .split("_")
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function FloorCard({ table }: FloorCardProps) {
   const isOccupied = table.status === "occupied";
   const isOvertime = table.session?.isOvertime || false;
   const isPaused = table.session?.isPaused || false;
 
-  // Modern corporate palette with SVG icons replacing raw emojis
   let containerStyle =
     "bg-white border-slate-200 hover:border-emerald-500 shadow-sm";
   let badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200";
   let badgeText = "Available";
 
-  // Custom professional SVG configurations
   let statusIcon = (
     <svg
       className="w-5 h-5 text-emerald-500"
@@ -37,7 +72,7 @@ export function FloorCard({ table }: FloorCardProps) {
 
   if (isOvertime) {
     containerStyle =
-      "bg-white border-rose-200 ring-2 ring-rose-500/20 shadow-md animate-pulse";
+      "bg-white border-rose-200 ring-2 ring-rose-500/20 shadow-md";
     badgeStyle = "bg-rose-50 text-rose-700 border-rose-200";
     badgeText = "Overtime";
     statusIcon = (
@@ -95,11 +130,90 @@ export function FloorCard({ table }: FloorCardProps) {
         />
       </svg>
     );
+  } else if (table.status === "reserved") {
+    containerStyle =
+      "bg-white border-violet-200 hover:border-violet-400 shadow-sm";
+    badgeStyle = "bg-violet-50 text-violet-700 border-violet-200";
+    badgeText = "Reserved";
+    statusIcon = (
+      <svg
+        className="h-5 w-5 text-violet-500"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M6.75 3v2.25m10.5-2.25v2.25M3.75 9h16.5m-15 12h13.5a1.5 1.5 0 001.5-1.5V6.75a1.5 1.5 0 00-1.5-1.5H5.25a1.5 1.5 0 00-1.5 1.5V19.5a1.5 1.5 0 001.5 1.5Z"
+        />
+      </svg>
+    );
+  } else if (table.status === "maintenance") {
+    containerStyle =
+      "bg-white border-orange-200 hover:border-orange-400 shadow-sm";
+    badgeStyle = "bg-orange-50 text-orange-700 border-orange-200";
+    badgeText = "Maintenance";
+    statusIcon = (
+      <svg
+        className="h-5 w-5 text-orange-500"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="m14.25 6.087-.887-.887a2.25 2.25 0 00-3.182 0L3.75 11.63a2.25 2.25 0 000 3.182l5.438 5.438a2.25 2.25 0 003.182 0l6.43-6.431a2.25 2.25 0 000-3.182l-.887-.887m-3.663-3.663 3.663 3.663m-3.663-3.663 2.121-2.121a2.121 2.121 0 013 3L17.913 9.75"
+        />
+      </svg>
+    );
+  } else if (table.status === "inactive") {
+    containerStyle = "bg-slate-50 border-slate-300 shadow-sm";
+    badgeStyle = "bg-slate-100 text-slate-600 border-slate-300";
+    badgeText = "Inactive";
+    statusIcon = (
+      <svg
+        className="h-5 w-5 text-slate-500"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M18.364 18.364A9 9 0 105.636 5.636m12.728 12.728L5.636 5.636"
+        />
+      </svg>
+    );
+  } else if (table.status !== "available") {
+    containerStyle = "bg-white border-slate-300 shadow-sm";
+    badgeStyle = "bg-slate-100 text-slate-600 border-slate-300";
+    badgeText = "Unknown";
+    statusIcon = (
+      <svg
+        className="h-5 w-5 text-slate-500"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M9.879 9.879a3 3 0 114.242 4.242L12 16.243M12 19.5h.008v.008H12V19.5Zm0-15a9 9 0 110 18 9 9 0 010-18Z"
+        />
+      </svg>
+    );
   }
 
   return (
     <div
-      className={`group border rounded-xl p-5 transition-all duration-300 transform hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-between min-h-[210px] ${containerStyle}`}
+      id={`floor-table-${table.tableId}`}
+      className={`group border rounded-xl p-5 transition-colors hover:shadow-md flex flex-col justify-between min-h-[210px] ${containerStyle}`}
     >
       <div>
         {/* Card Header */}
@@ -159,6 +273,36 @@ export function FloorCard({ table }: FloorCardProps) {
                 </span>
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2.5">
+              <div>
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Elapsed
+                </span>
+                <span className="font-medium text-slate-700">
+                  {formatDuration(table.session.durationSeconds)}
+                </span>
+              </div>
+              <div className="text-center">
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Paused
+                </span>
+                <span className="font-medium text-slate-700">
+                  {formatDuration(
+                    table.session.pauseDurationSeconds,
+                  )}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Billing
+                </span>
+                <span className="font-medium text-slate-700">
+                  {billingStateLabel(
+                    table.session.billingState,
+                  )}
+                </span>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="text-xs text-slate-400 flex items-center justify-center gap-2 py-5 bg-slate-50/50 rounded-lg border border-dashed border-slate-200 mt-2">
@@ -192,16 +336,31 @@ export function FloorCard({ table }: FloorCardProps) {
               Rate:
             </span>
             <span className="text-xs font-bold text-slate-800">
-              Rs. {table.session.appliedHourlyRate || 0}
+              {formatAmount(
+                table.session.appliedHourlyRate,
+                table.currency,
+              )}
               <span className="text-[10px] text-slate-400 font-normal">
                 /hr
               </span>
             </span>
           </div>
 
+          <div className="text-right">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Current charge
+            </span>
+            <span className="text-xs font-bold text-slate-800">
+              {formatAmount(
+                table.session.estimatedCharge,
+                table.currency,
+              )}
+            </span>
+          </div>
+
           {isOvertime && (
             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded border border-rose-100">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
               Action Required
             </span>
           )}

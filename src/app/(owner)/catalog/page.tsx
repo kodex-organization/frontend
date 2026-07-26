@@ -14,6 +14,10 @@ import {
 } from "@/services/catalog.service";
 import { RatePlan } from "@/features/catalog/types/catalog.types";
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "The request failed";
+}
+
 export default function CatalogPage() {
 
   // ── table state ──────────────────────────────
@@ -48,8 +52,8 @@ export default function CatalogPage() {
       setError(null);
       const data = await getTables();
       setTables(data);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -109,8 +113,8 @@ export default function CatalogPage() {
         setTables((prev) => [...prev, newTable]);
       }
       handleCloseForm();
-    } catch (err: any) {
-      setFormError(err.message);
+    } catch (err: unknown) {
+      setFormError(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -121,8 +125,8 @@ export default function CatalogPage() {
     try {
       await deleteTable(id);
       setTables((prev) => prev.filter((t) => t.id !== id));
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(errorMessage(err));
     }
   }
 
@@ -136,8 +140,8 @@ export default function CatalogPage() {
       setRatesLoading(true);
       const data = await getRateHistory(table.id);
       setRates(data);
-    } catch (err: any) {
-      setRateError(err.message);
+    } catch (err: unknown) {
+      setRateError(errorMessage(err));
     } finally {
       setRatesLoading(false);
     }
@@ -151,20 +155,24 @@ export default function CatalogPage() {
 
   async function handleAddRate() {
     setRateError(null);
+    if (!rateTable) {
+      setRateError("Select a table before adding a rate");
+      return;
+    }
     if (!newRateValue || Number(newRateValue) <= 0) {
       setRateError("Enter a valid rate value");
       return;
     }
     try {
       setRateSaving(true);
-      const newRate = await createRatePlan(rateTable!.id, {
+      const newRate = await createRatePlan(rateTable.id, {
         rateType: newRateType,
         hourlyRate: Number(newRateValue),
       });
       setRates((prev) => [newRate, ...prev]);
       setNewRateValue("");
-    } catch (err: any) {
-      setRateError(err.message);
+    } catch (err: unknown) {
+      setRateError(errorMessage(err));
     } finally {
       setRateSaving(false);
     }

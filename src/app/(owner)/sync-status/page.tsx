@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -24,6 +24,7 @@ import {
   markItemAsFailed,
   markItemsAsSynced,
   removePendingQueueItem,
+  seedReviewSyncItems,
   type InvoiceOfflinePayload,
   type PendingSyncItem,
   type SessionOfflinePayload,
@@ -33,10 +34,12 @@ import {
   pullSyncChanges,
   pushSyncChanges,
   sendHeartbeat,
+  type HeartbeatResponse,
 } from "@/services/sync.service";
-
-const syncDeviceId = process.env.NEXT_PUBLIC_SYNC_DEVICE_ID;
-const syncBranchId = process.env.NEXT_PUBLIC_SYNC_BRANCH_ID;
+import { AUTHENTICATED_HEARTBEAT_EVENT } from "@/components/sync/authenticated-heartbeat";
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { useAuth } from "@/lib/auth/auth-context";
+import { tokenStorage } from "@/lib/auth/session";
 
 type ActiveAction = "push" | "pull" | "connection" | "remove" | null;
 
@@ -88,15 +91,30 @@ function getErrorMessage(error: unknown, fallback: string) {
 function itemDescription(item: PendingSyncItem) {
   if (item.entity === "session") {
     const payload = item.payload as SessionOfflinePayload;
-    return `${payload.status} session${payload.appliedHourlyRate ? ` · PKR ${payload.appliedHourlyRate}/hr` : ""}`;
+    return `${payload.status} session${payload.appliedHourlyRate ? ` · rate ${payload.appliedHourlyRate}/hr` : ""}`;
   }
 
   const payload = item.payload as InvoiceOfflinePayload;
-  return `${payload.invoiceNumber ? `Invoice ${payload.invoiceNumber}` : "Unnumbered invoice"}${payload.total ? ` · PKR ${payload.total}` : ""}`;
+  return `${payload.invoiceNumber ? `Invoice ${payload.invoiceNumber}` : "Unnumbered invoice"}${payload.total ? ` · total ${payload.total}` : ""}`;
 }
 
 export default function SyncStatusPage() {
-  const [isOnline, setIsOnline] = useState(true);
+  const {
+    user,
+    isAuthenticated,
+    isLoading: authLoading,
+  } = useAuth();
+  const isOnline = useOnlineStatus();
+  const accessContext = tokenStorage.getAccessContext();
+  const syncDeviceId = isAuthenticated
+    ? accessContext?.deviceId
+    : null;
+  const syncBranchId = isAuthenticated
+    ? user?.branchId
+    : null;
+  const isReviewAccount =
+    process.env.NODE_ENV === "development" &&
+    user?.email?.toLowerCase() === "reviewer@cuecloud.local";
   const [pendingItems, setPendingItems] = useState<PendingSyncItem[]>([]);
   const [pulledChanges, setPulledChanges] = useState(0);
   const [serverTime, setServerTime] = useState<string | null>(null);
@@ -106,12 +124,13 @@ export default function SyncStatusPage() {
   const [notice, setNotice] = useState("");
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
 
-  const loadQueue = async () => {
+  const loadQueue = useCallback(async () => {
     const items = await getPendingSyncItems();
     setPendingItems(items.sort((a, b) => b.originTimestamp.localeCompare(a.originTimestamp)));
-  };
+  }, []);
 
-  const checkConnection = async (showProgress = false) => {
+  const checkConnection = useCallback(async (showProgress = false) => {
+    if (authLoading) return;
     if (showProgress) setActiveAction("connection");
     setError("");
 
@@ -119,8 +138,14 @@ export default function SyncStatusPage() {
       const time = await getServerTime();
       setServerTime(time.serverTime);
 
-      if (!syncDeviceId || !syncBranchId) {
-        throw new Error("Device or branch configuration is missing.");
+      if (
+        !isAuthenticated ||
+        !syncDeviceId ||
+        !syncBranchId
+      ) {
+        throw new Error(
+          "Sign in again to establish the device and branch sync context.",
+        );
       }
 
       const heartbeat = await sendHeartbeat(syncDeviceId, syncBranchId);
@@ -130,7 +155,12 @@ export default function SyncStatusPage() {
     } finally {
       if (showProgress) setActiveAction(null);
     }
-  };
+  }, [
+    authLoading,
+    isAuthenticated,
+    syncBranchId,
+    syncDeviceId,
+  ]);
 
   const handlePush = async () => {
     setActiveAction("push");
@@ -161,12 +191,14 @@ export default function SyncStatusPage() {
 
       const acceptedKeys = new Set(
         response.acceptedChanges
-          .map((change) =>
-            typeof change === "object" && change && "idempotencyKey" in change
-              ? String(change.idempotencyKey)
-              : "",
-          )
+          .map((change) => change.idempotencyKey)
           .filter(Boolean),
+      );
+      const rejectedByKey = new Map(
+        response.rejectedChanges.map((change) => [
+          change.idempotencyKey,
+          change,
+        ]),
       );
       const acceptedIds = items
         .filter((item) => acceptedKeys.has(item.idempotencyKey))
@@ -177,7 +209,12 @@ export default function SyncStatusPage() {
 
       for (const item of items.filter((entry) => !acceptedKeys.has(entry.idempotencyKey))) {
         if (typeof item.id === "number") {
-          await markItemAsFailed(item.id, "The server kept a newer version of this record.");
+          const rejection = rejectedByKey.get(item.idempotencyKey);
+          await markItemAsFailed(
+            item.id,
+            rejection?.error ??
+              "The server rejected this local change.",
+          );
         }
       }
 
@@ -231,28 +268,98 @@ export default function SyncStatusPage() {
   };
 
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      void checkConnection();
-    };
-    const handleOffline = () => setIsOnline(false);
-
-    setIsOnline(navigator.onLine);
     void loadQueue();
-    if (navigator.onLine) void checkConnection();
+  }, [loadQueue]);
 
-    const heartbeatInterval = window.setInterval(() => {
-      if (navigator.onLine) void checkConnection();
-    }, 60000);
+  useEffect(() => {
+    if (
+      !isReviewAccount ||
+      !user ||
+      !syncDeviceId ||
+      !syncBranchId
+    ) {
+      return;
+    }
 
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
+    let cancelled = false;
+    void seedReviewSyncItems({
+      branchId: syncBranchId,
+      userId: user.id,
+      deviceId: syncDeviceId,
+    })
+      .then((seeded) => {
+        if (!cancelled && seeded) return loadQueue();
+      })
+      .catch((seedError: unknown) => {
+        if (!cancelled) {
+          setError(
+            getErrorMessage(
+              seedError,
+              "Review sync examples could not be prepared.",
+            ),
+          );
+        }
+      });
+
     return () => {
-      window.clearInterval(heartbeatInterval);
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      cancelled = true;
     };
-  }, []);
+  }, [
+    isReviewAccount,
+    loadQueue,
+    syncBranchId,
+    syncDeviceId,
+    user,
+  ]);
+
+  useEffect(() => {
+    if (!isOnline) return;
+
+    let cancelled = false;
+    void getServerTime()
+      .then((time) => {
+        if (!cancelled) setServerTime(time.serverTime);
+      })
+      .catch((connectionError: unknown) => {
+        if (!cancelled) {
+          setError(
+            getErrorMessage(
+              connectionError,
+              "The sync service could not be reached.",
+            ),
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnline]);
+
+  useEffect(() => {
+    const onHeartbeat = (event: Event) => {
+      const heartbeat = (
+        event as CustomEvent<HeartbeatResponse>
+      ).detail;
+      if (
+        heartbeat.deviceId === syncDeviceId &&
+        heartbeat.branchId === syncBranchId
+      ) {
+        setLastHeartbeat(heartbeat.lastHeartbeatAt);
+      }
+    };
+
+    window.addEventListener(
+      AUTHENTICATED_HEARTBEAT_EVENT,
+      onHeartbeat,
+    );
+    return () => {
+      window.removeEventListener(
+        AUTHENTICATED_HEARTBEAT_EVENT,
+        onHeartbeat,
+      );
+    };
+  }, [syncBranchId, syncDeviceId]);
 
   const isBusy = activeAction !== null;
   const failedCount = pendingItems.filter((item) => item.status === "failed").length;
@@ -339,7 +446,11 @@ export default function SyncStatusPage() {
         <div className="flex flex-col justify-between gap-3 p-5 sm:flex-row sm:items-center sm:px-6">
           <div>
             <h2 className="font-bold text-slate-950">Pending module changes</h2>
-            <p className="mt-1 text-sm text-slate-500">Only real locally queued records appear here—no sample data is generated.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {isReviewAccount
+                ? "Two development-only examples are included for reviewer walkthroughs."
+                : "Only real locally queued records appear here—no sample data is generated."}
+            </p>
           </div>
           <div className="flex gap-2">
             <Link href="/sessions" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Sessions</Link>

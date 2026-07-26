@@ -1,5 +1,7 @@
 // JWT session handling — auth module (Developer 1)
 
+import { z } from "zod";
+
 /**
  * Full-credential-login roles per SRS §3.1 (Owner, Manager, Accountant);
  * Cashier uses PIN login. Team lead confirmed 2026-07-02: follow the SRS,
@@ -16,6 +18,16 @@ export interface SessionUser {
   roles: UserRole[];
 }
 
+const sessionUserSchema = z.object({
+  id: z.string().uuid(),
+  fullName: z.string().nullable(),
+  email: z.string().nullable(),
+  branchId: z.string().uuid(),
+  roles: z.array(
+    z.enum(["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"]),
+  ),
+});
+
 export interface SessionTokens {
   accessToken: string;
   // Still present in the login/refresh API response for backward
@@ -29,8 +41,20 @@ export interface StoredTokens {
   accessToken: string;
 }
 
+const accessContextSchema = z.object({
+  userId: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  branchId: z.string().uuid(),
+  deviceId: z.string().uuid(),
+  roles: z.array(z.string()),
+});
+
+export type AccessContext = z.infer<typeof accessContextSchema>;
+
 const ACCESS_TOKEN_KEY = "cuecloud_access_token";
 const USER_KEY = "cuecloud_user";
+
+export const AUTH_SESSION_CLEARED_EVENT = "cuecloud:session-cleared";
 
 /**
  * Fix (hardening): the refresh token is long-lived (default 7d) and used
@@ -56,15 +80,23 @@ export const tokenStorage = {
   },
   clear(): void {
     if (typeof window === "undefined") return;
+    const hadSession =
+      window.localStorage.getItem(ACCESS_TOKEN_KEY) !== null ||
+      window.localStorage.getItem(USER_KEY) !== null;
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
+    if (hadSession) {
+      window.dispatchEvent(new Event(AUTH_SESSION_CLEARED_EVENT));
+    }
   },
   getUser(): SessionUser | null {
     if (typeof window === "undefined") return null;
     const raw = window.localStorage.getItem(USER_KEY);
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as SessionUser;
+      const parsed: unknown = JSON.parse(raw);
+      const result = sessionUserSchema.safeParse(parsed);
+      return result.success ? result.data : null;
     } catch {
       return null;
     }
@@ -72,6 +104,25 @@ export const tokenStorage = {
   setUser(user: SessionUser): void {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  },
+  getAccessContext(): AccessContext | null {
+    const accessToken = this.get()?.accessToken;
+    if (!accessToken || typeof window === "undefined") return null;
+
+    const encodedPayload = accessToken.split(".")[1];
+    if (!encodedPayload) return null;
+
+    try {
+      const normalized = encodedPayload
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(Math.ceil(encodedPayload.length / 4) * 4, "=");
+      const payload: unknown = JSON.parse(window.atob(normalized));
+      const result = accessContextSchema.safeParse(payload);
+      return result.success ? result.data : null;
+    } catch {
+      return null;
+    }
   },
 };
 

@@ -1,25 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
 
 export function OfflineBanner() {
-  const [isOnline, setIsOnline] = useState(true);
-
-  useEffect(() => {
-    const updateOnlineStatus = () => {
-      setIsOnline(navigator.onLine);
-    };
-
-    updateOnlineStatus();
-
-    window.addEventListener("online", updateOnlineStatus);
-    window.addEventListener("offline", updateOnlineStatus);
-
-    return () => {
-      window.removeEventListener("online", updateOnlineStatus);
-      window.removeEventListener("offline", updateOnlineStatus);
-    };
-  }, []);
+  const isOnline = useOnlineStatus();
 
   if (isOnline) {
     return null;

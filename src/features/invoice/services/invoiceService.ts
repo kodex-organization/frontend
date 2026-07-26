@@ -1,64 +1,73 @@
-import api from "@/lib/axios";
-import { Invoice } from "../types/invoice";
+import { apiFetch } from "@/lib/api/client";
+import type {
+  BillingTransaction,
+  Invoice,
+  InvoiceListFilters,
+  Paginated,
+  PaymentResult,
+  RecordPaymentInput,
+} from "../types/invoice";
+
+function toQuery(
+  values: object,
+) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(values)) {
+    if (
+      (typeof value === "string" ||
+        typeof value === "number") &&
+      value !== ""
+    ) {
+      params.set(key, String(value));
+    }
+  }
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
 
 export const invoiceService = {
-
-
-  // Get all invoices
-  async getInvoices(): Promise<Invoice[]> {
-
-    const res = await api.get("/invoices");
-
-    return res.data.data as Invoice[];
-
-  },
-
-
-
-  // Get single invoice
-  async getInvoice(id: string): Promise<Invoice> {
-
-    const res = await api.get(`/invoices/${id}`);
-
-    return res.data.data as Invoice;
-
-  },
-
-
-
-  // Void invoice
-  async voidInvoice(invoiceId: string) {
-
-    const res = await api.patch(
-      `/invoices/${invoiceId}/void`
+  getInvoices(filters: InvoiceListFilters = {}) {
+    return apiFetch<Paginated<Invoice>>(
+      `/billing/invoices${toQuery(filters)}`,
     );
-
-    return res.data;
-
   },
 
+  getInvoice(id: string) {
+    return apiFetch<Invoice>(
+      `/billing/invoices/${encodeURIComponent(id)}`,
+    );
+  },
 
-
-  // Add payment
-  async addPayment(
-    invoiceId: string,
-    amount: number,
-    paymentMethod: "CASH" = "CASH"
+  getTransactions(
+    filters: Pick<
+      InvoiceListFilters,
+      "page" | "pageSize" | "from" | "to"
+    > = {},
   ) {
-
-    const res = await api.post(
-      "/payments",
-      {
-        invoiceId,
-        amount,
-        paymentMethod,
-      }
+    return apiFetch<Paginated<BillingTransaction>>(
+      `/billing/transactions${toQuery(filters)}`,
     );
-
-
-    return res.data;
-
   },
 
+  voidInvoice(invoiceId: string, reason: string) {
+    return apiFetch<Invoice>(
+      `/billing/invoices/${encodeURIComponent(invoiceId)}/void`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ reason }),
+      },
+    );
+  },
 
+  addPayment(invoiceId: string, input: RecordPaymentInput) {
+    return apiFetch<PaymentResult>(
+      `/billing/invoices/${encodeURIComponent(invoiceId)}/payments`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    );
+  },
 };

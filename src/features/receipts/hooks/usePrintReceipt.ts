@@ -7,11 +7,11 @@ export const usePrintReceipt = () => {
   const [printing, setPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const print = async (id: string) => {
+  const print = async (id: string, reprintReason?: string) => {
     try {
       setPrinting(true);
       setError(null);
-      const result = await receiptService.printReceipt(id);
+      const result = await receiptService.printReceipt(id, reprintReason);
       return result;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Print failed");
