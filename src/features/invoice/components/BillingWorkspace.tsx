@@ -14,13 +14,13 @@ const statusOptions: Array<{
   value: "" | InvoiceStatus;
   label: string;
 }> = [
-  { value: "", label: "All statuses" },
-  { value: "open", label: "Open" },
-  { value: "partially_paid", label: "Partially paid" },
-  { value: "paid", label: "Paid" },
-  { value: "void", label: "Voided" },
-  { value: "draft", label: "Draft" },
-];
+    { value: "", label: "All statuses" },
+    { value: "open", label: "Open" },
+    { value: "partially_paid", label: "Partially paid" },
+    { value: "paid", label: "Paid" },
+    { value: "void", label: "Voided" },
+    { value: "draft", label: "Draft" },
+  ];
 
 function dateRange(date: string) {
   if (!date) return {};
@@ -66,25 +66,27 @@ export default function BillingWorkspace({
     ...range,
   });
 
-  const summary = useMemo(
-    () => ({
-      outstanding: invoices.reduce(
-        (total, invoice) => total + invoice.remainingAmount,
+  const summary = useMemo(() => {
+    const safeInvoices = invoices || [];
+
+    return {
+      outstanding: safeInvoices.reduce(
+        (total, invoice) => total + (invoice?.remainingAmount || 0),
         0,
       ),
-      collected: invoices.reduce(
-        (total, invoice) => total + invoice.paidAmount,
+      collected: safeInvoices.reduce(
+        (total, invoice) => total + (invoice?.paidAmount || 0),
         0,
       ),
-      voided: invoices.filter(
-        (invoice) => invoice.status === "void",
+      voided: safeInvoices.filter(
+        (invoice) => invoice?.status === "void",
       ).length,
-    }),
-    [invoices],
-  );
+    };
+  }, [invoices]);
+
   const displayCurrency =
-    invoices.find((invoice) => invoice.branch.currency)?.branch
-      .currency ?? null;
+    (invoices || []).find((invoice) => invoice?.branch?.currency)?.branch
+      ?.currency ?? "PKR";
 
   function applySearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -108,16 +110,14 @@ export default function BillingWorkspace({
           </p>
         </div>
         <span
-          className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
-            isOnline
+          className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${isOnline
               ? "bg-emerald-50 text-emerald-700"
               : "bg-amber-50 text-amber-800"
-          }`}
+            }`}
         >
           <span
-            className={`h-2 w-2 rounded-full ${
-              isOnline ? "bg-emerald-500" : "bg-amber-500"
-            }`}
+            className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"
+              }`}
           />
           {isOnline ? "Connected" : "Offline · actions disabled"}
         </span>
@@ -129,8 +129,8 @@ export default function BillingWorkspace({
       >
         <SummaryCard
           label="Invoices shown"
-          value={String(invoices.length)}
-          detail={`${pagination.total} match current filters`}
+          value={String(invoices?.length ?? 0)}
+          detail={`${pagination?.total ?? 0} match current filters`}
         />
         <SummaryCard
           label="Outstanding shown"
@@ -231,11 +231,13 @@ export default function BillingWorkspace({
               invoices={invoices}
               detailBasePath={detailBasePath}
             />
-            <PaginationControls
-              page={pagination.page}
-              totalPages={pagination.totalPages}
-              onPage={setInvoicePage}
-            />
+            {pagination && (
+              <PaginationControls
+                page={pagination.page}
+                totalPages={pagination.totalPages}
+                onPage={setInvoicePage}
+              />
+            )}
           </>
         )}
       </section>

@@ -15,7 +15,7 @@ export default function InvoiceTable({
   invoices: Invoice[];
   detailBasePath?: string;
 }) {
-  if (invoices.length === 0) {
+  if (!invoices || invoices.length === 0) {
     return (
       <div className="border-t border-slate-200 px-6 py-12 text-center">
         <h3 className="text-sm font-semibold text-slate-900">
