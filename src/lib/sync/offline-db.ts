@@ -59,6 +59,15 @@ export type PendingSyncItem = {
   lastError: string | null;
 };
 
+export type NotificationQueueItem = {
+  id?: number;
+  notificationId: string;
+  action: "read";
+  status: "pending" | "synced" | "failed";
+  retryCount: number;
+  lastError: string | null;
+};
+
 export type SyncMeta = {
   key: string;
   value: string;
@@ -66,6 +75,7 @@ export type SyncMeta = {
 
 class CueCloudOfflineDB extends Dexie {
   pendingQueue!: Table<PendingSyncItem, number>;
+  notificationQueue!: Table<NotificationQueueItem, number>;
   syncMeta!: Table<SyncMeta, string>;
 
   constructor() {
@@ -75,6 +85,12 @@ class CueCloudOfflineDB extends Dexie {
       pendingQueue:
         "++id, entity, entityId, action, status, idempotencyKey, originTimestamp",
       syncMeta: "key",
+    });
+    this.version(3).stores({
+      pendingQueue:
+        "++id, entity, entityId, action, status, idempotencyKey, originTimestamp",
+      syncMeta: "key",
+      notificationQueue: "++id, notificationId, action, status",
     });
   }
 }
