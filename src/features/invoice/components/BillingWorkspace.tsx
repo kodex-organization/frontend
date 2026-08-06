@@ -265,10 +265,8 @@ export default function BillingWorkspace({
               transactions={transactionState.transactions}
             />
             <PaginationControls
-              page={transactionState.pagination.page}
-              totalPages={
-                transactionState.pagination.totalPages
-              }
+              page={transactionState?.pagination?.page ?? 1}
+  totalPages={transactionState?.pagination?.totalPages ?? 1}
               onPage={setTransactionPage}
             />
           </>
