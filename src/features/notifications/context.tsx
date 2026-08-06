@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { ApiError } from "@/lib/api/client";
-import { getNotifications, markNotificationRead, registerFcmToken, revokeFcmToken } from "./api";
+import { getNotificationPreferences, getNotifications, markAllNotificationsRead as apiMarkAllNotificationsRead, markNotificationRead, registerFcmToken, revokeFcmToken, saveNotificationPreferences, type NotificationPreference } from "./api";
 import { flushNotificationQueue, queueNotificationRead } from "./offline";
 import { isUnread, type Notification } from "./types";
 import { listenForForegroundMessages, requestPushPermission, revokePushToken, type PushSetupResult } from "./firebase";
@@ -17,6 +17,14 @@ interface NotificationContextValue {
   refresh: () => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
+  markAllLoading: boolean;
+  markAllError: string | null;
+  preferences: NotificationPreference;
+  preferencesLoading: boolean;
+  preferencesSaving: boolean;
+  preferencesError: string | null;
+  loadPreferences: () => Promise<void>;
+  savePreferences: (preferences: NotificationPreference) => Promise<boolean>;
   pushToken: string | null;
   pushState: any;
   pushMessage: string | null;
@@ -26,11 +34,25 @@ interface NotificationContextValue {
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
+const defaultPreferences: NotificationPreference = {
+  inAppEnabled: true,
+  pushEnabled: false,
+  smsEnabled: false,
+  dailyDigestEnabled: false,
+  enabledCategories: [],
+};
+
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const online = useOnlineStatus();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [markAllLoading, setMarkAllLoading] = useState(false);
+  const [markAllError, setMarkAllError] = useState<string | null>(null);
+  const [preferences, setPreferences] = useState<NotificationPreference>(defaultPreferences);
+  const [preferencesLoading, setPreferencesLoading] = useState(true);
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
+  const [preferencesError, setPreferencesError] = useState<string | null>(null);
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [pushState, setPushState] = useState<NotificationContextValue["pushState"]>("idle");
   const [pushMessage, setPushMessage] = useState<string | null>(null);
@@ -47,6 +69,30 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [online]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  const loadPreferences = useCallback(async () => {
+    if (!online) { setPreferencesLoading(false); return; }
+    setPreferencesLoading(true);
+    try {
+      setPreferences(await getNotificationPreferences());
+      setPreferencesError(null);
+    } catch (err) {
+      setPreferencesError(err instanceof ApiError ? err.message : "Could not load notification preferences.");
+    } finally { setPreferencesLoading(false); }
+  }, [online]);
+
+  useEffect(() => { void loadPreferences(); }, [loadPreferences]);
+
+  const savePreferences = useCallback(async (nextPreferences: NotificationPreference) => {
+    setPreferencesSaving(true);
+    try {
+      setPreferences(await saveNotificationPreferences(nextPreferences));
+      setPreferencesError(null);
+      return true;
+    } catch (err) {
+      setPreferencesError(err instanceof ApiError ? err.message : "Could not save notification preferences.");
+      return false;
+    } finally { setPreferencesSaving(false); }
+  }, []);
   useEffect(() => {
     if (!online) return;
     void flushNotificationQueue().then(() => refresh());
@@ -130,13 +176,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [online]);
 
   const markAllAsRead = useCallback(async () => {
-    const ids = notifications.filter(isUnread).map((item) => item.id);
-    setNotifications((current) => current.map((item) => isUnread(item)
-      ? { ...item, status: "read", readAt: new Date().toISOString() } : item));
-    await Promise.all(ids.map((id) => markAsRead(id)));
-  }, [markAsRead, notifications]);
+    if (markAllLoading) return;
+    setMarkAllLoading(true);
+    setMarkAllError(null);
+    try {
+      await apiMarkAllNotificationsRead();
+      await refresh();
+    } catch (err) {
+      setMarkAllError(err instanceof ApiError ? err.message : "Could not mark notifications as read.");
+    } finally { setMarkAllLoading(false); }
+  }, [markAllLoading, refresh]);
 
-  const value = useMemo(() => ({ notifications, unreadCount: notifications.filter(isUnread).length, loading, error, refresh, markAsRead, markAllAsRead, pushToken, pushState, pushMessage, enablePush, disablePush }), [notifications, loading, error, refresh, markAsRead, markAllAsRead, pushToken, pushState, pushMessage, enablePush, disablePush]);
+  const value = useMemo(() => ({ notifications, unreadCount: notifications.filter(isUnread).length, loading, error, refresh, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush }), [notifications, loading, error, refresh, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush]);
   return <NotificationContext.Provider value={value}><ToastContainer position="top-right" autoClose={4000} />{children}</NotificationContext.Provider>;
 }
 

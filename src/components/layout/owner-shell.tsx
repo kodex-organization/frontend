@@ -7,7 +7,7 @@ import { useNotifications } from "@/features/notifications/context";
 
 export function OwnerShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, markAllLoading, markAllError } = useNotifications();
 
   const canManageGovernance = user?.roles.some(
     (role) => role === "OWNER" || role === "MANAGER",
@@ -110,7 +110,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
 
       <main className="flex-1">
         <header className="flex h-16 items-center justify-end border-b border-slate-200 bg-white px-6">
-          <NotificationBell notifications={notifications} unreadCount={unreadCount} onMarkAsRead={markAsRead} onMarkAllAsRead={markAllAsRead} />
+          <NotificationBell notifications={notifications} unreadCount={unreadCount} onMarkAsRead={markAsRead} onMarkAllAsRead={markAllAsRead} markAllLoading={markAllLoading} markAllError={markAllError} />
         </header>
         <div className="p-8">{children}</div>
       </main>

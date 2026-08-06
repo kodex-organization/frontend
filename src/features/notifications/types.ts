@@ -1,5 +1,6 @@
 export type NotificationStatus = "queued" | "pending" | "sent" | "failed" | "read";
 export type NotificationChannel = "in_app" | "push" | "sms" | string;
+export type { DeliveryLog, NotificationCategory, NotificationPreference } from "./api";
 
 export interface Notification {
   id: string;
@@ -45,4 +46,3 @@ export function notificationHref(notification: Notification) {
   if (typeof payload.reportId === "string") return `/reports?reportId=${encodeURIComponent(payload.reportId)}`;
   return null;
 }
-
