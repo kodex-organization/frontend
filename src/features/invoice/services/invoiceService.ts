@@ -8,15 +8,12 @@ import type {
   RecordPaymentInput,
 } from "../types/invoice";
 
-function toQuery(
-  values: object,
-) {
+function toQuery(values: object) {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(values)) {
     if (
-      (typeof value === "string" ||
-        typeof value === "number") &&
+      (typeof value === "string" || typeof value === "number") &&
       value !== ""
     ) {
       params.set(key, String(value));
@@ -55,7 +52,10 @@ export const invoiceService = {
     return apiFetch<Invoice>(
       `/billing/invoices/${encodeURIComponent(invoiceId)}/void`,
       {
-        method: "PATCH",
+        method: "POST", // <-- Changed from "PATCH" to "POST"
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ reason }),
       },
     );
@@ -66,6 +66,9 @@ export const invoiceService = {
       `/billing/invoices/${encodeURIComponent(invoiceId)}/payments`,
       {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(input),
       },
     );
