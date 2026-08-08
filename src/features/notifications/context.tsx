@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { ApiError } from "@/lib/api/client";
 import { getNotificationPreferences, getNotifications, markAllNotificationsRead as apiMarkAllNotificationsRead, markNotificationRead, registerFcmToken, revokeFcmToken, saveNotificationPreferences, type NotificationPreference } from "./api";
-import { flushNotificationQueue, queueNotificationRead } from "./offline";
+import { flushNotificationQueue, queueNotificationPreferences, queueNotificationRead, queueNotificationsReadAll } from "./offline";
 import { isUnread, type Notification } from "./types";
 import { listenForForegroundMessages, requestPushPermission, revokePushToken, type PushSetupResult } from "./firebase";
 import { toast, ToastContainer } from "react-toastify";
@@ -84,6 +84,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const savePreferences = useCallback(async (nextPreferences: NotificationPreference) => {
     setPreferencesSaving(true);
+    if (!online) {
+      setPreferences(nextPreferences);
+      await queueNotificationPreferences(nextPreferences);
+      setPreferencesError(null);
+      setPreferencesSaving(false);
+      return true;
+    }
     try {
       setPreferences(await saveNotificationPreferences(nextPreferences));
       setPreferencesError(null);
@@ -179,13 +186,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     if (markAllLoading) return;
     setMarkAllLoading(true);
     setMarkAllError(null);
+    if (!online) {
+      setNotifications((current) => current.map((item) => ({ ...item, status: "read", readAt: item.readAt ?? new Date().toISOString() })));
+      await queueNotificationsReadAll();
+      setMarkAllLoading(false);
+      return;
+    }
     try {
       await apiMarkAllNotificationsRead();
       await refresh();
     } catch (err) {
       setMarkAllError(err instanceof ApiError ? err.message : "Could not mark notifications as read.");
     } finally { setMarkAllLoading(false); }
-  }, [markAllLoading, refresh]);
+  }, [markAllLoading, online, refresh]);
 
   const value = useMemo(() => ({ notifications, unreadCount: notifications.filter(isUnread).length, loading, error, refresh, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush }), [notifications, loading, error, refresh, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush]);
   return <NotificationContext.Provider value={value}><ToastContainer position="top-right" autoClose={4000} />{children}</NotificationContext.Provider>;

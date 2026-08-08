@@ -1,4 +1,5 @@
 import Dexie, { type Table } from "dexie";
+import type { NotificationPreference } from "@/features/notifications/api";
 
 export type SessionStatus = "active" | "paused" | "ended";
 
@@ -61,8 +62,9 @@ export type PendingSyncItem = {
 
 export type NotificationQueueItem = {
   id?: number;
-  notificationId: string;
-  action: "read";
+  notificationId?: string;
+  action: "read" | "read-all" | "preferences";
+  preferences?: NotificationPreference;
   status: "pending" | "synced" | "failed";
   retryCount: number;
   lastError: string | null;
