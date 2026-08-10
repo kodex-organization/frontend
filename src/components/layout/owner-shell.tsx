@@ -3,9 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
+import { NotificationBell } from "@/features/notifications/components/NotificationBell";
+import { useNotifications } from "@/features/notifications/context";
 
 export function OwnerShell({ children }: { children: React.ReactNode }) {
   const { user, logout, updateUserLanguage } = useAuth();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, markAllLoading, markAllError } = useNotifications();
 
   const canManageGovernance = user?.roles.some(
     (role) => role === "OWNER" || role === "MANAGER",
@@ -127,6 +130,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     ...(hasBackOfficeAccess
       ? [{ href: "/settings/staff", label: stringsForLanguage.settings }]
       : []),
+    { href: "/notifications", label: "Notifications" },
   ];
     
   return (
@@ -190,7 +194,12 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 p-8">{children}</main>
+      <main className="flex-1 p-8">
+        <header className="mb-6 flex h-16 items-center justify-end border-b border-slate-200 bg-white px-6">
+          <NotificationBell notifications={notifications} unreadCount={unreadCount} onMarkAsRead={markAsRead} onMarkAllAsRead={markAllAsRead} markAllLoading={markAllLoading} markAllError={markAllError} />
+        </header>
+        {children}
+      </main>
     </div>
   );
 }
