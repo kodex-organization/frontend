@@ -5,6 +5,7 @@ import { CanteenApi, Category, MenuItem } from "../canteen.api";
 import { Loader2, Plus, Trash, Edit, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "react-toastify";
 
 export function MenuManager() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -48,7 +49,7 @@ export function MenuManager() {
         <AlertCircle className="h-10 w-10" />
         <p className="text-lg font-semibold">Error Loading Data</p>
         <p>{error}</p>
-        <Button onClick={loadData} variant="outline">Try Again</Button>
+        <Button onClick={loadData} variant="secondary" className="w-auto">Try Again</Button>
       </div>
     );
   }
@@ -57,7 +58,7 @@ export function MenuManager() {
     return (
       <div className="flex h-64 items-center justify-center flex-col gap-4">
         <p className="text-muted-foreground">No menu items or categories found.</p>
-        <Button onClick={() => alert("Open create category modal")}><Plus className="w-4 h-4 mr-2" /> Add Category</Button>
+        <Button onClick={() => alert("Open create category modal")} className="w-auto"><Plus className="w-4 h-4 mr-2" /> Add Category</Button>
       </div>
     );
   }
@@ -67,8 +68,8 @@ export function MenuManager() {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold tracking-tight">Canteen Menu</h2>
         <div className="flex gap-2">
-           <Button variant="outline"><Plus className="w-4 h-4 mr-2" /> Category</Button>
-           <Button><Plus className="w-4 h-4 mr-2" /> Menu Item</Button>
+           <Button variant="secondary" className="w-auto"><Plus className="w-4 h-4 mr-2" /> Category</Button>
+           <Button className="w-auto"><Plus className="w-4 h-4 mr-2" /> Menu Item</Button>
         </div>
       </div>
 
@@ -88,19 +89,43 @@ export function MenuManager() {
         <div className="md:col-span-3 space-y-4">
           <h3 className="text-lg font-semibold">Items</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {items.map((item) => (
-              <div key={item.id} className="border rounded-lg p-4 flex flex-col justify-between">
-                <div>
-                  <h4 className="font-semibold text-lg">{item.name}</h4>
-                  <p className="text-sm text-muted-foreground">{item.description}</p>
-                  <p className="font-medium mt-2">${Number(item.currentPrice).toFixed(2)}</p>
+            {items.map((item) => {
+              const handleToggleStock = async () => {
+                try {
+                  await CanteenApi.toggleItemAvailability(item.id, !item.isAvailable);
+                  toast.success(`${item.name} is now ${!item.isAvailable ? "available" : "out of stock"}`);
+                  loadData();
+                } catch (err: any) {
+                  toast.error(err.message || "Failed to update item availability");
+                }
+              };
+
+              return (
+                <div key={item.id} className="border rounded-lg p-4 flex flex-col justify-between bg-card">
+                  <div>
+                    <div className="flex justify-between items-start gap-2">
+                      <h4 className="font-semibold text-lg">{item.name}</h4>
+                      <button
+                        onClick={handleToggleStock}
+                        className={`text-xs px-2 py-1 rounded-full font-medium transition-colors ${
+                          item.isAvailable
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                            : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
+                        }`}
+                      >
+                        {item.isAvailable ? "In Stock" : "Out of Stock"}
+                      </button>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                    <p className="font-medium mt-2 text-primary">${Number(item.currentPrice).toFixed(2)}</p>
+                  </div>
+                  <div className="flex justify-end gap-2 mt-4">
+                    <Button variant="ghost" className="w-9 h-9 p-0" onClick={() => alert("Open edit modal")}><Edit className="w-4 h-4" /></Button>
+                    <Button variant="ghost" className="text-destructive w-9 h-9 p-0" onClick={() => alert("Confirm delete")}><Trash className="w-4 h-4" /></Button>
+                  </div>
                 </div>
-                <div className="flex justify-end gap-2 mt-4">
-                  <Button variant="ghost" size="icon"><Edit className="w-4 h-4" /></Button>
-                  <Button variant="ghost" size="icon" className="text-destructive"><Trash className="w-4 h-4" /></Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

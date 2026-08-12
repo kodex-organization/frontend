@@ -30,10 +30,10 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
       setError(null);
       const [cats, itms] = await Promise.all([
         CanteenApi.getCategories(),
-        CanteenApi.getMenuItems(),
+        CanteenApi.getMenuItems(undefined, true),
       ]);
       setCategories(cats.filter(c => c.isActive));
-      setItems(itms.filter(i => i.isActive));
+      setItems(itms.filter(i => i.isActive && i.isAvailable));
     } catch (err: any) {
       setError(err.message || "Failed to load POS data");
     } finally {
@@ -133,7 +133,7 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
         <AlertCircle className="h-10 w-10" />
         <p className="text-lg font-semibold">Error Loading Data</p>
         <p>{error}</p>
-        <Button onClick={loadData} variant="outline">Try Again</Button>
+        <Button onClick={loadData} variant="secondary" className="w-auto">Try Again</Button>
       </div>
     );
   }
@@ -147,7 +147,8 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
       <div className="flex-1 flex flex-col gap-4">
         <div className="flex gap-2 overflow-x-auto pb-2">
           <Button 
-            variant={activeCategory === null ? "default" : "outline"} 
+            variant={activeCategory === null ? "primary" : "secondary"} 
+            className="w-auto"
             onClick={() => setActiveCategory(null)}
           >
             All
@@ -155,7 +156,8 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
           {categories.map((c) => (
             <Button 
               key={c.id} 
-              variant={activeCategory === c.id ? "default" : "outline"}
+              variant={activeCategory === c.id ? "primary" : "secondary"}
+              className="w-auto"
               onClick={() => setActiveCategory(c.id)}
             >
               {c.name}
@@ -173,7 +175,7 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
               <div 
                 key={item.id} 
                 onClick={() => addToCart(item)}
-                className="border rounded-xl p-4 cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors flex flex-col justify-between aspect-square"
+                className="border rounded-xl p-4 cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors flex flex-col justify-between aspect-square bg-card"
               >
                 <div>
                   <h4 className="font-semibold line-clamp-2">{item.name}</h4>
@@ -220,24 +222,22 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1">
                     <Button 
-                      variant="outline" 
-                      size="icon" 
-                      className="h-7 w-7" 
+                      variant="secondary" 
+                      className="h-7 w-7 p-0" 
                       onClick={() => c.cartQuantity > 1 ? updateCartItem(c.id, { cartQuantity: c.cartQuantity - 1 }) : removeFromCart(c.id)}
                     >
                       <Minus className="w-3 h-3" />
                     </Button>
                     <span className="w-8 text-center font-medium">{c.cartQuantity}</span>
                     <Button 
-                      variant="outline" 
-                      size="icon" 
-                      className="h-7 w-7"
+                      variant="secondary" 
+                      className="h-7 w-7 p-0"
                       onClick={() => updateCartItem(c.id, { cartQuantity: c.cartQuantity + 1 })}
                     >
                       <Plus className="w-3 h-3" />
                     </Button>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(c.id)}>
+                  <Button variant="ghost" className="h-7 w-7 p-0 text-destructive animate-fade-in" onClick={() => removeFromCart(c.id)}>
                     <Trash className="w-3 h-3" />
                   </Button>
                 </div>
@@ -263,7 +263,6 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
           </div>
           <Button 
             className="w-full h-12 text-lg" 
-            size="lg" 
             disabled={cart.length === 0 || isSubmitting}
             onClick={handleCheckout}
           >
