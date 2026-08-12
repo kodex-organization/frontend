@@ -59,7 +59,7 @@ export function SessionClock({ session }: { session: ActiveSession }) {
       <p className="mt-1 text-sm text-slate-500">
         Running charge{" "}
         <span className="font-semibold text-emerald-700">
-          {formatCharge(charge, session.branch.currency)}
+          {formatCharge(charge, session?.branch?.currency || "PKR")}
         </span>
       </p>
     </div>

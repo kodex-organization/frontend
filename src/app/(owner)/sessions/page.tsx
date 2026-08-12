@@ -35,11 +35,70 @@ function formatTableRate(table: TableOption) {
 }
 
 export default function SessionsPage() {
-  const { isLoading: authLoading, isAuthenticated } = useAuth();
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const isOnline = useOnlineStatus();
   const [items, setItems] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const strings = {
+    en: {
+      title: "Active sessions",
+      description: "Live billable time and table controls",
+      startSession: "Start session",
+      reconnectStartSession: "Reconnect to start a session",
+      loadingSessions: "Loading sessions…",
+      failedLoad: "Failed to load sessions.",
+      offlineMessage: "You are offline. Session controls are disabled until the connection returns.",
+      noActiveSessions: "No active sessions. The floor is quiet.",
+      walkInCustomer: "Walk-in customer",
+      pause: "Pause",
+      resume: "Resume",
+      switchTable: "Switch table",
+      endSession: "End session",
+      confirmEndSession: "End this session and generate its invoice?",
+      switchTableHeading: "Switch table",
+      switchTableDescription: "Move session from table",
+      loadingAvailableTables: "Loading available tables…",
+      availableTables: "Available tables",
+      selectAvailableTable: "Select an available table",
+      noAvailableTables: "No available tables",
+      noTablesToSwitchTo: "No available tables to switch to.",
+      cancel: "Cancel",
+      retry: "Retry",
+      switching: "Switching…",
+      actionFailed: "Could not update the session. Try again.",
+    },
+    ur: {
+      title: "فعال سیشنز",
+      description: "زندہ بل ایبل وقت اور ٹیبل کنٹرولز",
+      startSession: "سیشن شروع کریں",
+      reconnectStartSession: "سیشن شروع کرنے کے لیے دوبارہ کنیکٹ کریں",
+      loadingSessions: "سیشنز لوڈ ہو رہے ہیں…",
+      failedLoad: "سیشنز لوڈ کرنے میں ناکامی۔",
+      offlineMessage: "آپ آف لائن ہیں۔ کنکشن واپس آنے تک سیشن کنٹرولز غیر فعال ہیں۔",
+      noActiveSessions: "کوئی فعال سیشن نہیں۔ فلور خاموش ہے۔",
+      walkInCustomer: "آنے والا کسٹمر",
+      pause: "وقفہ",
+      resume: "دوبارہ شروع کریں",
+      switchTable: "ٹیبل تبدیل کریں",
+      endSession: "سیشن ختم کریں",
+      confirmEndSession: "کیا آپ واقعی یہ سیشن ختم کر کے انوائس بنانا چاہتے ہیں؟",
+      switchTableHeading: "ٹیبل تبدیل کریں",
+      switchTableDescription: "سیشن کو میز سے منتقل کریں",
+      loadingAvailableTables: "دستیاب ٹیبلز لوڈ ہو رہے ہیں…",
+      availableTables: "دستیاب ٹیبلز",
+      selectAvailableTable: "دستیاب ٹیبل منتخب کریں",
+      noAvailableTables: "کوئی دستیاب ٹیبل نہیں",
+      noTablesToSwitchTo: "بدلنے کے لیے کوئی دستیاب ٹیبل نہیں۔",
+      cancel: "منسوخ کریں",
+      retry: "دوبارہ کوشش کریں",
+      switching: "منتقل کیا جا رہا ہے…",
+      actionFailed: "سیشن کو اپ ڈیٹ نہیں کیا جا سکا۔ دوبارہ کوشش کریں۔",
+    },
+  };
+
+  const t = strings[user?.language ?? "en"];
   const [modal, setModal] = useState(false);
   const [switchState, setSwitchState] = useState<SwitchTableState | null>(null);
 
@@ -54,11 +113,11 @@ export default function SessionsPage() {
       ]);
       setItems([...active, ...paused]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+      setError(e instanceof Error ? e.message : t.failedLoad);
     } finally {
       setLoading(false);
     }
-  }, [authLoading, isAuthenticated]);
+  }, [authLoading, isAuthenticated, t.failedLoad]);
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -68,7 +127,7 @@ export default function SessionsPage() {
 
   async function action(id: string, nextAction: "pause" | "resume" | "end") {
     if (!isOnline) {
-      setError("Session changes require an online connection.");
+      setError(t.offlineMessage);
       return;
     }
 
@@ -76,13 +135,13 @@ export default function SessionsPage() {
       await sessionApi.action(id, nextAction);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Action failed");
+      setError(e instanceof Error ? e.message : t.actionFailed);
     }
   }
 
   async function openSwitchTable(session: ActiveSession) {
     if (!isOnline) {
-      setError("Switching tables requires an online connection.");
+      setError(t.offlineMessage);
       return;
     }
 
@@ -115,7 +174,7 @@ export default function SessionsPage() {
         tables: [],
         loading: false,
         selectedTableId: "",
-        error: e instanceof Error ? e.message : "Failed to load tables",
+        error: e instanceof Error ? e.message : t.failedLoad,
         submitting: false,
       });
     }
@@ -128,7 +187,7 @@ export default function SessionsPage() {
         current
           ? {
               ...current,
-              error: "Switching tables requires an online connection.",
+              error: t.offlineMessage,
             }
           : current,
       );
@@ -157,7 +216,7 @@ export default function SessionsPage() {
               ? e.message
               : e instanceof Error
                 ? e.message
-                : "Could not switch table",
+                : t.failedLoad,
         };
       });
     }
@@ -172,9 +231,9 @@ export default function SessionsPage() {
     <div>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Active sessions</h1>
+          <h1 className="text-2xl font-semibold">{t.title}</h1>
           <p className="mt-1 text-slate-500">
-            Live billable time and table controls
+            {t.description}
           </p>
         </div>
         <button
@@ -182,36 +241,35 @@ export default function SessionsPage() {
           disabled={!isOnline}
           title={
             isOnline
-              ? "Start a session"
-              : "Reconnect to start a session"
+              ? t.startSession
+              : t.reconnectStartSession
           }
           className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Start session
+          {t.startSession}
         </button>
       </div>
 
-      {loading && <p className="mt-10">Loading sessions…</p>}
+      {loading && <p className="mt-10">{t.loadingSessions}</p>}
 
       {error && (
         <div className="mt-6 rounded-lg bg-red-50 p-4 text-red-700">
           {error}
           <button className="ml-3 underline" onClick={load}>
-            Retry
+            {t.retry}
           </button>
         </div>
       )}
 
       {!isOnline && (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          You are offline. Session controls are disabled until the connection
-          returns.
+          {t.offlineMessage}
         </div>
       )}
 
       {!loading && !error && !items.length && (
         <div className="mt-10 rounded-xl border border-dashed p-10 text-center text-slate-500">
-          No active sessions. The floor is quiet.
+          {t.noActiveSessions}
         </div>
       )}
 
@@ -227,7 +285,7 @@ export default function SessionsPage() {
                   Table {session.table.tableNumber}
                 </p>
                 <h2 className="mt-1 font-semibold">
-                  {session.customer?.fullName ?? "Walk-in customer"}
+                  {session.customer?.fullName ?? t.walkInCustomer}
                 </h2>
               </div>
               <span
@@ -252,7 +310,7 @@ export default function SessionsPage() {
                   disabled={!isOnline}
                   className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Pause
+                  {t.pause}
                 </button>
               ) : (
                 <button
@@ -260,7 +318,7 @@ export default function SessionsPage() {
                   disabled={!isOnline}
                   className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Resume
+                  {t.resume}
                 </button>
               )}
 
@@ -269,18 +327,18 @@ export default function SessionsPage() {
                 disabled={!isOnline}
                 className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Switch table
+                {t.switchTable}
               </button>
 
               <button
                 onClick={() =>
-                  confirm("End this session and generate its invoice?") &&
+                  confirm(t.confirmEndSession) &&
                   action(session.id, "end")
                 }
                 disabled={!isOnline}
                 className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
-                End session
+                {t.endSession}
               </button>
             </div>
           </article>
@@ -298,9 +356,9 @@ export default function SessionsPage() {
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold">Switch table</h2>
+                <h2 className="text-xl font-semibold">{t.switchTableHeading}</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Move session from table {switchState.session.table.tableNumber}
+                  {t.switchTableDescription} {switchState.session.table.tableNumber}
                 </p>
               </div>
               <button onClick={() => setSwitchState(null)}>✕</button>
@@ -328,8 +386,8 @@ export default function SessionsPage() {
                   >
                     <option value="">
                       {noSwitchTables
-                        ? "No available tables"
-                        : "Select an available table"}
+                        ? t.noAvailableTables
+                        : t.selectAvailableTable}
                     </option>
                     {switchState.tables.map((table) => (
                       <option key={table.id} value={table.id}>
@@ -341,7 +399,7 @@ export default function SessionsPage() {
 
                 {noSwitchTables && (
                   <p className="mt-3 text-sm text-slate-600">
-                    No available tables to switch to.
+                    {t.noTablesToSwitchTo}
                   </p>
                 )}
               </>
@@ -357,7 +415,7 @@ export default function SessionsPage() {
                 className="rounded-lg border px-4 py-2 text-sm"
                 disabled={switchState.submitting}
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 onClick={() => void submitSwitchTable()}
@@ -369,7 +427,7 @@ export default function SessionsPage() {
                   !switchState.selectedTableId
                 }
               >
-                {switchState.submitting ? "Switching…" : "Switch table"}
+                {switchState.submitting ? t.switching : t.switchTable}
               </button>
             </div>
           </div>

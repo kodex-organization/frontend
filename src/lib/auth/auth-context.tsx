@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { loginWithPassword, loginWithPin, logoutRequest } from "@/features/auth";
+import { loginWithPassword, loginWithPin, logoutRequest, updateLanguage } from "@/features/auth";
 import {
   AUTH_SESSION_CLEARED_EVENT,
   redirectPathForRoles,
@@ -18,6 +18,7 @@ interface AuthContextValue {
   loginPassword: (email: string, password: string) => Promise<void>;
   loginPin: (pin: string, identifier: { email?: string; userId?: string }) => Promise<void>;
   logout: () => Promise<void>;
+  updateUserLanguage: (language: "en" | "ur") => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -72,6 +73,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const updateUserLanguage = useCallback(
+    async (language: "en" | "ur") => {
+      if (!user) return;
+      const updated = await updateLanguage(language);
+      const nextUser = { ...user, language: updated.language };
+      tokenStorage.setUser(nextUser);
+      setUser(nextUser);
+    },
+    [user],
+  );
+
   const loginPassword = useCallback(
     async (email: string, password: string) => {
       const { user: sessionUser, ...tokens } = await loginWithPassword(email, password);
@@ -110,8 +122,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loginPassword,
       loginPin,
       logout,
+      updateUserLanguage,
     }),
-    [user, isLoading, loginPassword, loginPin, logout],
+    [user, isLoading, loginPassword, loginPin, logout, updateUserLanguage],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
