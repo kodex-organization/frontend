@@ -14,11 +14,12 @@ function tenderLabel(value: BillingTransaction["tenderType"]) {
 }
 
 export default function TransactionTable({
-  transactions,
+  transactions = [],
 }: {
-  transactions: BillingTransaction[];
+  transactions?: BillingTransaction[];
 }) {
-  if (transactions.length === 0) {
+  // Safe guard: check if transactions is missing OR empty
+  if (!transactions || transactions.length === 0) {
     return (
       <p className="border-t border-slate-200 px-6 py-10 text-center text-sm text-slate-500">
         No payment transactions match this date range.

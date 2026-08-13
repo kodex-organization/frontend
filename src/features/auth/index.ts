@@ -67,6 +67,16 @@ export async function logoutRequest() {
   });
 }
 
+export async function updateLanguage(language: "en" | "ur") {
+  return apiFetch<{ id: string; language: "en" | "ur" }>(
+    "/auth/language",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ language }),
+    },
+  );
+}
+
 export interface CreateStaffInput {
   fullName: string;
   email: string;
