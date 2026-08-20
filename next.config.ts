@@ -28,14 +28,15 @@ const nextConfig: NextConfig = {
     if (!apiUrl) return [];
 
     const configuredPath = new URL(apiUrl).pathname.replace(/\/$/, "");
-    const proxyPath = configuredPath && configuredPath !== "/"
-      ? configuredPath
-      : "/api/backend";
+    const proxyPath =
+      configuredPath && configuredPath !== "/"
+        ? configuredPath
+        : "/api/backend";
 
     return [
       {
         source: `${proxyPath}/:path*`,
-        destination: `${apiUrl}/api/v1/:path*`,
+        destination: `${apiUrl}/:path*`, // <-- FIXED: Removed duplicate /api/v1
       },
     ];
   },
