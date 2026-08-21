@@ -16,6 +16,7 @@ export interface SessionUser {
   email: string | null;
   branchId: string;
   roles: UserRole[];
+  language: "en" | "ur";
 }
 
 const sessionUserSchema = z.object({
@@ -26,6 +27,7 @@ const sessionUserSchema = z.object({
   roles: z.array(
     z.enum(["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"]),
   ),
+  language: z.enum(["en", "ur"]).optional().default("en"),
 });
 
 export interface SessionTokens {

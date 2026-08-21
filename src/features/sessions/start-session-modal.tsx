@@ -70,7 +70,9 @@ export function StartSessionModal({
   }, [isOnline, open]);
 
   useEffect(() => {
-    if (walkIn || query.trim().length < 2 || !isOnline) {
+    const trimmedQuery = query.trim();
+
+    if (walkIn || trimmedQuery.length === 0 || !isOnline) {
       setCustomers([]);
       return;
     }
@@ -78,7 +80,7 @@ export function StartSessionModal({
     let cancelled = false;
     const timeoutId = window.setTimeout(() => {
       void sessionApi
-        .customers(query.trim())
+        .customers(trimmedQuery)
         .then((nextCustomers) => {
           if (!cancelled) setCustomers(nextCustomers);
         })
