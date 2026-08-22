@@ -14,6 +14,7 @@ export interface MenuItem {
   barcode?: string;
   currentPrice: number;
   isActive: boolean;
+  isAvailable: boolean;
 }
 
 export interface OrderItem {
@@ -24,6 +25,12 @@ export interface OrderItem {
   lineTotal: number;
   notes?: string;
   menuItem?: MenuItem;
+  kotPrinted: boolean;
+  discountAmount: number;
+  discountPercent: number;
+  voided?: boolean;
+  voidedReason?: string;
+  voidedById?: string;
 }
 
 export interface Order {
@@ -50,11 +57,15 @@ export const CanteenApi = {
     apiFetch<null>(`/canteen-pos/categories/${id}`, { method: "DELETE" }),
 
   // Menu Items
-  getMenuItems: (categoryId?: string) =>
-    apiFetch<MenuItem[]>(
-      categoryId ? `/canteen-pos/items?categoryId=${categoryId}` : "/canteen-pos/items"
-    ),
-  createMenuItem: (data: Omit<MenuItem, "id">) =>
+  getMenuItems: (categoryId?: string, onlyAvailable?: boolean) => {
+    let url = "/canteen-pos/items";
+    const params = new URLSearchParams();
+    if (categoryId) params.append("categoryId", categoryId);
+    if (onlyAvailable !== undefined) params.append("onlyAvailable", String(onlyAvailable));
+    if (params.toString()) url += `?${params.toString()}`;
+    return apiFetch<MenuItem[]>(url);
+  },
+  createMenuItem: (data: Omit<MenuItem, "id" | "isAvailable">) =>
     apiFetch<MenuItem>("/canteen-pos/items", {
       method: "POST",
       body: JSON.stringify(data),
@@ -77,5 +88,30 @@ export const CanteenApi = {
     apiFetch<Order>("/canteen-pos/standalone-orders", {
       method: "POST",
       body: JSON.stringify({ items }),
+    }),
+
+  // New POS Operations
+  toggleItemAvailability: (id: string, isAvailable: boolean) =>
+    apiFetch<MenuItem>(`/canteen-pos/items/${id}/availability`, {
+      method: "PATCH",
+      body: JSON.stringify({ isAvailable }),
+    }),
+  updateOrderItem: (id: string, quantity: number, notes?: string, reason?: string) =>
+    apiFetch<OrderItem>(`/canteen-pos/orders/items/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ quantity, notes, reason }),
+    }),
+  voidOrderItem: (id: string, managerPin: string, reason: string) =>
+    apiFetch<OrderItem>(`/canteen-pos/orders/items/${id}/void`, {
+      method: "POST",
+      body: JSON.stringify({ managerPin, reason }),
+    }),
+  applyItemDiscount: (
+    id: string,
+    data: { discountPercent?: number; discountAmount?: number; managerPin: string }
+  ) =>
+    apiFetch<OrderItem>(`/canteen-pos/orders/items/${id}/discount`, {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
 };

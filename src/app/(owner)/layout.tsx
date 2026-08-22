@@ -4,6 +4,7 @@ import { OwnerShell } from "@/components/layout/owner-shell";
 import ProtectedRoute from "@/components/security/ProtectedRoute";
 import type { UserRole } from "@/lib/auth/session";
 import { usePathname } from "next/navigation";
+import { NotificationProvider } from "@/features/notifications/context";
 
 export default function OwnerLayout({
   children,
@@ -39,7 +40,7 @@ const allowedRoles: UserRole[] =
 
   return (
     <ProtectedRoute allowedRoles={allowedRoles}>
-      <OwnerShell>{children}</OwnerShell>
+      <NotificationProvider><OwnerShell>{children}</OwnerShell></NotificationProvider>
     </ProtectedRoute>
   );
 }
