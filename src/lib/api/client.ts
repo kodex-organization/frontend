@@ -186,3 +186,35 @@ export async function apiFetch<T>(
 
   return body.data;
 }
+
+export async function apiFetchBlob(
+  path: string,
+  options?: RequestInit,
+): Promise<Blob> {
+  const tokens = tokenStorage.get();
+  const accessContext = tokenStorage.getAccessContext();
+  let response: Response;
+
+  try {
+    response = await fetch(`${getApiBaseUrl()}${path}`, {
+      ...options,
+      credentials: "include",
+      headers: {
+        ...(accessContext?.deviceId ? { "X-Device-Id": accessContext.deviceId } : {}),
+        ...(accessContext?.branchId ? { "X-Branch-Id": accessContext.branchId } : {}),
+        ...(tokens?.accessToken ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
+        ...options?.headers,
+      },
+    });
+  } catch {
+    throw new ApiError("Could not reach the server. Check your connection and try again.", 0, "NETWORK_ERROR");
+  }
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as Envelope<unknown> | null;
+    const message = typeof body?.error === "string" ? body.error : body?.error?.message;
+    throw new ApiError(message ?? `Request failed (${response.status})`, response.status);
+  }
+
+  return response.blob();
+}

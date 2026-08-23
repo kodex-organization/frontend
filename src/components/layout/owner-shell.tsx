@@ -24,6 +24,10 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     (role) =>
       role === "OWNER" || role === "MANAGER" || role === "ACCOUNTANT",
   );
+  const hasReportsAccess = user?.roles.some(
+  (role) =>
+    role === "OWNER" || role === "MANAGER" || role === "ACCOUNTANT" || role === "CASHIER",
+  );
   const canOperateFloor = user?.roles.some(
     (role) =>
       role === "OWNER" || role === "MANAGER" || role === "CASHIER",
@@ -116,12 +120,14 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       ? [{ href: "/branches", label: stringsForLanguage.branches }]
       : []),
     { href: "/billing", label: stringsForLanguage.billing },
+        ...(hasBackOfficeAccess
+      ? [{ href: "/udhaar", label: stringsForLanguage.udhaar }]
+      : []),
+    ...(hasReportsAccess
+      ? [{ href: "/reports", label: stringsForLanguage.reports }]
+      : []),
     ...(hasBackOfficeAccess
-      ? [
-          { href: "/udhaar", label: stringsForLanguage.udhaar },
-          { href: "/reports", label: stringsForLanguage.reports },
-          { href: "/audit", label: stringsForLanguage.audit },
-        ]
+      ? [{ href: "/audit", label: stringsForLanguage.audit }]
       : []),
     ...(hasCustomerAccess
       ? [{ href: "/customers", label: stringsForLanguage.customers }]
