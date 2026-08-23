@@ -1,9 +1,7 @@
-const Dashboard = () => {
-  return (
-    <div>
-      <h3>Dashboard</h3>
-    </div>
-  );
-};
+"use client";
 
-export default Dashboard;
+import { DashboardView } from "@/features/dashboard";
+
+export default function DashboardPage() {
+  return <DashboardView />;
+}
