@@ -15,6 +15,9 @@ export default function OwnerLayout({
   const isBillingRoute =
     pathname === "/billing" || pathname.startsWith("/billing/");
   const isSyncStatusRoute = pathname === "/sync-status";
+  const isOwnerOnlyRoute =
+    pathname === "/settings/support-access" ||
+    pathname === "/settings/data-export";
   const isCustomersRoute =
     pathname === "/customers" || pathname.startsWith("/customers/");
   const isOperationalRoute =
@@ -23,7 +26,9 @@ export default function OwnerLayout({
     pathname === "/sessions" ||
     pathname.startsWith("/sessions/");
   const allowedRoles: UserRole[] =
-    isBillingRoute || isSyncStatusRoute
+    isOwnerOnlyRoute
+      ? ["OWNER"]
+      : isBillingRoute || isSyncStatusRoute
       ? ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"]
       : isCustomersRoute
       ? ["OWNER", "MANAGER", "CASHIER"]

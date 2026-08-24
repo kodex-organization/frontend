@@ -57,6 +57,26 @@ const ACCESS_TOKEN_KEY = "cuecloud_access_token";
 const USER_KEY = "cuecloud_user";
 
 export const AUTH_SESSION_CLEARED_EVENT = "cuecloud:session-cleared";
+export const AUTH_SESSION_REPLACED_EVENT = "cuecloud:session-replaced";
+
+function decodeAccessContext(accessToken: string): AccessContext | null {
+  if (typeof window === "undefined") return null;
+
+  const encodedPayload = accessToken.split(".")[1];
+  if (!encodedPayload) return null;
+
+  try {
+    const normalized = encodedPayload
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(encodedPayload.length / 4) * 4, "=");
+    const payload: unknown = JSON.parse(window.atob(normalized));
+    const result = accessContextSchema.safeParse(payload);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Fix (hardening): the refresh token is long-lived (default 7d) and used
@@ -79,6 +99,47 @@ export const tokenStorage = {
   set(tokens: { accessToken: string }): void {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+  },
+  replaceSession(
+    tokens: { accessToken: string },
+    user: SessionUser,
+  ): void {
+    if (typeof window === "undefined") return;
+
+    const accessContext = decodeAccessContext(tokens.accessToken);
+    if (
+      !accessContext ||
+      accessContext.userId !== user.id ||
+      accessContext.branchId !== user.branchId
+    ) {
+      throw new Error("The server returned an inconsistent authenticated session");
+    }
+
+    const previousAccessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
+    const previousUser = window.localStorage.getItem(USER_KEY);
+
+    try {
+      // localStorage writes are synchronous, so observers cannot read a
+      // half-updated session between these writes on this page.
+      window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+      window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+    } catch (error) {
+      if (previousUser === null) window.localStorage.removeItem(USER_KEY);
+      else window.localStorage.setItem(USER_KEY, previousUser);
+
+      if (previousAccessToken === null) {
+        window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+      } else {
+        window.localStorage.setItem(ACCESS_TOKEN_KEY, previousAccessToken);
+      }
+      throw error;
+    }
+
+    window.dispatchEvent(
+      new CustomEvent(AUTH_SESSION_REPLACED_EVENT, {
+        detail: { branchId: user.branchId },
+      }),
+    );
   },
   clear(): void {
     if (typeof window === "undefined") return;
@@ -109,22 +170,7 @@ export const tokenStorage = {
   },
   getAccessContext(): AccessContext | null {
     const accessToken = this.get()?.accessToken;
-    if (!accessToken || typeof window === "undefined") return null;
-
-    const encodedPayload = accessToken.split(".")[1];
-    if (!encodedPayload) return null;
-
-    try {
-      const normalized = encodedPayload
-        .replace(/-/g, "+")
-        .replace(/_/g, "/")
-        .padEnd(Math.ceil(encodedPayload.length / 4) * 4, "=");
-      const payload: unknown = JSON.parse(window.atob(normalized));
-      const result = accessContextSchema.safeParse(payload);
-      return result.success ? result.data : null;
-    } catch {
-      return null;
-    }
+    return accessToken ? decodeAccessContext(accessToken) : null;
   },
 };
 

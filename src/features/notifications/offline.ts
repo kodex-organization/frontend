@@ -1,8 +1,9 @@
-import { offlineDB } from "@/lib/sync/offline-db";
+import { getActiveOfflineBranchId, offlineDB } from "@/lib/sync/offline-db";
 import { markAllNotificationsRead, markNotificationRead, saveNotificationPreferences, type NotificationPreference } from "./api";
 
 export type NotificationMutation = {
   id?: number;
+  branchId: string;
   notificationId?: string;
   action: "read" | "read-all" | "preferences";
   preferences?: NotificationPreference;
@@ -11,8 +12,20 @@ export type NotificationMutation = {
   lastError: string | null;
 };
 
-export async function queueNotificationRead(notificationId: string) {
+function requireActiveBranchId() {
+  const branchId = getActiveOfflineBranchId();
+  if (!branchId) {
+    throw new Error("An active authenticated branch is required");
+  }
+  return branchId;
+}
+
+export async function queueNotificationRead(
+  notificationId: string,
+  branchId = requireActiveBranchId(),
+) {
   return offlineDB.notificationQueue.add({
+    branchId,
     notificationId,
     action: "read",
     status: "pending",
@@ -23,6 +36,7 @@ export async function queueNotificationRead(notificationId: string) {
 
 export async function queueNotificationsReadAll() {
   return offlineDB.notificationQueue.add({
+    branchId: requireActiveBranchId(),
     action: "read-all",
     status: "pending",
     retryCount: 0,
@@ -32,6 +46,7 @@ export async function queueNotificationsReadAll() {
 
 export async function queueNotificationPreferences(preferences: NotificationPreference) {
   return offlineDB.notificationQueue.add({
+    branchId: requireActiveBranchId(),
     action: "preferences",
     preferences,
     status: "pending",
@@ -41,12 +56,19 @@ export async function queueNotificationPreferences(preferences: NotificationPref
 }
 
 export async function flushNotificationQueue() {
+  const branchId = getActiveOfflineBranchId();
+  if (!branchId) return;
+
   const items = await offlineDB.notificationQueue
-    .where("status")
-    .anyOf("pending", "failed")
+    .where("[branchId+status]")
+    .anyOf(
+      [branchId, "pending"],
+      [branchId, "failed"],
+    )
     .toArray();
 
   for (const item of items) {
+    if (getActiveOfflineBranchId() !== branchId) break;
     if (item.id === undefined) continue;
     try {
       if (item.action === "read" && item.notificationId) {
