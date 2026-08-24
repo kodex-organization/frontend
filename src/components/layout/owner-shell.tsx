@@ -115,11 +115,18 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     (role) =>
       role === "OWNER" || role === "MANAGER" || role === "ACCOUNTANT",
   );
+  const hasReportsAccess = user?.roles.some(
+    (role) =>
+      role === "OWNER" || role === "MANAGER" || role === "ACCOUNTANT",
+  );
   const canOperateFloor = user?.roles.some(
     (role) =>
       role === "OWNER" || role === "MANAGER" || role === "CASHIER",
   );
   const canManageCatalog = user?.roles.some(
+    (role) => role === "OWNER" || role === "MANAGER",
+  );
+  const canManageBranches = user?.roles.some(
     (role) => role === "OWNER" || role === "MANAGER",
   );
 
@@ -148,13 +155,16 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       floorView: "Floor View",
       sessions: "Sessions",
       tables: "Tables",
+      branchSetup: "Branch Setup",
       billing: "Billing",
       udhaar: "Udhaar",
-      reports: "Reports",
-      branches: "Branches",
+      operationalReports: "Operational Reports",
+      crossBranchReports: "Cross-Branch Reports",
+      branchControls: "Branch Controls",
       peakHours: "Peak Hours",
       supportAccess: "Support Access",
       dataExport: "Data Export",
+      audit: "Audit & Logs",
       customers: "Customers",
       governance: "Governance",
       requestCancellation: "Request Cancellation",
@@ -163,19 +173,24 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       settings: "Settings",
       language: "Language",
       logout: "Log out",
+      notifications: "Notifications",
     },
     ur: {
       dashboard: "ڈیش بورڈ",
       floorView: "فلور ویو",
       sessions: "سیشنز",
       tables: "میزیں",
+      branchSetup: "برانچز",
       billing: "بلنگ",
       udhaar: "ادھار",
       reports: "رپورٹس",
-      branches: "Branches",
+      operationalReports: "Operational Reports",
+      crossBranchReports: "Cross-Branch Reports",
+      branchControls: "Branch Controls",
       peakHours: "Peak Hours",
       supportAccess: "Support Access",
       dataExport: "Data Export",
+      audit: "آڈٹ اور لاگز",
       customers: "صارفین",
       governance: "گورننس",
       requestCancellation: "منسوخی کی درخواست",
@@ -184,6 +199,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       settings: "سیٹنگز",
       language: "زبان",
       logout: "لاگ آؤٹ",
+      notifications: "اطلاعات",
     },
   };
 
@@ -202,14 +218,31 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     ...(canManageCatalog
       ? [{ href: "/catalog", label: stringsForLanguage.tables }]
       : []),
+    ...(canManageBranches
+      ? [{ href: "/branches", label: stringsForLanguage.branchSetup }]
+      : []),
     { href: "/billing", label: stringsForLanguage.billing },
     ...(hasBackOfficeAccess
+      ? [{ href: "/udhaar", label: stringsForLanguage.udhaar }]
+      : []),
+    ...(hasReportsAccess
       ? [
-          { href: "/udhaar", label: stringsForLanguage.udhaar },
+          {
+            href: "/reporting",
+            label: stringsForLanguage.operationalReports,
+          },
         ]
       : []),
+    ...(hasBackOfficeAccess
+      ? [{ href: "/audit", label: stringsForLanguage.audit }]
+      : []),
     ...(user?.roles.includes("OWNER")
-      ? [{ href: "/reports", label: stringsForLanguage.reports }]
+      ? [
+          {
+            href: "/reports",
+            label: stringsForLanguage.crossBranchReports,
+          },
+        ]
       : []),
     ...(hasCustomerAccess
       ? [{ href: "/customers", label: stringsForLanguage.customers }]
@@ -227,7 +260,10 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     { href: "/sync-status", label: stringsForLanguage.syncStatus },
     ...(user?.roles.includes("OWNER")
       ? [
-          { href: "/settings/branches", label: stringsForLanguage.branches },
+          {
+            href: "/settings/branches",
+            label: stringsForLanguage.branchControls,
+          },
           { href: "/settings/peak-hours", label: stringsForLanguage.peakHours },
           { href: "/settings/support-access", label: stringsForLanguage.supportAccess },
           { href: "/settings/data-export", label: stringsForLanguage.dataExport },
@@ -237,9 +273,9 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     ...(hasBackOfficeAccess
       ? [{ href: "/settings/staff", label: stringsForLanguage.settings }]
       : []),
-    { href: "/notifications", label: "Notifications" },
+    { href: "/notifications", label: stringsForLanguage.notifications },
   ];
-    
+
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-56 flex-col border-r border-slate-200 bg-white p-4">
@@ -316,7 +352,14 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       <main className="min-w-0 flex-1 p-8">
         <TenantAnnouncementCenter />
         <header className="mb-6 flex min-h-16 items-center justify-end border-b border-slate-200 bg-white px-6">
-          <NotificationBell notifications={notifications} unreadCount={unreadCount} onMarkAsRead={markAsRead} onMarkAllAsRead={markAllAsRead} markAllLoading={markAllLoading} markAllError={markAllError} />
+          <NotificationBell
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onMarkAsRead={markAsRead}
+            onMarkAllAsRead={markAllAsRead}
+            markAllLoading={markAllLoading}
+            markAllError={markAllError}
+          />
         </header>
         <div key={user?.branchId}>{children}</div>
       </main>

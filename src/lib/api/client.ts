@@ -280,3 +280,59 @@ export async function apiDownload(path: string): Promise<ApiDownloadResult> {
     sizeBytes: Number.isFinite(length) ? length : null,
   };
 }
+
+export async function apiFetchBlob(
+  path: string,
+  options?: RequestInit,
+): Promise<Blob> {
+  const tokens = tokenStorage.get();
+  const accessContext = tokenStorage.getAccessContext();
+  let response: Response;
+
+  try {
+    response = await fetch(`${getApiBaseUrl()}${path}`, {
+      ...options,
+      credentials: "include",
+      headers: {
+        ...(accessContext?.deviceId
+          ? { "X-Device-Id": accessContext.deviceId }
+          : {}),
+        ...(accessContext?.branchId
+          ? { "X-Branch-Id": accessContext.branchId }
+          : {}),
+        ...(tokens?.accessToken
+          ? { Authorization: `Bearer ${tokens.accessToken}` }
+          : {}),
+        ...options?.headers,
+      },
+    });
+  } catch {
+    throw new ApiError(
+      "Could not reach the server. Check your connection and try again.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as Envelope<unknown> | null;
+    const message =
+      typeof body?.error === "string" ? body.error : body?.error?.message;
+    const code =
+      typeof body?.error === "object" && body.error
+        ? body.error.code
+        : undefined;
+    const details =
+      typeof body?.error === "object" && body.error
+        ? body.error.details
+        : undefined;
+    throw new ApiError(
+      message ?? `Request failed (${response.status})`,
+      response.status,
+      code,
+      details,
+    );
+  }
+
+  return response.blob();
+}

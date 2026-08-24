@@ -22,7 +22,7 @@ const navItems = [
   { href: "/announcements", label: "Announcements", icon: Megaphone },
   { href: "/releases", label: "Releases", icon: Rocket },
   { href: "/impersonation", label: "Impersonation", icon: ScanFace },
-  { href: "/audit", label: "Audit Log", icon: FileSearch },
+  { href: "/super-admin/audit", label: "Audit Log", icon: FileSearch },
 ];
 
 export function SuperAdminShell({ children }: { children: React.ReactNode }) {
