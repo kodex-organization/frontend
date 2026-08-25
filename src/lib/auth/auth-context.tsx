@@ -19,6 +19,10 @@ interface AuthContextValue {
   loginPin: (pin: string, identifier: { email?: string; userId?: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateUserLanguage: (language: "en" | "ur") => Promise<void>;
+  replaceSession: (
+    sessionUser: SessionUser,
+    tokens: { accessToken: string; refreshToken?: string; expiresIn: string },
+  ) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -66,8 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const applySession = useCallback(
     (sessionUser: SessionUser, tokens: { accessToken: string; refreshToken?: string; expiresIn: string }) => {
-      tokenStorage.set(tokens);
-      tokenStorage.setUser(sessionUser);
+      tokenStorage.replaceSession(tokens, sessionUser);
       setUser(sessionUser);
     },
     [],
@@ -123,8 +126,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loginPin,
       logout,
       updateUserLanguage,
+      replaceSession: applySession,
     }),
-    [user, isLoading, loginPassword, loginPin, logout, updateUserLanguage],
+    [user, isLoading, loginPassword, loginPin, logout, updateUserLanguage, applySession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

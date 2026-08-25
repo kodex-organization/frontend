@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { ApiError } from "@/lib/api/client";
+import { getActiveOfflineBranchId } from "@/lib/sync/offline-db";
 import { getNotificationPreferences, getNotifications, markAllNotificationsRead as apiMarkAllNotificationsRead, markNotificationRead, registerFcmToken, revokeFcmToken, saveNotificationPreferences, type NotificationPreference } from "./api";
 import { flushNotificationQueue, queueNotificationPreferences, queueNotificationRead, queueNotificationsReadAll } from "./offline";
 import { isUnread, type Notification } from "./types";
@@ -15,6 +16,7 @@ interface NotificationContextValue {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  resetForBranch: () => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   markAllLoading: boolean;
@@ -56,31 +58,64 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [pushState, setPushState] = useState<NotificationContextValue["pushState"]>("idle");
   const [pushMessage, setPushMessage] = useState<string | null>(null);
+  const branchScopeVersion = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (!online) { setLoading(false); return; }
+    const scopeVersion = branchScopeVersion.current;
+    if (!online) {
+      if (scopeVersion === branchScopeVersion.current) setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      setNotifications(await getNotifications());
-      setError(null);
+      const nextNotifications = await getNotifications();
+      if (scopeVersion === branchScopeVersion.current) {
+        setNotifications(nextNotifications);
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load notifications.");
-    } finally { setLoading(false); }
+      if (scopeVersion === branchScopeVersion.current) {
+        setError(err instanceof ApiError ? err.message : "Could not load notifications.");
+      }
+    } finally {
+      if (scopeVersion === branchScopeVersion.current) setLoading(false);
+    }
   }, [online]);
 
   useEffect(() => { void refresh(); }, [refresh]);
   const loadPreferences = useCallback(async () => {
-    if (!online) { setPreferencesLoading(false); return; }
+    const scopeVersion = branchScopeVersion.current;
+    if (!online) {
+      if (scopeVersion === branchScopeVersion.current) setPreferencesLoading(false);
+      return;
+    }
     setPreferencesLoading(true);
     try {
-      setPreferences(await getNotificationPreferences());
-      setPreferencesError(null);
+      const nextPreferences = await getNotificationPreferences();
+      if (scopeVersion === branchScopeVersion.current) {
+        setPreferences(nextPreferences);
+        setPreferencesError(null);
+      }
     } catch (err) {
-      setPreferencesError(err instanceof ApiError ? err.message : "Could not load notification preferences.");
-    } finally { setPreferencesLoading(false); }
+      if (scopeVersion === branchScopeVersion.current) {
+        setPreferencesError(err instanceof ApiError ? err.message : "Could not load notification preferences.");
+      }
+    } finally {
+      if (scopeVersion === branchScopeVersion.current) setPreferencesLoading(false);
+    }
   }, [online]);
 
   useEffect(() => { void loadPreferences(); }, [loadPreferences]);
+
+  const resetForBranch = useCallback(async () => {
+    branchScopeVersion.current += 1;
+    setNotifications([]);
+    setError(null);
+    setMarkAllError(null);
+    setPreferences(defaultPreferences);
+    setPreferencesError(null);
+    await Promise.all([refresh(), loadPreferences()]);
+  }, [loadPreferences, refresh]);
 
   const savePreferences = useCallback(async (nextPreferences: NotificationPreference) => {
     setPreferencesSaving(true);
@@ -171,13 +206,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [pushState, refresh]);
 
   const markAsRead = useCallback(async (id: string) => {
+    const branchId = getActiveOfflineBranchId();
     setNotifications((current) => current.map((item) => item.id === id
       ? { ...item, status: "read", readAt: new Date().toISOString() }
       : item));
     if (!online) { await queueNotificationRead(id); return; }
     try { await markNotificationRead(id); }
     catch (err) {
-      await queueNotificationRead(id);
+      if (branchId) await queueNotificationRead(id, branchId);
       setError(err instanceof ApiError ? err.message : "Read status will sync when online.");
     }
   }, [online]);
@@ -200,7 +236,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     } finally { setMarkAllLoading(false); }
   }, [markAllLoading, online, refresh]);
 
-  const value = useMemo(() => ({ notifications, unreadCount: notifications.filter(isUnread).length, loading, error, refresh, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush }), [notifications, loading, error, refresh, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush]);
+  const value = useMemo(() => ({ notifications, unreadCount: notifications.filter(isUnread).length, loading, error, refresh, resetForBranch, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush }), [notifications, loading, error, refresh, resetForBranch, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush]);
   return <NotificationContext.Provider value={value}><ToastContainer position="top-right" autoClose={4000} />{children}</NotificationContext.Provider>;
 }
 

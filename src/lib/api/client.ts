@@ -6,6 +6,7 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly code?: string,
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -15,7 +16,7 @@ export class ApiError extends Error {
 interface Envelope<T> {
   success: boolean;
   data: T;
-  error: { message: string; code?: string } | string | null;
+  error: { message: string; code?: string; details?: unknown } | string | null;
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
@@ -173,6 +174,10 @@ export async function apiFetch<T>(
       typeof body?.error === "object" && body.error
         ? body.error.code
         : undefined;
+    const errorDetails =
+      typeof body?.error === "object" && body.error
+        ? body.error.details
+        : undefined;
 
     throw new ApiError(
       errorMessage ??
@@ -181,8 +186,153 @@ export async function apiFetch<T>(
           : `Request failed (${response.status}). The server may have restarted — please try again.`),
       response.status,
       errorCode,
+      errorDetails,
     );
   }
 
   return body.data;
+}
+
+export interface ApiDownloadResult {
+  blob: Blob;
+  fileName: string;
+  checksumSha256: string | null;
+  sizeBytes: number | null;
+}
+
+function fileNameFromDisposition(value: string | null) {
+  const match = value?.match(/filename="?([^";]+)"?/i);
+  return match?.[1] ?? "cuecloud-export.json";
+}
+
+export async function apiDownload(path: string): Promise<ApiDownloadResult> {
+  const doFetch = () => {
+    const tokens = tokenStorage.get();
+    const context = tokenStorage.getAccessContext();
+    return fetch(`${getApiBaseUrl()}${path}`, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        ...(context?.deviceId ? { "X-Device-Id": context.deviceId } : {}),
+        ...(context?.branchId ? { "X-Branch-Id": context.branchId } : {}),
+        ...(tokens?.accessToken
+          ? { Authorization: `Bearer ${tokens.accessToken}` }
+          : {}),
+      },
+    });
+  };
+
+  let response: Response;
+  try {
+    response = await doFetch();
+  } catch {
+    throw new ApiError(
+      "Could not reach the server. Check your connection and try again.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
+
+  if (response.status === 401 && tokenStorage.get()?.accessToken) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      try {
+        response = await doFetch();
+      } catch {
+        throw new ApiError(
+          "Could not reach the server. Check your connection and try again.",
+          0,
+          "NETWORK_ERROR",
+        );
+      }
+      if (response.status === 401) tokenStorage.clear();
+    }
+  }
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as Envelope<unknown> | null;
+    const message =
+      typeof body?.error === "string" ? body.error : body?.error?.message;
+    const code =
+      typeof body?.error === "object" && body.error
+        ? body.error.code
+        : undefined;
+    const details =
+      typeof body?.error === "object" && body.error
+        ? body.error.details
+        : undefined;
+    throw new ApiError(
+      message ?? `Download failed (${response.status}).`,
+      response.status,
+      code,
+      details,
+    );
+  }
+
+  const lengthHeader = response.headers.get("Content-Length");
+  const length = lengthHeader === null ? Number.NaN : Number(lengthHeader);
+  return {
+    blob: await response.blob(),
+    fileName: fileNameFromDisposition(
+      response.headers.get("Content-Disposition"),
+    ),
+    checksumSha256: response.headers.get("X-Checksum-SHA256"),
+    sizeBytes: Number.isFinite(length) ? length : null,
+  };
+}
+
+export async function apiFetchBlob(
+  path: string,
+  options?: RequestInit,
+): Promise<Blob> {
+  const tokens = tokenStorage.get();
+  const accessContext = tokenStorage.getAccessContext();
+  let response: Response;
+
+  try {
+    response = await fetch(`${getApiBaseUrl()}${path}`, {
+      ...options,
+      credentials: "include",
+      headers: {
+        ...(accessContext?.deviceId
+          ? { "X-Device-Id": accessContext.deviceId }
+          : {}),
+        ...(accessContext?.branchId
+          ? { "X-Branch-Id": accessContext.branchId }
+          : {}),
+        ...(tokens?.accessToken
+          ? { Authorization: `Bearer ${tokens.accessToken}` }
+          : {}),
+        ...options?.headers,
+      },
+    });
+  } catch {
+    throw new ApiError(
+      "Could not reach the server. Check your connection and try again.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as Envelope<unknown> | null;
+    const message =
+      typeof body?.error === "string" ? body.error : body?.error?.message;
+    const code =
+      typeof body?.error === "object" && body.error
+        ? body.error.code
+        : undefined;
+    const details =
+      typeof body?.error === "object" && body.error
+        ? body.error.details
+        : undefined;
+    throw new ApiError(
+      message ?? `Request failed (${response.status})`,
+      response.status,
+      code,
+      details,
+    );
+  }
+
+  return response.blob();
 }
