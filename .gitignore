@@ -11,4 +11,5 @@ out/
 
 # Docs and secrets live in ../private/ (see parent .gitignore)
 *.md
+!README.md
 ../private/

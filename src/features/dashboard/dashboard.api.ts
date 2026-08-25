@@ -84,9 +84,9 @@ export interface TransactionItem {
 }
 
 export const DashboardApi = {
-  getLiveTables: (branchId?: string) => 
+  getLiveTables: (branchId?: string) =>
     apiFetch<LiveTableOverview>(`/dashboard/live-tables${branchId ? `?branchId=${branchId}` : ""}`),
-  
+
   getKPIs: (branchId?: string, date?: string) => {
     const params = new URLSearchParams();
     if (branchId) params.append("branchId", branchId);

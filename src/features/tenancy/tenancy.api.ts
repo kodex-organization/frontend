@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/client";
+import { platformAdminFetch } from "@/lib/platform-admin/client";
 
 export interface SubscriptionPlan {
   id: string;
@@ -31,10 +31,10 @@ export interface OnboardInput {
 }
 
 export const TenancyApi = {
-  listTenants: () => apiFetch<Tenant[]>("/super-admin/tenants"),
-  
+  listTenants: () => platformAdminFetch<Tenant[]>("/super-admin/tenants"),
+
   onboardTenant: (data: OnboardInput) =>
-    apiFetch<{ tenant: Tenant; branch: TenantBranch; owner: { id: string; fullName: string; email: string } }>(
+    platformAdminFetch<{ tenant: Tenant; branch: TenantBranch; owner: { id: string; fullName: string; email: string } }>(
       "/super-admin/tenants",
       {
         method: "POST",
@@ -43,7 +43,7 @@ export const TenancyApi = {
     ),
 
   updateTenantStatus: (id: string, status: "active" | "suspended") =>
-    apiFetch<Tenant>(`/super-admin/tenants/${id}/status`, {
+    platformAdminFetch<Tenant>(`/super-admin/tenants/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),

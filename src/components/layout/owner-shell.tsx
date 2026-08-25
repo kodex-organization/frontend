@@ -1,14 +1,105 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-toastify";
 import { useAuth } from "@/lib/auth/auth-context";
+import { ApiError } from "@/lib/api/client";
+import { reScopeOfflineData } from "@/lib/sync/offline-db";
 import { NotificationBell } from "@/features/notifications/components/NotificationBell";
 import { useNotifications } from "@/features/notifications/context";
+import { BranchSelector } from "@/features/tenancy/components/branch-selector";
+import { TenantAnnouncementCenter } from "@/features/announcements/components/tenant-announcement-center";
+import {
+  ASSIGNED_BRANCHES_CHANGED_EVENT,
+  completeBranchSwitch,
+  getAssignedBranches,
+  type AssignedBranch,
+} from "@/features/tenancy/branch-switching";
 
 export function OwnerShell({ children }: { children: React.ReactNode }) {
-  const { user, logout, updateUserLanguage } = useAuth();
-  const { notifications, unreadCount, markAsRead, markAllAsRead, markAllLoading, markAllError } = useNotifications();
+  const router = useRouter();
+  const { user, logout, updateUserLanguage, replaceSession } = useAuth();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, markAllLoading, markAllError, resetForBranch } = useNotifications();
+  const [branches, setBranches] = useState<AssignedBranch[]>([]);
+  const [switchingBranch, setSwitchingBranch] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setBranches([]);
+      return;
+    }
+
+    let active = true;
+    const loadBranches = () => {
+      void getAssignedBranches()
+        .then((assignedBranches) => {
+          if (active) setBranches(assignedBranches);
+        })
+        .catch((error) => {
+          if (!active) return;
+          setBranches([]);
+          toast.error(
+            error instanceof ApiError
+              ? error.message
+              : "Could not load assigned branches.",
+          );
+        });
+    };
+
+    loadBranches();
+    window.addEventListener(ASSIGNED_BRANCHES_CHANGED_EVENT, loadBranches);
+
+    return () => {
+      active = false;
+      window.removeEventListener(ASSIGNED_BRANCHES_CHANGED_EVENT, loadBranches);
+    };
+  }, [user?.branchId, user?.id]);
+
+  const handleBranchSwitch = useCallback(
+    async (branchId: string) => {
+      if (!user || branchId === user.branchId || switchingBranch) return;
+
+      setSwitchingBranch(true);
+      try {
+        const completion = await completeBranchSwitch(user, branchId, {
+          replaceSession,
+          reScopeOfflineData,
+          refreshBranchState: resetForBranch,
+          navigate: (path) => router.replace(path),
+        });
+
+        setBranches((current) =>
+          current.map((branch) => ({
+            ...branch,
+            isSelected: branch.id === completion.session.user.branchId,
+          })),
+        );
+        router.refresh();
+        toast.success(
+          `Switched to ${
+            branches.find((branch) => branch.id === branchId)?.name ?? "branch"
+          }.`,
+        );
+
+        if (completion.maintenanceErrors.length > 0) {
+          toast.warning(
+            "Branch changed, but some local data could not be refreshed.",
+          );
+        }
+      } catch (error) {
+        toast.error(
+          error instanceof ApiError
+            ? error.message
+            : "Could not switch branches. Please try again.",
+        );
+      } finally {
+        setSwitchingBranch(false);
+      }
+    },
+    [branches, replaceSession, resetForBranch, router, switchingBranch, user],
+  );
 
   const canManageGovernance = user?.roles.some(
     (role) => role === "OWNER" || role === "MANAGER",
@@ -25,8 +116,8 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       role === "OWNER" || role === "MANAGER" || role === "ACCOUNTANT",
   );
   const hasReportsAccess = user?.roles.some(
-  (role) =>
-    role === "OWNER" || role === "MANAGER" || role === "ACCOUNTANT" || role === "CASHIER",
+    (role) =>
+      role === "OWNER" || role === "MANAGER" || role === "ACCOUNTANT",
   );
   const canOperateFloor = user?.roles.some(
     (role) =>
@@ -64,10 +155,15 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       floorView: "Floor View",
       sessions: "Sessions",
       tables: "Tables",
-      branches: "Branches",
+      branchSetup: "Branch Setup",
       billing: "Billing",
       udhaar: "Udhaar",
-      reports: "Reports",
+      operationalReports: "Operational Reports",
+      crossBranchReports: "Cross-Branch Reports",
+      branchControls: "Branch Controls",
+      peakHours: "Peak Hours",
+      supportAccess: "Support Access",
+      dataExport: "Data Export",
       audit: "Audit & Logs",
       customers: "Customers",
       governance: "Governance",
@@ -84,10 +180,16 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       floorView: "فلور ویو",
       sessions: "سیشنز",
       tables: "میزیں",
-      branches: "برانچز",
+      branchSetup: "برانچز",
       billing: "بلنگ",
       udhaar: "ادھار",
       reports: "رپورٹس",
+      operationalReports: "Operational Reports",
+      crossBranchReports: "Cross-Branch Reports",
+      branchControls: "Branch Controls",
+      peakHours: "Peak Hours",
+      supportAccess: "Support Access",
+      dataExport: "Data Export",
       audit: "آڈٹ اور لاگز",
       customers: "صارفین",
       governance: "گورننس",
@@ -117,17 +219,30 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       ? [{ href: "/catalog", label: stringsForLanguage.tables }]
       : []),
     ...(canManageBranches
-      ? [{ href: "/branches", label: stringsForLanguage.branches }]
+      ? [{ href: "/branches", label: stringsForLanguage.branchSetup }]
       : []),
     { href: "/billing", label: stringsForLanguage.billing },
-        ...(hasBackOfficeAccess
+    ...(hasBackOfficeAccess
       ? [{ href: "/udhaar", label: stringsForLanguage.udhaar }]
       : []),
     ...(hasReportsAccess
-      ? [{ href: "/reports", label: stringsForLanguage.reports }]
+      ? [
+          {
+            href: "/reporting",
+            label: stringsForLanguage.operationalReports,
+          },
+        ]
       : []),
     ...(hasBackOfficeAccess
       ? [{ href: "/audit", label: stringsForLanguage.audit }]
+      : []),
+    ...(user?.roles.includes("OWNER")
+      ? [
+          {
+            href: "/reports",
+            label: stringsForLanguage.crossBranchReports,
+          },
+        ]
       : []),
     ...(hasCustomerAccess
       ? [{ href: "/customers", label: stringsForLanguage.customers }]
@@ -144,7 +259,16 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       : []),
     { href: "/sync-status", label: stringsForLanguage.syncStatus },
     ...(user?.roles.includes("OWNER")
-      ? [{ href: "/settings/security", label: stringsForLanguage.security }]
+      ? [
+          {
+            href: "/settings/branches",
+            label: stringsForLanguage.branchControls,
+          },
+          { href: "/settings/peak-hours", label: stringsForLanguage.peakHours },
+          { href: "/settings/support-access", label: stringsForLanguage.supportAccess },
+          { href: "/settings/data-export", label: stringsForLanguage.dataExport },
+          { href: "/settings/security", label: stringsForLanguage.security },
+        ]
       : []),
     ...(hasBackOfficeAccess
       ? [{ href: "/settings/staff", label: stringsForLanguage.settings }]
@@ -155,9 +279,21 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-56 flex-col border-r border-slate-200 bg-white p-4">
-        <p className="mb-6 text-sm font-semibold text-brand-700">
-          CueCloud
-        </p>
+        <div className="mb-6">
+          <p className="text-sm font-semibold text-brand-700">
+            CueCloud
+          </p>
+          {user && branches.length > 1 ? (
+            <div className="mt-3">
+              <BranchSelector
+                branches={branches}
+                activeBranchId={user.branchId}
+                switching={switchingBranch}
+                onSwitch={(branchId) => void handleBranchSwitch(branchId)}
+              />
+            </div>
+          ) : null}
+        </div>
 
         <nav className="flex flex-1 flex-col gap-1">
           {navItems.map((item) => (
@@ -213,8 +349,9 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 p-8">
-        <header className="mb-6 flex h-16 items-center justify-end border-b border-slate-200 bg-white px-6">
+      <main className="min-w-0 flex-1 p-8">
+        <TenantAnnouncementCenter />
+        <header className="mb-6 flex min-h-16 items-center justify-end border-b border-slate-200 bg-white px-6">
           <NotificationBell
             notifications={notifications}
             unreadCount={unreadCount}
@@ -224,7 +361,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
             markAllError={markAllError}
           />
         </header>
-        {children}
+        <div key={user?.branchId}>{children}</div>
       </main>
     </div>
   );

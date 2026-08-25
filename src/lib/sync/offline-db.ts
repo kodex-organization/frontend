@@ -1,5 +1,6 @@
 import Dexie, { type Table } from "dexie";
 import type { NotificationPreference } from "@/features/notifications/api";
+import { tokenStorage } from "@/lib/auth/session";
 
 export type SessionStatus = "active" | "paused" | "ended";
 
@@ -49,6 +50,7 @@ export type InvoiceOfflinePayload = {
 
 export type PendingSyncItem = {
   id?: number;
+  branchId: string;
   entity: "session" | "invoice";
   entityId: string;
   action: "create" | "update" | "delete";
@@ -62,6 +64,7 @@ export type PendingSyncItem = {
 
 export type NotificationQueueItem = {
   id?: number;
+  branchId: string;
   notificationId?: string;
   action: "read" | "read-all" | "preferences";
   preferences?: NotificationPreference;
@@ -94,6 +97,29 @@ class CueCloudOfflineDB extends Dexie {
       syncMeta: "key",
       notificationQueue: "++id, notificationId, action, status",
     });
+    this.version(4)
+      .stores({
+        pendingQueue:
+          "++id, branchId, [branchId+status], entity, entityId, action, status, idempotencyKey, originTimestamp",
+        syncMeta: "key",
+        notificationQueue:
+          "++id, branchId, [branchId+status], notificationId, action, status",
+      })
+      .upgrade(async (transaction) => {
+        await transaction
+          .table("pendingQueue")
+          .toCollection()
+          .modify((item) => {
+            const pendingItem = item as PendingSyncItem & {
+              branchId?: string;
+            };
+            pendingItem.branchId ??= pendingItem.payload.branchId;
+          });
+
+        // Legacy notification mutations did not identify their branch, so
+        // replaying them after an upgrade could affect the wrong branch.
+        await transaction.table("notificationQueue").clear();
+      });
   }
 }
 
@@ -104,6 +130,7 @@ export async function queueSessionChange(
   action: "create" | "update" | "delete",
 ) {
   return offlineDB.pendingQueue.add({
+    branchId: payload.branchId,
     entity: "session",
     entityId: payload.id,
     action,
@@ -121,6 +148,7 @@ export async function queueInvoiceChange(
   action: "create" | "update" | "delete",
 ) {
   return offlineDB.pendingQueue.add({
+    branchId: payload.branchId,
     entity: "invoice",
     entityId: payload.id,
     action,
@@ -133,17 +161,40 @@ export async function queueInvoiceChange(
   });
 }
 
+export function getActiveOfflineBranchId() {
+  return tokenStorage.getAccessContext()?.branchId ?? null;
+}
+
+export function filterPendingSyncItemsForBranch(
+  items: PendingSyncItem[],
+  branchId: string,
+) {
+  return items.filter((item) => item.branchId === branchId);
+}
+
 export async function getPendingSyncCount() {
+  const branchId = getActiveOfflineBranchId();
+  if (!branchId) return 0;
+
   return offlineDB.pendingQueue
-    .where("status")
-    .anyOf("pending", "failed")
+    .where("[branchId+status]")
+    .anyOf(
+      [branchId, "pending"],
+      [branchId, "failed"],
+    )
     .count();
 }
 
 export async function getPendingSyncItems() {
+  const branchId = getActiveOfflineBranchId();
+  if (!branchId) return [];
+
   return offlineDB.pendingQueue
-    .where("status")
-    .anyOf("pending", "failed")
+    .where("[branchId+status]")
+    .anyOf(
+      [branchId, "pending"],
+      [branchId, "failed"],
+    )
     .toArray();
 }
 
@@ -180,10 +231,49 @@ export async function markItemAsFailed(
 }
 
 export async function clearPendingQueue() {
-  return offlineDB.pendingQueue.clear();
+  const branchId = getActiveOfflineBranchId();
+  if (!branchId) return;
+  return offlineDB.pendingQueue.where("branchId").equals(branchId).delete();
 }
 
 const REVIEW_SYNC_SEED_KEY = "review-sync-examples-v1";
+const ACTIVE_BRANCH_KEY = "active-branch-id";
+
+export async function reScopeOfflineData(
+  previousBranchId: string,
+  nextBranchId: string,
+) {
+  const tokenBranchId = getActiveOfflineBranchId();
+  if (tokenBranchId !== nextBranchId) {
+    throw new Error("Offline branch scope does not match the authenticated session");
+  }
+
+  await offlineDB.transaction(
+    "rw",
+    offlineDB.pendingQueue,
+    offlineDB.notificationQueue,
+    offlineDB.syncMeta,
+    async () => {
+      if (previousBranchId !== nextBranchId) {
+        await offlineDB.pendingQueue
+          .where("branchId")
+          .equals(previousBranchId)
+          .filter((item) => item.status === "synced")
+          .delete();
+        await offlineDB.notificationQueue
+          .where("branchId")
+          .equals(previousBranchId)
+          .filter((item) => item.status === "synced")
+          .delete();
+      }
+
+      await offlineDB.syncMeta.put({
+        key: ACTIVE_BRANCH_KEY,
+        value: nextBranchId,
+      });
+    },
+  );
+}
 
 /**
  * Adds two browser-local examples for the dedicated development reviewer
@@ -196,6 +286,7 @@ export async function seedReviewSyncItems(context: {
   deviceId: string;
 }) {
   let seeded = false;
+  const branchSeedKey = `${REVIEW_SYNC_SEED_KEY}:${context.branchId}`;
 
   await offlineDB.transaction(
     "rw",
@@ -203,7 +294,7 @@ export async function seedReviewSyncItems(context: {
     offlineDB.syncMeta,
     async () => {
       const existingMarker = await offlineDB.syncMeta.get(
-        REVIEW_SYNC_SEED_KEY,
+        branchSeedKey,
       );
       if (existingMarker) return;
 
@@ -215,6 +306,7 @@ export async function seedReviewSyncItems(context: {
 
       await offlineDB.pendingQueue.bulkAdd([
         {
+          branchId: context.branchId,
           entity: "session",
           entityId: sessionId,
           action: "create",
@@ -242,6 +334,7 @@ export async function seedReviewSyncItems(context: {
           lastError: null,
         },
         {
+          branchId: context.branchId,
           entity: "invoice",
           entityId: invoiceId,
           action: "update",
@@ -273,7 +366,7 @@ export async function seedReviewSyncItems(context: {
       ]);
 
       await offlineDB.syncMeta.put({
-        key: REVIEW_SYNC_SEED_KEY,
+        key: branchSeedKey,
         value: new Date(now).toISOString(),
       });
       seeded = true;

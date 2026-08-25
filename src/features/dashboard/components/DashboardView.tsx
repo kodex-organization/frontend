@@ -10,7 +10,7 @@ import { Activity, CreditCard, Users, RefreshCw, AlertTriangle, ChevronRight, Ba
 
 export function DashboardView() {
   const { user } = useAuth();
-  
+
   // States
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -224,7 +224,7 @@ export function DashboardView() {
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Total Revenue KPI */}
-        <div 
+        <div
           onClick={() => handleDrilldown("all")}
           className="group relative overflow-hidden rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:border-brand-300 transition-all duration-300 transform hover:-translate-y-0.5"
         >
@@ -261,7 +261,7 @@ export function DashboardView() {
         </div>
 
         {/* Outstanding Udhaar */}
-        <div 
+        <div
           onClick={() => handleDrilldown("udhaar_issued")}
           className="group relative overflow-hidden rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm cursor-pointer hover:shadow-md hover:border-red-300 transition-all duration-300 transform hover:-translate-y-0.5"
         >
@@ -307,8 +307,8 @@ export function DashboardView() {
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`pb-4 text-sm font-semibold capitalize transition-all border-b-2 -mb-px ${
-              activeTab === tab 
-                ? "border-brand-600 text-brand-600" 
+              activeTab === tab
+                ? "border-brand-600 text-brand-600"
                 : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -319,7 +319,7 @@ export function DashboardView() {
 
       {/* Tab Panels */}
       <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm">
-        
+
         {/* Live Tables */}
         {activeTab === "live" && (
           <div className="space-y-6">
@@ -546,7 +546,7 @@ export function DashboardView() {
                         <td className="px-6 py-4 font-medium text-slate-900">{item.fullName}</td>
                         <td className="px-6 py-4 font-semibold text-red-600">Rs. {item.balance.toLocaleString()}</td>
                         <td className="px-6 py-4 text-right">
-                          <button 
+                          <button
                             onClick={() => handleDrilldown("udhaar_issued")}
                             className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"
                           >
@@ -648,7 +648,7 @@ export function DashboardView() {
               <h3 className="text-lg font-bold text-slate-950">
                 Transaction Details: <span className="uppercase text-brand-600">{drilldownCategory.replace("_", " ")}</span>
               </h3>
-              <button 
+              <button
                 onClick={() => setDrilldownCategory(null)}
                 className="text-slate-400 hover:text-slate-600 text-xl font-medium"
               >

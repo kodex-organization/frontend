@@ -15,28 +15,34 @@ export default function OwnerLayout({
   const isBillingRoute =
     pathname === "/billing" || pathname.startsWith("/billing/");
   const isSyncStatusRoute = pathname === "/sync-status";
+  const isOwnerOnlyRoute =
+    pathname === "/reports" ||
+    pathname.startsWith("/reports/") ||
+    pathname === "/settings/branches" ||
+    pathname === "/settings/peak-hours" ||
+    pathname === "/settings/support-access" ||
+    pathname === "/settings/data-export";
+  const isBranchManagementRoute =
+    pathname === "/branches" || pathname.startsWith("/branches/");
   const isCustomersRoute =
     pathname === "/customers" || pathname.startsWith("/customers/");
   const isOperationalRoute =
-  pathname === "/governance" ||
-  pathname === "/floor-view" ||
-  pathname === "/sessions" ||
-  pathname.startsWith("/sessions/");
-
-const isReportsRoute =
-  pathname === "/reports" ||
-  pathname.startsWith("/reports/");
-
-const allowedRoles: UserRole[] =
-  isBillingRoute || isSyncStatusRoute
-    ? ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"]
-    : isCustomersRoute
-    ? ["OWNER", "MANAGER", "CASHIER"]
-    : isOperationalRoute
-    ? ["OWNER", "MANAGER", "CASHIER"]
-    : isReportsRoute
-    ? ["OWNER", "MANAGER", "CASHIER", "ACCOUNTANT"]
-    : ["OWNER", "MANAGER", "ACCOUNTANT"];
+    pathname === "/governance" ||
+    pathname === "/floor-view" ||
+    pathname === "/sessions" ||
+    pathname.startsWith("/sessions/");
+  const allowedRoles: UserRole[] =
+    isOwnerOnlyRoute
+      ? ["OWNER"]
+      : isBranchManagementRoute
+      ? ["OWNER", "MANAGER"]
+      : isBillingRoute || isSyncStatusRoute
+      ? ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"]
+      : isCustomersRoute
+      ? ["OWNER", "MANAGER", "CASHIER"]
+      : isOperationalRoute
+      ? ["OWNER", "MANAGER", "CASHIER"]
+      : ["OWNER", "MANAGER", "ACCOUNTANT"];
 
   return (
     <ProtectedRoute allowedRoles={allowedRoles}>

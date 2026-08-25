@@ -186,7 +186,7 @@ export function TenantManager() {
           <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <h3 className="text-lg font-bold text-slate-950">Onboard New Club Tenant</h3>
-              <button 
+              <button
                 onClick={() => setShowModal(false)}
                 className="text-slate-400 hover:text-slate-600 text-xl font-medium"
               >
@@ -224,7 +224,7 @@ export function TenantManager() {
 
                 <div className="border-t border-slate-100 pt-4 mt-4">
                   <h4 className="text-sm font-semibold text-slate-900 mb-3">Owner Account Settings</h4>
-                  
+
                   <div className="space-y-4">
                     <FormField label="Owner Full Name" htmlFor="ownerName">
                       <Input
@@ -262,16 +262,16 @@ export function TenantManager() {
               </div>
 
               <div className="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
-                <Button 
-                  type="button" 
-                  onClick={() => setShowModal(false)} 
-                  variant="secondary" 
+                <Button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  variant="secondary"
                   className="w-auto px-5"
                 >
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   isLoading={modalLoading}
                   className="w-auto px-5 bg-brand-600 text-white hover:bg-brand-700"
                 >
