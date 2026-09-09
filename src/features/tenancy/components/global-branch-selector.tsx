@@ -76,10 +76,9 @@ export function GlobalBranchSelector({ onSwitching }: { onSwitching: (value: boo
     }
   };
 
-  return <div className="min-w-0 max-w-64">
-    <p className="text-[10px] font-semibold uppercase text-slate-500">Active branch</p>
-    {loading && branches.length === 0 ? <span className="text-xs text-slate-500">Loading branches...</span> :
+  return <div className="w-48 min-w-0 max-w-full sm:w-56">
+    {loading && branches.length === 0 ? <span role="status" className="flex h-12 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-500">Loading branches...</span> :
       <BranchSelector branches={branches} activeBranchId={user?.branchId ?? ""} switching={switching || loading} onSwitch={switchTo} showSingle />}
-    {error ? <button type="button" onClick={() => void load()} className="block text-xs text-rose-700">{error}</button> : null}
+    {error ? <button type="button" onClick={() => void load()} className="mt-1 block text-left text-xs text-rose-700 hover:underline">{error}</button> : null}
   </div>;
 }

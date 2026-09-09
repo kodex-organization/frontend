@@ -470,8 +470,8 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
         <TenantAnnouncementCenter />
 
         {/* Global Sticky Top Header */}
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 backdrop-blur-md px-4 sm:px-6 shadow-sm">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-20 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-2 shadow-sm backdrop-blur-md sm:px-6">
+          <div className="flex shrink-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
@@ -488,7 +488,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <GlobalBranchSelector onSwitching={setBranchSwitching} />
             <NotificationBell
               notifications={notifications}
