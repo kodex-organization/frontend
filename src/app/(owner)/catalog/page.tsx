@@ -13,6 +13,9 @@ import {
   createRatePlan,
 } from "@/services/catalog.service";
 import { RatePlan } from "@/features/catalog/types/catalog.types";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { fetchBranches } from "@/lib/api/branch";
+import type { BranchItem } from "@/types/branch";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The request failed";
@@ -33,6 +36,10 @@ export default function CatalogPage() {
   const [tableStatus, setTableStatus]   = useState("available");
   const [saving, setSaving]             = useState(false);
   const [formError, setFormError]       = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SnookerTable | null>(null);
+  const [branches, setBranches] = useState<BranchItem[]>([]);
+  const [branchFilter, setBranchFilter] = useState("");
+  const [selectedBranchId, setSelectedBranchId] = useState("");
 
   // ── rate modal state ─────────────────────────
   const [rateTable, setRateTable]       = useState<SnookerTable | null>(null);
@@ -44,13 +51,16 @@ export default function CatalogPage() {
   const [rateError, setRateError]       = useState<string | null>(null);
 
   // ── fetch tables on load ─────────────────────
-  useEffect(() => { fetchTables(); }, []);
+  useEffect(() => {
+    void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches));
+  }, []);
+  useEffect(() => { void fetchTables(branchFilter || undefined); }, [branchFilter]);
 
-  async function fetchTables() {
+  async function fetchTables(branchId?: string) {
     try {
       setLoading(true);
       setError(null);
-      const data = await getTables();
+      const data = await getTables(branchId);
       setTables(data);
     } catch (err: unknown) {
       setError(errorMessage(err));
@@ -65,6 +75,7 @@ export default function CatalogPage() {
     setTableNumber("");
     setHourlyRate("");
     setTableStatus("available");
+    setSelectedBranchId(branchFilter);
     setFormError(null);
     setShowForm(true);
   }
@@ -94,10 +105,15 @@ export default function CatalogPage() {
       setFormError("Enter a valid hourly rate");
       return;
     }
+    if (!editingTable && !selectedBranchId) {
+      setFormError("Branch is required");
+      return;
+    }
 
     const input: CreateTableInput = {
       tableNumber: tableNumber.trim(),
       hourlyRate: Number(hourlyRate),
+      branchId: selectedBranchId,
       ...(editingTable && { status: tableStatus }),
     };
 
@@ -110,7 +126,7 @@ export default function CatalogPage() {
         );
       } else {
         const newTable = await createTable(input);
-        setTables((prev) => [...prev, newTable]);
+          setTables((prev) => [...prev, newTable]);
       }
       handleCloseForm();
     } catch (err: unknown) {
@@ -121,12 +137,20 @@ export default function CatalogPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Are you sure you want to delete this table?")) return;
+    const target = tables.find((table) => table.id === id);
+    if (!target) return;
+    setDeleteTarget(target);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
     try {
-      await deleteTable(id);
-      setTables((prev) => prev.filter((t) => t.id !== id));
+      await deleteTable(deleteTarget.id);
+      setTables((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      setDeleteTarget(null);
     } catch (err: unknown) {
-      alert(errorMessage(err));
+      setFormError(errorMessage(err));
+      setDeleteTarget(null);
     }
   }
 
@@ -201,6 +225,10 @@ export default function CatalogPage() {
             Manage snooker tables and their hourly rates.
           </p>
         </div>
+        <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+          <option value="">All Branches</option>
+          {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
+        </select>
         <button
           onClick={handleOpenAdd}
           className="rounded-md bg-green-700 px-4 py-2
@@ -244,6 +272,7 @@ export default function CatalogPage() {
               <tr className="bg-slate-50 text-left text-xs
                              font-medium text-slate-500 uppercase">
                 <th className="px-4 py-3 border-b">Table No.</th>
+                <th className="px-4 py-3 border-b">Branch</th>
                 <th className="px-4 py-3 border-b">Hourly Rate</th>
                 <th className="px-4 py-3 border-b">Status</th>
                 <th className="px-4 py-3 border-b">Actions</th>
@@ -256,6 +285,7 @@ export default function CatalogPage() {
                   <td className="px-4 py-3 font-medium text-slate-800">
                     Table #{table.tableNumber}
                   </td>
+                  <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">{table.branch?.name ?? "Unknown branch"}</span></td>
                   <td className="px-4 py-3 text-slate-600">
                     Rs. {table.defaultHourlyRate}/hr
                   </td>
@@ -306,7 +336,7 @@ export default function CatalogPage() {
           ADD / EDIT TABLE MODAL
       ══════════════════════════════════════════ */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex
                         items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl
                           w-full max-w-md p-6">
@@ -367,6 +397,14 @@ export default function CatalogPage() {
                 />
               </div>
 
+              {!editingTable && <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
+                <select value={selectedBranchId} onChange={(event) => setSelectedBranchId(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">Select a branch</option>
+                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
+                </select>
+              </div>}
+
               {/* status — only when editing */}
               {editingTable && (
                 <div>
@@ -420,7 +458,7 @@ export default function CatalogPage() {
           RATE HISTORY MODAL
       ══════════════════════════════════════════ */}
       {rateTable && (
-        <div className="fixed inset-0 bg-black/40 flex
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex
                         items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl
                           w-full max-w-lg p-6">
@@ -530,6 +568,17 @@ export default function CatalogPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="Delete table"
+        description={deleteTarget ? `This will delete table ${deleteTarget.tableNumber}. This action is permanent.` : ""}
+        confirmText="Delete table"
+        cancelText="Keep table"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
     </div>
   );

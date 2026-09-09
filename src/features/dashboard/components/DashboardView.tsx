@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
+import { fetchBranches } from "@/lib/api/branch";
 import { DashboardApi, LiveTableSession, RevenueKPIs, OutstandingUdhaar, SyncDeviceStatus, RevenueTrend, TableHeatmap, AnomalyItem, TransactionItem } from "../dashboard.api";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Select } from "@/components/ui/select";
-import { Activity, CreditCard, Users, RefreshCw, AlertTriangle, ChevronRight, BarChart2, Calendar, TrendingUp } from "lucide-react";
+import { Activity, CreditCard, Users, RefreshCw, AlertTriangle, ChevronRight, TrendingUp } from "lucide-react";
+import { FullPageLoader } from "@/components/ui/loader";
+import { toast } from "@/lib/toast";
 
 export function DashboardView() {
   const { user } = useAuth();
@@ -37,60 +40,55 @@ export function DashboardView() {
 
   // Check roles
   const isOwner = user?.roles.includes("OWNER");
-  const isManager = user?.roles.includes("MANAGER");
   const isCashier = user?.roles.includes("CASHIER");
 
   const fetchData = async (branchId?: string) => {
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch Live Tables
+      if (isOwner) {
+        const branchList = await fetchBranches({ limit: 100 });
+        setBranches(
+          (branchList.branches || []).map((branch) => ({
+            id: branch.id,
+            name: branch.name || "Unnamed branch",
+          })),
+        );
+      }
+
       const tablesData = await DashboardApi.getLiveTables(branchId);
       setLiveTables(tablesData.sessions);
 
-      // Cashiers only see today's sessions, no financial/admin stats
       if (isCashier) {
         setLoading(false);
         return;
       }
 
-      // 2. Fetch KPIs
-      const kpisData = await DashboardApi.getKPIs(branchId);
+      const [
+        kpisData,
+        udhaarData,
+        syncData,
+        trendData,
+        heatmapData,
+        anomaliesData,
+        staffData
+      ] = await Promise.all([
+        DashboardApi.getKPIs(branchId),
+        DashboardApi.getUdhaar(branchId),
+        DashboardApi.getSyncStatus(branchId),
+        DashboardApi.getRevenueTrend(branchId),
+        DashboardApi.getTableHeatmap(branchId),
+        DashboardApi.getAnomalies(branchId),
+        DashboardApi.getStaffPerformance(branchId)
+      ]);
+
       setKPIs(kpisData);
-
-      // 3. Fetch Udhaar
-      const udhaarData = await DashboardApi.getUdhaar(branchId);
       setUdhaar(udhaarData);
-
-      // 4. Fetch Sync status
-      const syncData = await DashboardApi.getSyncStatus(branchId);
       setSyncDevices(syncData);
-
-      // 5. Fetch Revenue Trend
-      const trendData = await DashboardApi.getRevenueTrend(branchId);
       setRevenueTrend(trendData);
-
-      // 6. Fetch Table Heatmap
-      const heatmapData = await DashboardApi.getTableHeatmap(branchId);
       setHeatmap(heatmapData);
-
-      // 7. Fetch Anomalies
-      const anomaliesData = await DashboardApi.getAnomalies(branchId);
       setAnomalies(anomaliesData);
-
-      // 8. Fetch Staff performance
-      const staffData = await DashboardApi.getStaffPerformance(branchId);
       setStaffPerf(staffData.sessionsHandledByUser);
-
-      // Extract branch list for owner filter if not set
-      if (isOwner && branches.length === 0) {
-        // Collect branches dynamically from response info if available, else simple mock list
-        // Note: Real deployment would fetch branch list, we can list them from syncDevices unique branches
-        const uniqueBranches = Array.from(
-          new Map(syncData.map(d => [d.branch.name, { id: d.id, name: d.branch.name }])).values()
-        );
-        setBranches(uniqueBranches);
-      }
     } catch (err: any) {
       setError(err.message || "Failed to load dashboard metrics.");
     } finally {
@@ -109,24 +107,14 @@ export function DashboardView() {
       const txs = await DashboardApi.getTransactions(category, selectedBranch || undefined);
       setDrilldownTransactions(txs);
     } catch (err: any) {
-      console.error(err);
+      toast.error(err.message || "Failed to load transactions for drilldown.");
     } finally {
       setDrilldownLoading(false);
     }
   };
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-10 w-48 bg-slate-200 rounded"></div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-32 bg-slate-100 rounded-xl border border-slate-200/60 p-4"></div>
-          ))}
-        </div>
-        <div className="h-96 bg-slate-100 rounded-xl border border-slate-200/60"></div>
-      </div>
-    );
+    return <FullPageLoader text="Loading metrics..." />;
   }
 
   if (error) {
@@ -231,8 +219,8 @@ export function DashboardView() {
           <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 rounded-full bg-brand-50 group-hover:scale-110 transition-transform duration-300"></div>
           <div className="relative flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Today's Revenue</span>
-            <div className="rounded-lg bg-brand-500/10 p-2 text-brand-600">
-              <CreditCard className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-500/10 text-brand-600 ring-4 ring-brand-50 shadow-sm">
+              <CreditCard className="h-5 w-5" strokeWidth={2.5} />
             </div>
           </div>
           <div className="relative mt-4">
@@ -248,8 +236,8 @@ export function DashboardView() {
           <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 rounded-full bg-green-50 group-hover:scale-110 transition-transform duration-300"></div>
           <div className="relative flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Active Play Sessions</span>
-            <div className="rounded-lg bg-green-500/10 p-2 text-green-600">
-              <Activity className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10 text-green-600 ring-4 ring-green-50 shadow-sm">
+              <Activity className="h-5 w-5" strokeWidth={2.5} />
             </div>
           </div>
           <div className="relative mt-4">
@@ -268,8 +256,8 @@ export function DashboardView() {
           <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 rounded-full bg-red-50 group-hover:scale-110 transition-transform duration-300"></div>
           <div className="relative flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Outstanding Udhaar</span>
-            <div className="rounded-lg bg-red-500/10 p-2 text-red-600">
-              <Users className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10 text-red-600 ring-4 ring-red-50 shadow-sm">
+              <Users className="h-5 w-5" strokeWidth={2.5} />
             </div>
           </div>
           <div className="relative mt-4">
@@ -285,8 +273,8 @@ export function DashboardView() {
           <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 rounded-full bg-blue-50 group-hover:scale-110 transition-transform duration-300"></div>
           <div className="relative flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Sync Status</span>
-            <div className="rounded-lg bg-blue-500/10 p-2 text-blue-600">
-              <RefreshCw className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/10 text-blue-600 ring-4 ring-blue-50 shadow-sm">
+              <RefreshCw className="h-5 w-5" strokeWidth={2.5} />
             </div>
           </div>
           <div className="relative mt-4">
@@ -614,8 +602,8 @@ export function DashboardView() {
               <div className="space-y-3">
                 {anomalies.map((item) => (
                   <div key={item.id} className="flex gap-4 rounded-xl border border-yellow-200 bg-yellow-50/50 p-4 shadow-sm">
-                    <div className="rounded-lg bg-yellow-100 p-2 text-yellow-700 self-start">
-                      <AlertTriangle className="h-5 w-5" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-100 text-yellow-700 self-start shadow-sm ring-4 ring-yellow-50">
+                      <AlertTriangle className="h-5 w-5" strokeWidth={2.5} />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">

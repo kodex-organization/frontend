@@ -1,5 +1,6 @@
-import { ImpersonationAuditConsole } from "@/features/platform-admin/components/impersonation-audit-console";
+import { PlatformAuditConsole } from "@/features/platform-admin/components/platform-audit-console";
 
 export default function AuditPage() {
-  return <ImpersonationAuditConsole />;
+  return <PlatformAuditConsole />;
 }
+

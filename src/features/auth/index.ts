@@ -82,9 +82,34 @@ export interface CreateStaffInput {
   email: string;
   phone?: string;
   role: "OWNER" | "MANAGER" | "ACCOUNTANT" | "CASHIER";
-  branchId: string;
+  branchId?: string;
   password: string;
   pin?: string;
+}
+
+export interface DetailedStaffMember {
+  id: string;
+  fullName: string | null;
+  email: string | null;
+  phone: string | null;
+  roles: string[];
+  isOwner: boolean;
+  isActive: boolean;
+  branchId: string;
+  branchName: string | null;
+  language: string | null;
+  hasPin: boolean;
+  failedLoginAttempts: number;
+  lockedUntil: string | null;
+  createdAt: string;
+}
+
+export interface UpdateStaffInput {
+  fullName?: string;
+  phone?: string | null;
+  role?: "OWNER" | "MANAGER" | "ACCOUNTANT" | "CASHIER";
+  branchId?: string | null;
+  isActive?: boolean;
 }
 
 export async function createStaff(input: CreateStaffInput) {
@@ -92,4 +117,47 @@ export async function createStaff(input: CreateStaffInput) {
     "/auth/staff",
     { method: "POST", body: JSON.stringify(input) },
   );
+}
+
+export async function listStaff(query?: {
+  search?: string;
+  role?: string;
+  branchId?: string;
+  status?: string;
+}) {
+  const params = new URLSearchParams();
+  if (query?.search) params.set("search", query.search);
+  if (query?.role && query.role !== "ALL") params.set("role", query.role);
+  if (query?.branchId && query.branchId !== "ALL") params.set("branchId", query.branchId);
+  if (query?.status && query.status !== "all") params.set("status", query.status);
+
+  const qs = params.toString();
+  return apiFetch<DetailedStaffMember[]>(`/auth/staff${qs ? `?${qs}` : ""}`);
+}
+
+export async function updateStaff(id: string, input: UpdateStaffInput) {
+  return apiFetch<DetailedStaffMember>(`/auth/staff/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function resetStaffPassword(id: string, password: string) {
+  return apiFetch<{ success: boolean; message: string }>(`/auth/staff/${id}/reset-password`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
+export async function resetStaffPin(id: string, pin: string) {
+  return apiFetch<{ success: boolean; message: string }>(`/auth/staff/${id}/reset-pin`, {
+    method: "POST",
+    body: JSON.stringify({ pin }),
+  });
+}
+
+export async function deactivateStaff(id: string) {
+  return apiFetch<{ success: boolean; message: string }>(`/auth/staff/${id}`, {
+    method: "DELETE",
+  });
 }

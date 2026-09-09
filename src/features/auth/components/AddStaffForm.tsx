@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { FormField, Input } from "@/components/ui/input";
@@ -9,6 +9,8 @@ import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { createStaff, type CreateStaffInput } from "@/features/auth";
 import { useAuth, ApiError } from "@/lib/auth/auth-context";
+import { fetchBranches } from "@/lib/api/branch";
+import type { BranchItem } from "@/types/branch";
 
 const ALL_ROLES: CreateStaffInput["role"][] = ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"];
 
@@ -32,6 +34,7 @@ const addStaffSchema = z.object({
     .regex(/^\d{4,6}$/, "PIN must be 4-6 digits")
     .optional()
     .or(z.literal("")),
+  branchId: z.string().optional(),
 });
 
 type FormState = z.infer<typeof addStaffSchema>;
@@ -44,6 +47,7 @@ const initialForm: FormState = {
   role: "CASHIER",
   password: "",
   pin: "",
+  branchId: "",
 };
 
 export function AddStaffForm() {
@@ -53,11 +57,17 @@ export function AddStaffForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [branches, setBranches] = useState<BranchItem[]>([]);
 
   // Only an Owner or Manager should ever reach this form — the route itself
   // is also gated, this is a defence-in-depth UI check.
   const canManageStaff = user?.roles.some((r) => r === "OWNER" || r === "MANAGER");
   const roleOptions = assignableRoles(user?.roles);
+  const canAssignAnyBranch = user?.roles.some((role) => role === "OWNER" || role === "MANAGER");
+
+  useEffect(() => {
+    void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches));
+  }, []);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -79,6 +89,11 @@ export function AddStaffForm() {
     }
     setFieldErrors({});
 
+    if (parsed.data.role === "CASHIER" && !parsed.data.branchId) {
+      setFieldErrors({ branchId: "Branch is required for cashiers" });
+      return;
+    }
+
     if (!roleOptions.includes(parsed.data.role)) {
       // Defence-in-depth: a Manager should never be able to submit OWNER
       // even if the select were tampered with client-side. Backend rejects
@@ -87,7 +102,7 @@ export function AddStaffForm() {
       return;
     }
 
-    if (!user?.branchId) {
+    if (!user?.branchId && !parsed.data.branchId) {
       setFormError("Could not determine your branch. Please sign in again.");
       return;
     }
@@ -99,7 +114,7 @@ export function AddStaffForm() {
         email: parsed.data.email,
         phone: parsed.data.phone || undefined,
         role: parsed.data.role,
-        branchId: user.branchId,
+        ...(parsed.data.branchId ? { branchId: parsed.data.branchId } : {}),
         password: parsed.data.password,
         pin: parsed.data.pin || undefined,
       });
@@ -176,6 +191,14 @@ export function AddStaffForm() {
               {role.charAt(0) + role.slice(1).toLowerCase()}
             </option>
           ))}
+        </Select>
+      </FormField>
+
+      <FormField label="Branch" htmlFor="branchId" error={fieldErrors.branchId}>
+        <Select id="branchId" value={form.branchId} onChange={(e) => update("branchId", e.target.value)}>
+          {canAssignAnyBranch && <option value="">All Branches</option>}
+          {!canAssignAnyBranch && <option value="">Select a branch</option>}
+          {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
         </Select>
       </FormField>
 

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { FormField, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ApiError } from "@/lib/api/client";
@@ -51,7 +52,7 @@ function errorMessage(error: unknown, fallback: string) {
 function StatusBadge({ status }: { status: ReleaseStatus }) {
   const styles =
     status === "published"
-      ? "bg-emerald-50 text-emerald-700"
+      ? "bg-brand-50 text-brand-700"
       : status === "draft"
         ? "bg-amber-50 text-amber-700"
         : "bg-slate-100 text-slate-600";
@@ -83,6 +84,8 @@ export function ReleaseConsole() {
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [assignmentFeedback, setAssignmentFeedback] = useState<string | null>(null);
+  const [publishTarget, setPublishTarget] = useState<PlatformRelease | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<PlatformRelease | null>(null);
 
   const loadReleases = useCallback(async () => {
     setLoading(true);
@@ -155,24 +158,11 @@ export function ReleaseConsole() {
   };
 
   const publishRelease = async (release: PlatformRelease) => {
-    if (!window.confirm(`Publish release ${release.version} to the ${release.channel} channel?`)) return;
-    try {
-      await publishPlatformRelease(release.id);
-      await loadReleases();
-    } catch (requestError) {
-      setError(errorMessage(requestError, "Could not publish the release."));
-    }
+    setPublishTarget(release);
   };
 
   const archiveRelease = async (release: PlatformRelease) => {
-    if (!window.confirm(`Archive release ${release.version}?`)) return;
-    try {
-      await archivePlatformRelease(release.id);
-      if (editingId === release.id) resetReleaseForm();
-      await loadReleases();
-    } catch (requestError) {
-      setError(errorMessage(requestError, "Could not archive the release."));
-    }
+    setArchiveTarget(release);
   };
 
   const loadAssignment = async () => {
@@ -453,6 +443,47 @@ export function ReleaseConsole() {
           </div>
         ) : null}
       </section>
+
+      <ConfirmModal
+        isOpen={Boolean(publishTarget)}
+        title="Publish release"
+        description={publishTarget ? `Publish release ${publishTarget.version} to the ${publishTarget.channel} channel?` : ""}
+        confirmText="Publish"
+        cancelText="Cancel"
+        variant="primary"
+        onConfirm={async () => {
+          if (!publishTarget) return;
+          try {
+            await publishPlatformRelease(publishTarget.id);
+            setPublishTarget(null);
+            await loadReleases();
+          } catch (requestError) {
+            setError(errorMessage(requestError, "Could not publish the release."));
+          }
+        }}
+        onCancel={() => setPublishTarget(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(archiveTarget)}
+        title="Archive release"
+        description={archiveTarget ? `Archive release ${archiveTarget.version}?` : ""}
+        confirmText="Archive"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={async () => {
+          if (!archiveTarget) return;
+          try {
+            await archivePlatformRelease(archiveTarget.id);
+            if (editingId === archiveTarget.id) resetReleaseForm();
+            setArchiveTarget(null);
+            await loadReleases();
+          } catch (requestError) {
+            setError(errorMessage(requestError, "Could not archive the release."));
+          }
+        }}
+        onCancel={() => setArchiveTarget(null)}
+      />
     </div>
   );
 }

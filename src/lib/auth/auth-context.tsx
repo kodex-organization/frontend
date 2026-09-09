@@ -131,6 +131,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user, isLoading, loginPassword, loginPin, logout, updateUserLanguage, applySession],
   );
 
+  if (isLoading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-900 text-slate-400">
+        <span>Loading session...</span>
+      </div>
+    );
+  }
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

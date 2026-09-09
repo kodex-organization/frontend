@@ -22,6 +22,9 @@ for (const envPath of envCandidates) {
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: frontendRoot,
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
+  },
   async rewrites() {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
 

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 
 import { useNotifications } from "@/features/notifications/context";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
 import { reScopeOfflineData } from "@/lib/sync/offline-db";
@@ -39,6 +40,7 @@ export function BranchManagementScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deletingBranchId, setDeletingBranchId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<AssignedBranch | null>(null);
   const [blockedDelete, setBlockedDelete] = useState<BlockedDeleteState | null>(
     null,
   );
@@ -68,83 +70,82 @@ export function BranchManagementScreen() {
   const handleDelete = useCallback(
     async (branch: AssignedBranch) => {
       if (!user || deletingBranchId) return;
-
-      const branchName = branch.name ?? `Branch ${branch.id.slice(0, 8)}`;
-      if (
-        !window.confirm(
-          `Delete ${branchName}? Historical records will be retained.`,
-        )
-      ) {
-        return;
-      }
-
-      setDeletingBranchId(branch.id);
-      setBlockedDelete(null);
-      try {
-        const result = await deleteManagedBranch(
-          branch,
-          branches,
-          user.branchId,
-          {
-            deleteBranch,
-            switchBranch: async (branchId) => {
-              const completion = await completeBranchSwitch(user, branchId, {
-                replaceSession,
-                reScopeOfflineData,
-                refreshBranchState: resetForBranch,
-                navigate: (path) => router.replace(path),
-              });
-              router.refresh();
-              if (completion.maintenanceErrors.length > 0) {
-                toast.warning(
-                  "Branch changed, but some local data could not be refreshed.",
-                );
-              }
-            },
-            refreshBranches: () => loadBranches(true),
-          },
-        );
-
-        toast.success(`${branchName} was deleted.`);
-        if (result.fallbackBranch) {
-          toast.info(
-            `Active branch changed to ${
-              result.fallbackBranch.name ?? "another assigned branch"
-            }.`,
-          );
-        }
-      } catch (error) {
-        const blockers = getBranchDeleteBlockers(error);
-        if (blockers) {
-          setBlockedDelete({
-            branchId: branch.id,
-            branchName,
-            currency: branch.currency,
-            blockers,
-          });
-        } else if (error instanceof ActiveBranchFallbackRequiredError) {
-          toast.error(error.message);
-        } else {
-          toast.error(
-            error instanceof ApiError
-              ? error.message
-              : "Could not delete the branch.",
-          );
-        }
-      } finally {
-        setDeletingBranchId(null);
-      }
+      setPendingDelete(branch);
     },
-    [
-      branches,
-      deletingBranchId,
-      loadBranches,
-      replaceSession,
-      resetForBranch,
-      router,
-      user,
-    ],
+    [deletingBranchId, user],
   );
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete || !user || deletingBranchId) return;
+
+    const branchName = pendingDelete.name ?? `Branch ${pendingDelete.id.slice(0, 8)}`;
+    setDeletingBranchId(pendingDelete.id);
+    setPendingDelete(null);
+    setBlockedDelete(null);
+    try {
+      const result = await deleteManagedBranch(
+        pendingDelete,
+        branches,
+        user.branchId,
+        {
+          deleteBranch,
+          switchBranch: async (branchId) => {
+            const completion = await completeBranchSwitch(user, branchId, {
+              replaceSession,
+              reScopeOfflineData,
+              refreshBranchState: resetForBranch,
+              navigate: (path) => router.replace(path),
+            });
+            router.refresh();
+            if (completion.maintenanceErrors.length > 0) {
+              toast.warning(
+                "Branch changed, but some local data could not be refreshed.",
+              );
+            }
+          },
+          refreshBranches: () => loadBranches(true),
+        },
+      );
+
+      toast.success(`${branchName} was deleted.`);
+      if (result.fallbackBranch) {
+        toast.info(
+          `Active branch changed to ${
+            result.fallbackBranch.name ?? "another assigned branch"
+          }.`,
+        );
+      }
+    } catch (error) {
+      const blockers = getBranchDeleteBlockers(error);
+      if (blockers) {
+        setBlockedDelete({
+          branchId: pendingDelete.id,
+          branchName,
+          currency: pendingDelete.currency,
+          blockers,
+        });
+      } else if (error instanceof ActiveBranchFallbackRequiredError) {
+        toast.error(error.message);
+      } else {
+        toast.error(
+          error instanceof ApiError
+            ? error.message
+            : "Could not delete the branch.",
+        );
+      }
+    } finally {
+      setDeletingBranchId(null);
+    }
+  }, [
+    branches,
+    deletingBranchId,
+    loadBranches,
+    pendingDelete,
+    replaceSession,
+    resetForBranch,
+    router,
+    user,
+  ]);
 
   return (
     <div>
@@ -192,6 +193,17 @@ export function BranchManagementScreen() {
           </button>
         </div>
       ) : null}
+
+      <ConfirmModal
+        isOpen={Boolean(pendingDelete)}
+        title="Delete branch"
+        description={pendingDelete ? `Delete ${pendingDelete.name ?? "this branch"}? Historical records will be retained.` : ""}
+        confirmText="Delete branch"
+        cancelText="Keep branch"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
 
       <div className="mt-6 overflow-hidden rounded-md border border-slate-200 bg-white">
         {loading && branches.length === 0 ? (

@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { OfflineBanner } from "@/components/sync/offline-banner";
 import { AuthenticatedHeartbeat } from "@/components/sync/authenticated-heartbeat";
+import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
   title: "CueCloud",
@@ -22,6 +23,7 @@ export default function RootLayout({
           <AuthenticatedHeartbeat />
           <OfflineBanner />
           {children}
+          <Toaster />
         </AuthProvider>
       </body>
     </html>

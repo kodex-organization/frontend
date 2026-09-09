@@ -14,6 +14,7 @@ export interface Customer {
   fullName: string | null;
   phone: string | null;
   cnic: string | null;
+  createdAt?: string | null;
   tagAssignments: CustomerTagAssignment[];
 }
 

@@ -76,7 +76,7 @@ function categoryTone(category: string | null | undefined) {
 
 function StatusBadge({ status }: { status: string }) {
   const tone = status === "sent" || status === "read"
-    ? "bg-emerald-50 text-emerald-700"
+    ? "bg-brand-50 text-brand-700"
     : status === "failed"
       ? "bg-rose-50 text-rose-700"
       : "bg-amber-50 text-amber-700";
@@ -154,7 +154,7 @@ function PreferenceControls() {
     </div>
     <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-5 py-4">
       <Button className="w-auto" disabled={preferencesSaving} onClick={() => void save()}>{preferencesSaving ? "Saving…" : "Save preferences"}</Button>
-      {saved && <span className="inline-flex items-center gap-1 text-sm text-emerald-700"><Check className="h-4 w-4" />Saved</span>}
+      {saved && <span className="inline-flex items-center gap-1 text-sm text-brand-700"><Check className="h-4 w-4" />Saved</span>}
       {preferencesError && <p role="alert" className="text-sm text-rose-700">{preferencesError}</p>}
     </div>
   </section>;

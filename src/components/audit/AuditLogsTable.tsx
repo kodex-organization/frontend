@@ -223,7 +223,7 @@ export function AuditLogsTable({
 
       {/* Audit Detail Modal */}
       {selectedLog && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
             <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
@@ -283,7 +283,7 @@ export function AuditLogsTable({
                   <span className="font-semibold text-zinc-700 dark:text-zinc-300 block mb-1">
                     Context Metadata:
                   </span>
-                  <pre className="p-3 bg-zinc-950 text-emerald-400 rounded-lg overflow-x-auto text-[11px] font-mono leading-relaxed">
+                  <pre className="p-3 bg-zinc-950 text-brand-400 rounded-lg overflow-x-auto text-[11px] font-mono leading-relaxed">
                     {JSON.stringify(selectedLog.details, null, 2)}
                   </pre>
                 </div>

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { FeedbackModal } from "@/components/ui/FeedbackModal";
 import { FormField, Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/client";
 import { formatDateTime, toDateTimeInput } from "@/features/platform-admin/format";
@@ -46,6 +48,9 @@ export function SupportAccessScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<TenantImpersonationConsent | null>(null);
+  const [revokeReason, setRevokeReason] = useState("Support access is no longer required");
+  const [feedbackModal, setFeedbackModal] = useState<{ type: "success" | "warning" | "error"; title: string; message: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,27 +136,45 @@ export function SupportAccessScreen() {
     }
   };
 
-  const revokeConsent = async (consent: TenantImpersonationConsent) => {
-    const revokeReason = window.prompt(
-      "Why are you revoking this support consent?",
-      "Support access is no longer required",
-    );
-    if (!revokeReason || revokeReason.trim().length < 3) return;
+  const revokeConsent = (consent: TenantImpersonationConsent) => {
+    setRevokeTarget(consent);
+    setRevokeReason("Support access is no longer required");
+  };
+
+  const confirmRevokeConsent = async () => {
+    if (!revokeTarget) return;
+    const reason = revokeReason.trim();
+    if (reason.length < 3) {
+      setError("Enter a reason at least 3 characters long.");
+      return;
+    }
     setError(null);
+    setFeedback(null);
+    setRevokeTarget(null);
     try {
-      const result = await revokeTenantConsent(consent.id, revokeReason.trim());
-      setFeedback(
+      const result = await revokeTenantConsent(revokeTarget.id, reason);
+      const message =
         result.endedSessionCount > 0
           ? `Consent revoked and ${result.endedSessionCount} active support session ended.`
-          : "Consent revoked.",
-      );
+          : "Consent revoked.";
+      setFeedback(message);
+      setFeedbackModal({
+        type: "success",
+        title: "Consent revoked",
+        message,
+      });
       await load();
     } catch (requestError) {
-      setError(
+      const message =
         requestError instanceof ApiError
           ? requestError.message
-          : "Could not revoke support consent.",
-      );
+          : "Could not revoke support consent.";
+      setError(message);
+      setFeedbackModal({
+        type: "error",
+        title: "Revocation failed",
+        message,
+      });
     }
   };
 
@@ -263,7 +286,7 @@ export function SupportAccessScreen() {
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full px-2 py-1 text-xs font-medium capitalize ${state === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                          <span className={`rounded-full px-2 py-1 text-xs font-medium capitalize ${state === "active" ? "bg-brand-50 text-brand-700" : "bg-slate-100 text-slate-600"}`}>
                             {state}
                           </span>
                           <span className="text-xs text-slate-500">{consent.allowedScopes.join(", ")}</span>
@@ -291,6 +314,40 @@ export function SupportAccessScreen() {
           </div>
         </div>
       </section>
+
+      <ConfirmModal
+        isOpen={Boolean(revokeTarget)}
+        title="Revoke support consent"
+        description="Explain why support access should be revoked."
+        confirmText="Revoke consent"
+        cancelText="Keep access"
+        variant="danger"
+        onConfirm={() => void confirmRevokeConsent()}
+        onCancel={() => {
+          setRevokeTarget(null);
+          setRevokeReason("Support access is no longer required");
+        }}
+      >
+        <label className="block text-sm font-medium text-slate-700">
+          Revoke reason
+          <textarea
+            value={revokeReason}
+            onChange={(event) => setRevokeReason(event.target.value)}
+            rows={3}
+            className="mt-2 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          />
+        </label>
+      </ConfirmModal>
+
+      {feedbackModal ? (
+        <FeedbackModal
+          isOpen={Boolean(feedbackModal)}
+          type={feedbackModal.type}
+          title={feedbackModal.title}
+          message={feedbackModal.message}
+          onClose={() => setFeedbackModal(null)}
+        />
+      ) : null}
     </div>
   );
 }

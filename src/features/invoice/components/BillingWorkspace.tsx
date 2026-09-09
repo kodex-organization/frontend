@@ -9,6 +9,9 @@ import type { InvoiceStatus } from "../types/invoice";
 import { formatCurrency } from "../utils/formatCurrency";
 import InvoiceTable from "./InvoiceTable";
 import TransactionTable from "./TransactionTable";
+import { fetchBranches } from "@/lib/api/branch";
+import type { BranchItem } from "@/types/branch";
+import { useEffect } from "react";
 
 const statusOptions: Array<{
   value: "" | InvoiceStatus;
@@ -45,6 +48,9 @@ export default function BillingWorkspace({
   const [date, setDate] = useState("");
   const [invoicePage, setInvoicePage] = useState(1);
   const [transactionPage, setTransactionPage] = useState(1);
+  const [branches, setBranches] = useState<BranchItem[]>([]);
+  const [branchId, setBranchId] = useState("");
+  useEffect(() => { void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches)); }, []);
   const range = useMemo(() => dateRange(date), [date]);
 
   const {
@@ -59,6 +65,7 @@ export default function BillingWorkspace({
     search: search || undefined,
     status: status || undefined,
     ...range,
+    branchId: branchId || undefined,
   });
   const transactionState = useTransactions({
     page: transactionPage,
@@ -162,7 +169,7 @@ export default function BillingWorkspace({
             </div>
             <form
               onSubmit={applySearch}
-              className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_160px_160px_auto]"
+              className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_160px_160px_160px_auto]"
             >
               <label className="sr-only" htmlFor="invoice-search">
                 Search invoice number
@@ -196,6 +203,11 @@ export default function BillingWorkspace({
                     {option.label}
                   </option>
                 ))}
+              </select>
+              <label className="sr-only" htmlFor="invoice-branch">Invoice branch</label>
+              <select id="invoice-branch" value={branchId} onChange={(event) => { setInvoicePage(1); setBranchId(event.target.value); }} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500">
+                <option value="">All Branches</option>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
               </select>
               <label className="sr-only" htmlFor="invoice-date">
                 Invoice date
