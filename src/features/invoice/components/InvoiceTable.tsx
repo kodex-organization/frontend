@@ -36,6 +36,7 @@ export default function InvoiceTable({
         <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-5 py-3">Invoice</th>
+            <th className="px-5 py-3">Branch</th>
             <th className="px-5 py-3">Session / table</th>
             <th className="px-5 py-3 text-right">Total</th>
             <th className="px-5 py-3 text-right">Remaining</th>
@@ -73,6 +74,11 @@ export default function InvoiceTable({
                   <p className="mt-0.5 text-xs text-slate-500">
                     {invoice.branch?.name ?? "Current branch"}
                   </p>
+                </td>
+                <td className="whitespace-nowrap px-5 py-4">
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    {invoice.branch?.name ?? "Unknown branch"}
+                  </span>
                 </td>
                 <td className="whitespace-nowrap px-5 py-4 text-slate-600">
                   <p>

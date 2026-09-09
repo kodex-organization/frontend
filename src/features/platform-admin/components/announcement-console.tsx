@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { FormField, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ApiError } from "@/lib/api/client";
@@ -119,7 +120,7 @@ function validateDraft(draft: AnnouncementDraft) {
 function StatusBadge({ status }: { status: AnnouncementStatus }) {
   const styles =
     status === "published"
-      ? "bg-emerald-50 text-emerald-700"
+      ? "bg-brand-50 text-brand-700"
       : status === "draft"
         ? "bg-amber-50 text-amber-700"
         : "bg-slate-100 text-slate-600";
@@ -141,6 +142,8 @@ export function AnnouncementConsole() {
   const [draft, setDraft] = useState<AnnouncementDraft>(emptyDraft);
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [publishTarget, setPublishTarget] = useState<PlatformAnnouncement | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<PlatformAnnouncement | null>(null);
 
   const loadAnnouncements = useCallback(async () => {
     setLoading(true);
@@ -201,26 +204,11 @@ export function AnnouncementConsole() {
   };
 
   const publishAnnouncement = async (announcement: PlatformAnnouncement) => {
-    if (!window.confirm(`Publish "${announcement.title}" to its configured audience?`)) return;
-    setError(null);
-    try {
-      await publishPlatformAnnouncement(announcement.id);
-      await loadAnnouncements();
-    } catch (requestError) {
-      setError(errorMessage(requestError, "Could not publish the announcement."));
-    }
+    setPublishTarget(announcement);
   };
 
   const archiveAnnouncement = async (announcement: PlatformAnnouncement) => {
-    if (!window.confirm(`Archive "${announcement.title}"?`)) return;
-    setError(null);
-    try {
-      await archivePlatformAnnouncement(announcement.id);
-      if (editingId === announcement.id) resetDraft();
-      await loadAnnouncements();
-    } catch (requestError) {
-      setError(errorMessage(requestError, "Could not archive the announcement."));
-    }
+    setArchiveTarget(announcement);
   };
 
   const toggleRole = (role: string) => {
@@ -469,6 +457,49 @@ export function AnnouncementConsole() {
           </div>
         </div>
       </section>
+
+      <ConfirmModal
+        isOpen={Boolean(publishTarget)}
+        title="Publish announcement"
+        description={publishTarget ? `Publish "${publishTarget.title}" to its configured audience?` : ""}
+        confirmText="Publish"
+        cancelText="Cancel"
+        variant="primary"
+        onConfirm={async () => {
+          if (!publishTarget) return;
+          setError(null);
+          try {
+            await publishPlatformAnnouncement(publishTarget.id);
+            setPublishTarget(null);
+            await loadAnnouncements();
+          } catch (requestError) {
+            setError(errorMessage(requestError, "Could not publish the announcement."));
+          }
+        }}
+        onCancel={() => setPublishTarget(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(archiveTarget)}
+        title="Archive announcement"
+        description={archiveTarget ? `Archive "${archiveTarget.title}"?` : ""}
+        confirmText="Archive"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={async () => {
+          if (!archiveTarget) return;
+          setError(null);
+          try {
+            await archivePlatformAnnouncement(archiveTarget.id);
+            if (editingId === archiveTarget.id) resetDraft();
+            setArchiveTarget(null);
+            await loadAnnouncements();
+          } catch (requestError) {
+            setError(errorMessage(requestError, "Could not archive the announcement."));
+          }
+        }}
+        onCancel={() => setArchiveTarget(null)}
+      />
     </div>
   );
 }

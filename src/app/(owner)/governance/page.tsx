@@ -46,9 +46,7 @@ function GovernanceContent() {
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [sessionError, setSessionError] = useState("");
 
-  const [pendingRequests, setPendingRequests] = useState<
-    CancellationRequest[]
-  >([]);
+  const [pendingRequests, setPendingRequests] = useState<CancellationRequest[]>([]);
   const [reviewRequestId, setReviewRequestId] = useState("");
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [requestsError, setRequestsError] = useState("");
@@ -85,11 +83,12 @@ function GovernanceContent() {
     setRequestsError("");
     try {
       const requests = await listPendingCancellationRequests();
-      setPendingRequests(requests);
+      const safeRequests = Array.isArray(requests) ? requests : [];
+      setPendingRequests(safeRequests);
       setReviewRequestId((current) =>
-        requests.some((request) => request.id === current)
+        safeRequests.some((request) => request.id === current)
           ? current
-          : (requests[0]?.id ?? ""),
+          : (safeRequests[0]?.id ?? ""),
       );
     } catch {
       setRequestsError("Failed to fetch pending cancellation requests");
@@ -102,7 +101,8 @@ function GovernanceContent() {
     setLoadingStaff(true);
     setStaffError("");
     try {
-      setStaff(await listEligibleStaff());
+      const staffList = await listEligibleStaff();
+      setStaff(Array.isArray(staffList) ? staffList : []);
     } catch {
       setStaffError("Failed to fetch eligible branch staff");
     } finally {
@@ -205,71 +205,82 @@ function GovernanceContent() {
           )}
         </div>
 
-        {canManage && <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
-            Pending cancellation request
-          </label>
-          {loadingRequests && (
-            <p className="text-sm text-gray-400">Loading requests...</p>
-          )}
-          {requestsError && (
-            <p className="text-sm text-red-500">{requestsError}</p>
-          )}
-          {!loadingRequests &&
-            !requestsError &&
-            pendingRequests.length === 0 && (
-              <p className="text-sm text-gray-500">
-                No pending cancellation requests.
-              </p>
+        {canManage && (
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Pending cancellation request
+            </label>
+            {loadingRequests && (
+              <p className="text-sm text-gray-400">Loading requests...</p>
             )}
-          {!loadingRequests && pendingRequests.length > 0 && (
-            <select
-              value={reviewRequestId}
-              onChange={(event) => setReviewRequestId(event.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            >
-              {pendingRequests.map((request) => (
-                <option key={request.id} value={request.id}>
-                  Table {request.session.table?.tableNumber ?? "?"} —{" "}
-                  {request.requestedBy?.fullName ??
+            {requestsError && (
+              <p className="text-sm text-red-500">{requestsError}</p>
+            )}
+            {!loadingRequests &&
+              !requestsError &&
+              pendingRequests.length === 0 && (
+                <p className="text-sm text-gray-500">
+                  No pending cancellation requests.
+                </p>
+              )}
+            {!loadingRequests && pendingRequests.length > 0 && (
+              <select
+                value={reviewRequestId}
+                onChange={(event) => setReviewRequestId(event.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              >
+                {pendingRequests.map((request) => {
+                  const tableNum =
+                    request.session?.table?.tableNumber ??
+                    (request as any).tableNumber ??
+                    "?";
+                  const requester =
+                    request.requestedBy?.fullName ??
                     request.requestedBy?.email ??
-                    "Unknown staff"}{" "}
-                  — {request.reason ?? "No reason"}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>}
+                    "Unknown staff";
+
+                  return (
+                    <option key={request.id} value={request.id}>
+                      Table {tableNum} — {requester} — {request.reason ?? "No reason"}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
+          </div>
+        )}
       </div>
 
-      {canManage && <div className="mb-8 max-w-4xl rounded-md border border-gray-200 bg-gray-50 p-4">
-        <p className="text-sm font-medium text-gray-700">
-          Eligible branch staff
-        </p>
-        {loadingStaff && (
-          <p className="mt-1 text-sm text-gray-400">Loading staff...</p>
-        )}
-        {staffError && (
-          <p className="mt-1 text-sm text-red-500">{staffError}</p>
-        )}
-        {!loadingStaff && !staffError && (
-          <p className="mt-1 text-sm text-gray-500">
-            {staff.length} active staff member{staff.length === 1 ? "" : "s"};{" "}
-            {staff.reduce(
-              (count, member) => count + member.openSessionCount,
-              0,
-            )}{" "}
-            open session
-            {staff.reduce(
-              (count, member) => count + member.openSessionCount,
-              0,
-            ) === 1
-              ? ""
-              : "s"}{" "}
-            available for handover.
+      {canManage && (
+        <div className="mb-8 max-w-4xl rounded-md border border-gray-200 bg-gray-50 p-4">
+          <p className="text-sm font-medium text-gray-700">
+            Eligible branch staff
           </p>
-        )}
-      </div>}
+          {loadingStaff && (
+            <p className="mt-1 text-sm text-gray-400">Loading staff...</p>
+          )}
+          {staffError && (
+            <p className="mt-1 text-sm text-red-500">{staffError}</p>
+          )}
+          {!loadingStaff && !staffError && (
+            <p className="mt-1 text-sm text-gray-500">
+              {staff.length} active staff member{staff.length === 1 ? "" : "s"};{" "}
+              {staff.reduce(
+                (count, member) => count + member.openSessionCount,
+                0,
+              )}{" "}
+              open session
+              {staff.reduce(
+                (count, member) => count + member.openSessionCount,
+                0,
+              ) === 1
+                ? ""
+                : "s"}{" "}
+              available for handover.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         <ActionCard
@@ -341,7 +352,7 @@ function GovernanceContent() {
       {canManage && showApproval && selectedRequest && (
         <ManagerApprovalModal
           requestId={selectedRequest.id}
-          sessionId={selectedRequest.sessionId}
+          sessionId={selectedRequest.sessionId || (selectedRequest as any).referenceEntityId}
           onClose={() => setShowApproval(false)}
           onSuccess={() =>
             void Promise.all([loadPendingRequests(), loadSessions(), loadStaff()])
@@ -353,7 +364,7 @@ function GovernanceContent() {
           key={`${selectedSession.id}:${currentRate}`}
           sessionId={selectedSession.id}
           currentRate={currentRate}
-          currency={selectedSession.branch.currency}
+          currency={selectedSession.branch?.currency ?? "PKR"}
           onClose={() => setShowRateOverride(false)}
           onSuccess={loadSessions}
         />

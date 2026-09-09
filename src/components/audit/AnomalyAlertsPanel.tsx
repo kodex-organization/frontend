@@ -165,7 +165,7 @@ export function AnomalyAlertsPanel({
         ) : filteredAlerts.length === 0 ? (
           <div className="p-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
             <svg
-              className="w-10 h-10 text-emerald-500 mx-auto mb-2"
+              className="w-10 h-10 text-brand-500 mx-auto mb-2"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -227,14 +227,14 @@ export function AnomalyAlertsPanel({
                     </span>
                   )}
                   {alert.isResolved && alert.resolvedBy && (
-                    <span className="text-emerald-600 dark:text-emerald-400">
+                    <span className="text-brand-600 dark:text-brand-400">
                       <strong>Resolved by:</strong> {alert.resolvedBy.fullName || "Admin"}
                     </span>
                   )}
                 </div>
 
                 {alert.resolutionNotes && (
-                  <div className="mt-2 text-xs bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 p-2 rounded-lg text-emerald-800 dark:text-emerald-300">
+                  <div className="mt-2 text-xs bg-brand-50 dark:bg-brand-950/30 border border-brand-200 dark:border-brand-900 p-2 rounded-lg text-brand-800 dark:text-brand-300">
                     <strong>Resolution Note:</strong> {alert.resolutionNotes}
                   </div>
                 )}
@@ -261,7 +261,7 @@ export function AnomalyAlertsPanel({
 
       {/* Incident Resolution Modal */}
       {activeAlert && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">
               Resolve Anomaly Alert

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import type { AuditKPIs, ClockVerificationResult } from "../../types/audit";
 import { verifyClientClock } from "../../lib/api/audit";
+import { toast } from "@/lib/toast";
 
 interface AuditKPICardsProps {
   kpis: AuditKPIs | null;
@@ -22,8 +23,13 @@ export function AuditKPICards({ kpis, isLoading, onRefresh }: AuditKPICardsProps
         toleranceSeconds: 300,
       });
       setClockStatus(result);
-    } catch (err) {
-      console.error("Failed to verify clock sync:", err);
+      if (result.isTampered) {
+        toast.warning(`Clock skew detected: ${result.diffSeconds}s offset!`);
+      } else {
+        toast.success(`Clock synchronized with server (${result.diffSeconds}s skew).`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to verify clock sync.");
     } finally {
       setVerifyingClock(false);
     }
@@ -48,9 +54,9 @@ export function AuditKPICards({ kpis, isLoading, onRefresh }: AuditKPICardsProps
       value: kpis?.totalLogs?.toLocaleString() ?? "0",
       description: "Cryptographically verified events",
       badge: "Append-Only",
-      badgeColor: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
+      badgeColor: "bg-brand-100 text-brand-800 dark:bg-brand-950/60 dark:text-brand-300",
       icon: (
-        <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="w-5 h-5 text-brand-600 dark:text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
         </svg>
       ),
@@ -78,7 +84,7 @@ export function AuditKPICards({ kpis, isLoading, onRefresh }: AuditKPICardsProps
       badgeColor:
         Number(kpis?.tamperCount ?? 0) > 0
           ? "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300"
-          : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
+          : "bg-brand-100 text-brand-800 dark:bg-brand-950/60 dark:text-brand-300",
       icon: (
         <svg className="w-5 h-5 text-rose-600 dark:text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -135,7 +141,7 @@ export function AuditKPICards({ kpis, isLoading, onRefresh }: AuditKPICardsProps
       {/* Interactive Clock Sync & Tamper Check Banner */}
       <div className="flex flex-col sm:flex-row items-center justify-between p-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 rounded-xl gap-3 text-sm">
         <div className="flex items-center gap-3">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <div className="w-2.5 h-2.5 rounded-full bg-brand-500 animate-pulse" />
           <span className="text-zinc-700 dark:text-zinc-300 text-xs sm:text-sm">
             Server Authoritative Clock Sync is active (drift tolerance: ±5m).
           </span>
@@ -144,7 +150,7 @@ export function AuditKPICards({ kpis, isLoading, onRefresh }: AuditKPICardsProps
               className={`text-xs px-2 py-0.5 rounded-md font-medium ${
                 clockStatus.isTampered
                   ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-                  : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                  : "bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300"
               }`}
             >
               {clockStatus.isTampered

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import DeviceCard from "./DeviceCard";
 import { getDevices, revokeDevice, type Device } from "../api";
 import { getDeviceInfo } from "@/features/auth/index";
-import Swal from "sweetalert2";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { toast } from "@/lib/toast";
 
 const ITEMS_PER_PAGE = 6;
 
@@ -55,14 +56,16 @@ export default function DeviceTable() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pendingRevokeDevice, setPendingRevokeDevice] = useState<Device | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
 
   const loadDevices = async (): Promise<void> => {
     setError(null);
     try {
       const data = await getDevices();
       setDevices(data);
-    } catch (error) {
-      console.error("Failed to load devices:", error);
+    } catch (error: any) {
+      toast.error("Could not load devices. Please try again.");
       setError("Could not load devices. Please try again.");
     } finally {
       setLoading(false);
@@ -73,46 +76,23 @@ export default function DeviceTable() {
     loadDevices();
   }, []);
 
-  const handleRevoke = async (device: Device) => {
-    const result = await Swal.fire({
-  title: "Do you want to revoke?",
-  text: `The user will need to sign in again to access the account.`,
-  icon: "warning",
-  showCancelButton: true,
-  confirmButtonText: "Revoke",
-  cancelButtonText: "Cancel",
-  confirmButtonColor: "#2ab05b",
-  cancelButtonColor: "#8d96a6",
-   
-});
+  const handleRevokeClick = (device: Device) => {
+    setPendingRevokeDevice(device);
+  };
 
-if (!result.isConfirmed) return;
+  const handleConfirmRevoke = async () => {
+    if (!pendingRevokeDevice) return;
 
     try {
-      await revokeDevice(device.id);
-
-      await Swal.fire({
-        icon: "success",
-        title: "Device Revoked",
-        text: "The device has been revoked successfully.",
-        timer: 1800,
-        showConfirmButton: false,
-       
-      });
-
-      // Refresh the device list
+      setIsRevoking(true);
+      await revokeDevice(pendingRevokeDevice.id);
+      toast.success("The device has been revoked successfully.");
+      setPendingRevokeDevice(null);
       await loadDevices();
-    } catch (error) {
-      console.error("Failed to revoke device:", error);
-      
-      await Swal.fire({
-        icon: "error",
-        title: "Revoke Failed",
-        text: "Unable to revoke the selected device.",
-        confirmButtonColor: "#dc2626",
-        
-      });
-
+    } catch (error: any) {
+      toast.error(error.message || "Unable to revoke the selected device.");
+    } finally {
+      setIsRevoking(false);
     }
   };
 
@@ -190,7 +170,7 @@ if (!result.isConfirmed) return;
           isCurrentDevice={
             device.deviceIdentifier === currentDeviceIdentifier
           }
-          onRevoke={() => handleRevoke(device)}
+          onRevoke={() => handleRevokeClick(device)}
         />
       ))}
     </div>
@@ -230,6 +210,20 @@ if (!result.isConfirmed) return;
   </div>
 )}
 
+      <ConfirmModal
+        isOpen={Boolean(pendingRevokeDevice)}
+        title="Revoke Device Access"
+        description={
+          pendingRevokeDevice
+            ? `Are you sure you want to revoke access for "${pendingRevokeDevice.deviceName || "this device"}"? The user will need to sign in again to access the account.`
+            : ""
+        }
+        confirmText={isRevoking ? "Revoking..." : "Revoke Access"}
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={handleConfirmRevoke}
+        onCancel={() => !isRevoking && setPendingRevokeDevice(null)}
+      />
     </div>
   );
 }

@@ -12,9 +12,8 @@ export default function OwnerLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isBillingRoute =
-    pathname === "/billing" || pathname.startsWith("/billing/");
-  const isSyncStatusRoute = pathname === "/sync-status";
+
+  // Strict Owner-only administrative operations & system reports
   const isOwnerOnlyRoute =
     pathname === "/reports" ||
     pathname.startsWith("/reports/") ||
@@ -22,31 +21,25 @@ export default function OwnerLayout({
     pathname === "/settings/peak-hours" ||
     pathname === "/settings/support-access" ||
     pathname === "/settings/data-export";
+
+  // Branch management configuration (Owner and Branch Managers)
   const isBranchManagementRoute =
     pathname === "/branches" || pathname.startsWith("/branches/");
-  const isCustomersRoute =
-    pathname === "/customers" || pathname.startsWith("/customers/");
-  const isOperationalRoute =
-    pathname === "/governance" ||
-    pathname === "/floor-view" ||
-    pathname === "/sessions" ||
-    pathname.startsWith("/sessions/");
-  const allowedRoles: UserRole[] =
-    isOwnerOnlyRoute
-      ? ["OWNER"]
-      : isBranchManagementRoute
-      ? ["OWNER", "MANAGER"]
-      : isBillingRoute || isSyncStatusRoute
-      ? ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"]
-      : isCustomersRoute
-      ? ["OWNER", "MANAGER", "CASHIER"]
-      : isOperationalRoute
-      ? ["OWNER", "MANAGER", "CASHIER"]
-      : ["OWNER", "MANAGER", "ACCOUNTANT"];
+
+  // Resolve allowed roles:
+  // All core operational routes (Dashboard, Sessions, Floor View, Billing, Customers, Udhaar, Sync)
+  // are accessible to Cashiers, Accountants, Managers, and Owners.
+  const allowedRoles: UserRole[] = isOwnerOnlyRoute
+    ? ["OWNER"]
+    : isBranchManagementRoute
+    ? ["OWNER", "MANAGER"]
+    : ["OWNER", "MANAGER", "CASHIER", "ACCOUNTANT"];
 
   return (
     <ProtectedRoute allowedRoles={allowedRoles}>
-      <NotificationProvider><OwnerShell>{children}</OwnerShell></NotificationProvider>
+      <NotificationProvider>
+        <OwnerShell>{children}</OwnerShell>
+      </NotificationProvider>
     </ProtectedRoute>
   );
 }

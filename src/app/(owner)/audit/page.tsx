@@ -18,6 +18,8 @@ import {
   verifyClientClock,
 } from "../../../lib/api/audit";
 
+import { toast } from "@/lib/toast";
+
 export default function AuditPage() {
   const [kpis, setKpis] = useState<AuditKPIs | null>(null);
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
@@ -41,6 +43,11 @@ export default function AuditPage() {
   const [retentionPolicy, setRetentionPolicy] = useState<AuditRetentionPolicy | null>(null);
   const [retentionDays, setRetentionDays] = useState(365);
   const [autoArchive, setAutoArchive] = useState(false);
+
+  // Resolve Alert Modal State
+  const [resolvingAlert, setResolvingAlert] = useState<AnomalyAlertItem | null>(null);
+  const [resolutionNotes, setResolutionNotes] = useState("");
+  const [isSubmittingResolution, setIsSubmittingResolution] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -75,7 +82,7 @@ export default function AuditPage() {
       }
       if (alertRes) setAlerts(alertRes.alerts || []);
     } catch (err) {
-      console.error("Failed to load audit data:", err);
+      toast.error("Failed to load audit data.");
     } finally {
       setIsLoading(false);
     }
@@ -99,11 +106,13 @@ export default function AuditPage() {
           message: `Clock skew detected: ${res.diffSeconds}s offset from server!`,
           isTampered: true,
         });
+        toast.warning(`Clock skew detected: ${res.diffSeconds}s offset from server!`);
       } else {
         setClockStatus({
           message: `Clock synchronized with authoritative server (Skew: ${res.diffSeconds}s).`,
           isTampered: false,
         });
+        toast.success(`Clock synchronized with authoritative server (Skew: ${res.diffSeconds}s).`);
       }
       loadData();
     } catch (err: any) {
@@ -111,6 +120,7 @@ export default function AuditPage() {
         message: `Failed to verify clock: ${err.message}`,
         isTampered: true,
       });
+      toast.error(`Failed to verify clock: ${err.message}`);
     } finally {
       setIsVerifyingClock(false);
     }
@@ -121,25 +131,41 @@ export default function AuditPage() {
     try {
       setIsScanning(true);
       const res = await triggerAnomalyScan();
-      alert(`Scan complete. ${res.detectedCount} new anomaly alert(s) identified.`);
+      toast.success(`Scan complete: ${res.detectedCount} new anomaly alert(s) identified.`);
       loadData();
     } catch (err: any) {
-      alert(err.message || "Failed to run scan.");
+      toast.error(err.message || "Failed to run scan.");
     } finally {
       setIsScanning(false);
     }
   };
 
-  // Handle Resolving Alert
-  const handleResolveAlert = async (alertId: string) => {
-    const notes = prompt("Enter resolution notes / audit justification:");
-    if (!notes || !notes.trim()) return;
+  // Handle Opening Resolution Modal
+  const handleOpenResolveModal = (alertItem: AnomalyAlertItem) => {
+    setResolvingAlert(alertItem);
+    setResolutionNotes("");
+  };
+
+  // Handle Submitting Resolution
+  const handleConfirmResolve = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvingAlert) return;
+    if (!resolutionNotes.trim()) {
+      toast.error("Please enter resolution notes or audit justification.");
+      return;
+    }
 
     try {
-      await resolveAnomaly(alertId, notes.trim());
+      setIsSubmittingResolution(true);
+      await resolveAnomaly(resolvingAlert.id, resolutionNotes.trim());
+      toast.success("Anomaly alert marked as resolved.");
+      setResolvingAlert(null);
+      setResolutionNotes("");
       loadData();
     } catch (err: any) {
-      alert(err.message || "Failed to resolve alert.");
+      toast.error(err.message || "Failed to resolve alert.");
+    } finally {
+      setIsSubmittingResolution(false);
     }
   };
 
@@ -152,7 +178,7 @@ export default function AuditPage() {
       setAutoArchive(policy.autoArchive);
       setIsRetentionModalOpen(true);
     } catch (err: any) {
-      alert(err.message || "Failed to load retention policy.");
+      toast.error(err.message || "Failed to load retention policy.");
     }
   };
 
@@ -162,9 +188,9 @@ export default function AuditPage() {
     try {
       await updateRetentionPolicy({ retentionDays, autoArchive });
       setIsRetentionModalOpen(false);
-      alert("Retention policy updated successfully.");
+      toast.success("Retention policy updated successfully.");
     } catch (err: any) {
-      alert(err.message || "Failed to update retention policy.");
+      toast.error(err.message || "Failed to update retention policy.");
     }
   };
 
@@ -221,7 +247,7 @@ export default function AuditPage() {
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Total Immutable Logs
             </span>
-            <span className="p-2 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100">
+            <span className="p-2 rounded-xl bg-brand-50 text-brand-600 border border-brand-100">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
@@ -233,7 +259,7 @@ export default function AuditPage() {
             </div>
             <div className="mt-2 flex items-center justify-between text-xs">
               <span className="text-slate-500">Cryptographically verified</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 text-[10px]">
+              <span className="px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-semibold border border-brand-200 text-[10px]">
                 Append-Only
               </span>
             </div>
@@ -293,7 +319,7 @@ export default function AuditPage() {
                 className={`px-2 py-0.5 rounded-full font-semibold border text-[10px] ${
                   (kpis?.tamperCount ?? 0) > 0
                     ? "bg-rose-50 text-rose-700 border-rose-200"
-                    : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-brand-50 text-brand-700 border-brand-200"
                 }`}
               >
                 {(kpis?.tamperCount ?? 0) > 0 ? "Alerts Recorded" : "Synchronized"}
@@ -335,7 +361,7 @@ export default function AuditPage() {
             className={`w-2.5 h-2.5 rounded-full shrink-0 ${
               clockStatus?.isTampered
                 ? "bg-rose-500 animate-ping"
-                : "bg-emerald-500 animate-pulse"
+                : "bg-brand-500 animate-pulse"
             }`}
           />
           <span className="text-xs font-medium text-slate-700">
@@ -405,7 +431,7 @@ export default function AuditPage() {
 
         {alerts.length === 0 ? (
           <div className="p-8 text-center bg-slate-50 border border-slate-100 rounded-xl">
-            <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2 border border-emerald-100">
+            <div className="w-10 h-10 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-2 border border-brand-100">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
@@ -446,7 +472,7 @@ export default function AuditPage() {
                   </div>
                   <p className="text-xs text-slate-600 mt-1">{alert.description}</p>
                   {alert.resolutionNotes && (
-                    <p className="text-[11px] text-emerald-700 mt-1 bg-emerald-50/60 px-2 py-1 rounded-md border border-emerald-100 inline-block">
+                    <p className="text-[11px] text-brand-700 mt-1 bg-brand-50/60 px-2 py-1 rounded-md border border-brand-100 inline-block">
                       <strong>Resolution Note:</strong> {alert.resolutionNotes}
                     </p>
                   )}
@@ -454,8 +480,8 @@ export default function AuditPage() {
 
                 {!alert.isResolved && (
                   <button
-                    onClick={() => handleResolveAlert(alert.id)}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors shadow-2xs shrink-0"
+                    onClick={() => handleOpenResolveModal(alert)}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors shadow-2xs shrink-0 cursor-pointer"
                   >
                     Resolve Alert
                   </button>
@@ -572,7 +598,7 @@ export default function AuditPage() {
                             ? "bg-rose-50 text-rose-700 border-rose-200"
                             : log.severity === "warning"
                             ? "bg-amber-50 text-amber-700 border-amber-200"
-                            : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-brand-50 text-brand-700 border-brand-200"
                         }`}
                       >
                         {log.severity.toUpperCase()}
@@ -661,6 +687,79 @@ export default function AuditPage() {
                   className="px-3.5 py-1.5 text-xs font-semibold rounded-xl bg-slate-900 text-white hover:bg-slate-800"
                 >
                   Save Policy
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Resolve Anomaly Modal */}
+      {resolvingAlert && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Resolve Anomaly Alert
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Provide an audit justification and resolution notes for compliance records.
+                </p>
+              </div>
+              <span
+                className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                  resolvingAlert.severity === "critical"
+                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                    : "bg-amber-50 text-amber-700 border-amber-200"
+                }`}
+              >
+                {resolvingAlert.severity.toUpperCase()}
+              </span>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 space-y-1">
+              <div className="font-semibold text-slate-800">{resolvingAlert.anomalyType}</div>
+              <div>{resolvingAlert.description}</div>
+              <div className="text-[11px] text-slate-400">
+                Detected: {new Date(resolvingAlert.detectedAt).toLocaleString()}
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmResolve} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Resolution Notes / Audit Justification <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="e.g., Reviewed by GM, verified valid manager discount with receipt attached..."
+                  value={resolutionNotes}
+                  onChange={(e) => setResolutionNotes(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 resize-none"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isSubmittingResolution}
+                  onClick={() => {
+                    setResolvingAlert(null);
+                    setResolutionNotes("");
+                  }}
+                  className="px-3.5 py-1.5 text-xs font-semibold rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingResolution || !resolutionNotes.trim()}
+                  className="px-4 py-1.5 text-xs font-semibold rounded-xl bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  {isSubmittingResolution ? "Resolving..." : "Confirm & Resolve"}
                 </button>
               </div>
             </form>

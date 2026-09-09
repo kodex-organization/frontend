@@ -8,10 +8,14 @@ import type {
 
 interface RequestOptions {
   signal?: AbortSignal;
+  branchId?: string;
 }
 
 export function fetchFloorView(options: RequestOptions = {}) {
-  return apiFetch<FloorViewTable[]>("/floor-view", {
+  const query = options.branchId
+    ? `?branchId=${encodeURIComponent(options.branchId)}`
+    : "";
+  return apiFetch<FloorViewTable[]>(`/floor-view${query}`, {
     signal: options.signal,
   });
 }

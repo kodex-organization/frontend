@@ -49,7 +49,7 @@ function Metric({
 function HeartbeatStatus({ status }: { status: PlatformHealth["sync"]["heartbeat"]["status"] }) {
   const styles =
     status === "healthy"
-      ? "bg-emerald-50 text-emerald-700"
+      ? "bg-brand-50 text-brand-700"
       : status === "degraded"
         ? "bg-amber-50 text-amber-700"
         : "bg-slate-100 text-slate-600";

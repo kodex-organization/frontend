@@ -11,11 +11,11 @@ export type HeartbeatResponse = {
   lastSyncedAt: string | null;
 };
 
-type SyncPushChange = {
+export type SyncPushChange = {
   idempotencyKey: string;
-  entityType: "session" | "invoice";
+  entityType: "session" | "invoice" | "customer" | "payment" | "udhaar" | "notification" | string;
   entityId?: string;
-  action: "create" | "update" | "delete";
+  action: "create" | "update" | "delete" | string;
   payload?: unknown;
   originTimestamp?: string;
 };
@@ -23,9 +23,9 @@ type SyncPushChange = {
 export type SyncPushChangeResult = {
   id?: string;
   idempotencyKey: string;
-  entityType: "session" | "invoice";
+  entityType: string;
   entityId: string | null;
-  action: "create" | "update" | "delete";
+  action: string;
   status: "accepted" | "ignored" | "rejected";
   conflictResolution: string;
   serverTimestamp: string;
@@ -33,7 +33,7 @@ export type SyncPushChangeResult = {
   error?: string;
 };
 
-type SyncPushResponse = {
+export type SyncPushResponse = {
   batchId: string;
   deviceId: string;
   receivedChanges: number;
@@ -42,7 +42,7 @@ type SyncPushResponse = {
   serverTime: string;
 };
 
-type SyncPullResponse = {
+export type SyncPullResponse = {
   deviceId: string;
   since: string | null;
   changes: unknown[];

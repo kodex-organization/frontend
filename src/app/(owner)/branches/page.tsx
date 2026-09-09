@@ -6,11 +6,14 @@ import { deleteBranch, fetchBranches } from "../../../lib/api/branch";
 import { BranchList } from "../../../components/branches/BranchList";
 import { BranchModal } from "../../../components/branches/BranchModal";
 import { BranchConfigModal } from "../../../components/branches/BranchConfigModal";
+import { FeedbackModal } from "@/components/ui/FeedbackModal";
+import { toast } from "@/lib/toast";
 
 export default function OwnerBranchesPage() {
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ title: string; message: string; type: "success" | "error" | "warning" } | null>(null);
 
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
   const [selectedBranchForEdit, setSelectedBranchForEdit] = useState<BranchItem | null>(null);
@@ -25,12 +28,11 @@ export default function OwnerBranchesPage() {
       const res = await fetchBranches({ limit: 50 });
       setBranches(res.branches || []);
     } catch (err: any) {
-      console.error("Failed to load branches:", err);
-      if (err.message?.includes("jwt expired")) {
-        setError("Your session has expired. Please log in again.");
-      } else {
-        setError(err.message || "Failed to load branches.");
-      }
+      const msg = err.message?.includes("jwt expired")
+        ? "Your session has expired. Please log in again."
+        : err.message || "Failed to load branches.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }
@@ -67,8 +69,9 @@ export default function OwnerBranchesPage() {
     try {
       await deleteBranch(branchId);
       await loadBranches();
+      setFeedback({ title: "Branch updated", message: "The branch was deleted successfully.", type: "success" });
     } catch (err: any) {
-      alert(err.message || "Failed to delete branch.");
+      setFeedback({ title: "Delete failed", message: err.message || "Failed to delete branch.", type: "error" });
     }
   };
 
@@ -150,6 +153,14 @@ export default function OwnerBranchesPage() {
         onClose={() => setIsConfigModalOpen(false)}
         branch={selectedBranchForConfig}
         onConfigUpdated={handleConfigSaved}
+      />
+
+      <FeedbackModal
+        isOpen={Boolean(feedback)}
+        type={feedback?.type ?? "success"}
+        title={feedback?.title ?? "Update"}
+        message={feedback?.message ?? ""}
+        onClose={() => setFeedback(null)}
       />
     </div>
   );

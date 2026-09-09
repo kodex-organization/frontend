@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Select } from "@/components/ui/select";
 import { ApiError } from "@/lib/api/client";
 import { formatDateTime } from "@/features/platform-admin/format";
@@ -28,7 +29,7 @@ import {
 } from "../data-exports";
 
 function statusStyle(status: DataExportStatus) {
-  if (status === "completed") return "bg-emerald-50 text-emerald-700";
+  if (status === "completed") return "bg-brand-50 text-brand-700";
   if (status === "failed" || status === "expired") return "bg-red-50 text-red-700";
   return "bg-amber-50 text-amber-700";
 }
@@ -57,6 +58,7 @@ export function DataExportScreen() {
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -95,7 +97,6 @@ export function DataExportScreen() {
   }, [hasPendingJobs, load]);
 
   const requestExport = async () => {
-    if (!window.confirm("Request a new JSON export of your tenant business data?")) return;
     setRequesting(true);
     setError(null);
     setFeedback(null);
@@ -111,6 +112,7 @@ export function DataExportScreen() {
       );
     } finally {
       setRequesting(false);
+      setConfirmRequest(false);
     }
   };
 
@@ -159,13 +161,25 @@ export function DataExportScreen() {
             Request a server-generated export and download it before its authorization window expires.
           </p>
         </div>
-        <Button type="button" isLoading={requesting} onClick={() => void requestExport()}>
+        <Button type="button" isLoading={requesting} onClick={() => setConfirmRequest(true)}>
           <FileArchive className="h-4 w-4" /> Request JSON export
         </Button>
       </header>
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {feedback ? <Alert variant="success">{feedback}</Alert> : null}
+
+      <ConfirmModal
+        isOpen={confirmRequest}
+        title="Request data export"
+        description="Request a new JSON export of your tenant business data?"
+        confirmText="Request export"
+        cancelText="Cancel"
+        variant="primary"
+        isLoading={requesting}
+        onConfirm={() => void requestExport()}
+        onCancel={() => setConfirmRequest(false)}
+      />
 
       <section className="border-t border-slate-200 pt-6">
         <div className="flex items-end justify-between gap-3">

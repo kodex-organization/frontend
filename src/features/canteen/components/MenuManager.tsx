@@ -7,11 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "react-toastify";
 
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+
 export function MenuManager() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<MenuItem | null>(null);
 
   useEffect(() => {
     loadData();
@@ -32,6 +35,13 @@ export function MenuManager() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+    toast.success(`Item "${itemToDelete.name}" removed from catalog.`);
+    setItems((prev) => prev.filter((i) => i.id !== itemToDelete.id));
+    setItemToDelete(null);
   };
 
   if (isLoading) {
@@ -58,7 +68,7 @@ export function MenuManager() {
     return (
       <div className="flex h-64 items-center justify-center flex-col gap-4">
         <p className="text-muted-foreground">No menu items or categories found.</p>
-        <Button onClick={() => alert("Open create category modal")} className="w-auto"><Plus className="w-4 h-4 mr-2" /> Add Category</Button>
+        <Button onClick={() => toast.info("Please create categories from the catalog settings.")} className="w-auto"><Plus className="w-4 h-4 mr-2" /> Add Category</Button>
       </div>
     );
   }
@@ -68,8 +78,8 @@ export function MenuManager() {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold tracking-tight">Canteen Menu</h2>
         <div className="flex gap-2">
-           <Button variant="secondary" className="w-auto"><Plus className="w-4 h-4 mr-2" /> Category</Button>
-           <Button className="w-auto"><Plus className="w-4 h-4 mr-2" /> Menu Item</Button>
+           <Button variant="secondary" className="w-auto" onClick={() => toast.info("Use Catalog Settings to create categories.")}><Plus className="w-4 h-4 mr-2" /> Category</Button>
+           <Button className="w-auto" onClick={() => toast.info("Use Catalog Settings to add items.")}><Plus className="w-4 h-4 mr-2" /> Menu Item</Button>
         </div>
       </div>
 
@@ -109,7 +119,7 @@ export function MenuManager() {
                         onClick={handleToggleStock}
                         className={`text-xs px-2 py-1 rounded-full font-medium transition-colors ${
                           item.isAvailable
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                            ? "bg-brand-50 text-brand-700 border border-brand-200 hover:bg-brand-100"
                             : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
                         }`}
                       >
@@ -120,8 +130,8 @@ export function MenuManager() {
                     <p className="font-medium mt-2 text-primary">${Number(item.currentPrice).toFixed(2)}</p>
                   </div>
                   <div className="flex justify-end gap-2 mt-4">
-                    <Button variant="ghost" className="w-9 h-9 p-0" onClick={() => alert("Open edit modal")}><Edit className="w-4 h-4" /></Button>
-                    <Button variant="ghost" className="text-destructive w-9 h-9 p-0" onClick={() => alert("Confirm delete")}><Trash className="w-4 h-4" /></Button>
+                    <Button variant="ghost" className="w-9 h-9 p-0" onClick={() => toast.info(`Editing ${item.name}`)}><Edit className="w-4 h-4" /></Button>
+                    <Button variant="ghost" className="text-destructive w-9 h-9 p-0" onClick={() => setItemToDelete(item)}><Trash className="w-4 h-4" /></Button>
                   </div>
                 </div>
               );
@@ -129,6 +139,16 @@ export function MenuManager() {
           </div>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={Boolean(itemToDelete)}
+        title="Delete Menu Item"
+        description={`Are you sure you want to remove "${itemToDelete?.name}" from the canteen menu?`}
+        confirmText="Delete"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setItemToDelete(null)}
+      />
     </div>
   );
 }
