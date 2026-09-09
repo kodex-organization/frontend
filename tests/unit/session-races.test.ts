@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ApiError, apiFetch, apiDownload } from '@/lib/api/client';
-import { AUTH_SESSION_CLEARED_EVENT, tokenStorage, type UserRole } from '@/lib/auth/session';
+import { AUTH_SESSION_CLEARED_EVENT, AUTH_STORAGE_KEYS, tokenStorage, type UserRole } from '@/lib/auth/session';
 import { loginWithPassword } from '@/features/auth';
 import { DashboardApi } from '@/features/dashboard/dashboard.api';
 import { platformAdminStorage } from '@/lib/platform-admin/session';
@@ -64,6 +64,27 @@ async function browser(run: () => Promise<void>) {
     else Reflect.deleteProperty(globalThis, 'navigator');
   }
 }
+
+test('tenant session commit events expose complete login and logout without changing the admin session', async (t) => browser(async () => {
+  platformAdminStorage.replaceSession(adminToken('independent'), admin);
+  const adminVersion = platformAdminStorage.getSessionVersion();
+  const snapshots: Array<{ token: string | null; user: string | null }> = [];
+  const setItem = window.localStorage.setItem.bind(window.localStorage);
+  t.mock.method(window.localStorage, 'setItem', (key: string, value: string) => {
+    setItem(key, value);
+    if (key === AUTH_STORAGE_KEYS.version) {
+      snapshots.push({ token: tokenStorage.get()?.accessToken ?? null, user: tokenStorage.getUser()?.id ?? null });
+    }
+  });
+  tokenStorage.replaceSession({ accessToken: tenantToken('owner') }, user);
+  tokenStorage.clear();
+  assert.deepEqual(snapshots, [
+    { token: tenantToken('owner'), user: ID },
+    { token: null, user: null },
+  ]);
+  assert.equal(platformAdminStorage.getAccessToken(), adminToken('independent'));
+  assert.equal(platformAdminStorage.getSessionVersion(), adminVersion);
+}));
 
 test('customer deletion accepts empty 204 and removes its offline cache entry', async (t) => browser(async () => {
   tokenStorage.replaceSession({ accessToken: tenantToken('customer-delete') }, user);

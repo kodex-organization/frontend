@@ -57,6 +57,12 @@ const ACCESS_TOKEN_KEY = "cuecloud_access_token";
 const USER_KEY = "cuecloud_user";
 const SESSION_VERSION_KEY = 'cuecloud_session_version';
 
+export const AUTH_STORAGE_KEYS = {
+  accessToken: ACCESS_TOKEN_KEY,
+  user: USER_KEY,
+  version: SESSION_VERSION_KEY,
+} as const;
+
 export const AUTH_SESSION_CLEARED_EVENT = "cuecloud:session-cleared";
 export const AUTH_SESSION_REPLACED_EVENT = "cuecloud:session-replaced";
 
@@ -161,12 +167,13 @@ export const tokenStorage = {
   },
   clear(options?: { notifyIfEmpty?: boolean }): void {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(SESSION_VERSION_KEY, crypto.randomUUID());
     const hadSession =
       window.localStorage.getItem(ACCESS_TOKEN_KEY) !== null ||
       window.localStorage.getItem(USER_KEY) !== null;
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
+    // Publish the completed logout after removing both session fields.
+    window.localStorage.setItem(SESSION_VERSION_KEY, crypto.randomUUID());
     // An open page can still hold its user in memory after storage is emptied.
     if (hadSession || options?.notifyIfEmpty) {
       window.dispatchEvent(new Event(AUTH_SESSION_CLEARED_EVENT));
