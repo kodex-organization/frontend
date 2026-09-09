@@ -12,6 +12,7 @@ import { customerApi } from '@/features/customers/customer-api';
 import { offlineDB } from '@/lib/sync/offline-db';
 import { completeBranchSwitch, getAssignedBranches } from '@/features/tenancy/branch-switching';
 import { redirectPathForRoles } from '@/lib/auth/session';
+import { createSessionRefresh } from '@/lib/auth/session-refresh';
 
 const ID = '00000000-0000-4000-8000-000000000001';
 const BRANCH = '00000000-0000-4000-8000-000000000002';
@@ -462,6 +463,46 @@ test('the same owner can log in again and authenticate dashboard and branch requ
   await Promise.all([DashboardApi.getKPIs(), getAssignedBranches()]);
   assert.deepEqual(tokenStorage.getUser(), user);
   assert.deepEqual(paths, ['/api/v1/auth/login', '/api/v1/dashboard/kpis', '/api/v1/tenancy/branches/assigned']);
+}));
+
+test('independent tab refresh helpers share a browser lock and reuse the rotated token', async () => browser(async () => {
+  let queue = Promise.resolve();
+  Object.defineProperty(navigator, 'locks', { value: { request: (_name: string, task: () => Promise<boolean>) => {
+    const next = queue.then(task); queue = next.then(() => {}); return next;
+  } } });
+  let token = 'old';
+  let clears = 0;
+  const store = { lockName: 'tenant-test', getVersion: () => 'login-1', getToken: () => token,
+    setToken: (next: string) => { token = next; }, clear: () => { clears++; }, changeEvents: [] };
+  const started = deferred<void>();
+  const pending = deferred<{ accessToken: string }>();
+  let requests = 0;
+  const request = async () => { requests++; started.resolve(); return pending.promise; };
+  const first = createSessionRefresh(store, request)();
+  const second = createSessionRefresh(store, request)();
+  await started.promise;
+  pending.resolve({ accessToken: 'rotated' });
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
+  assert.equal(requests, 1);
+  assert.equal(clears, 0);
+}));
+
+test('a tab waiting for the refresh lock cannot refresh a replacement login', async () => browser(async () => {
+  const gate = deferred<void>();
+  Object.defineProperty(navigator, 'locks', { value: { request: async (_name: string, task: () => Promise<boolean>) => {
+    await gate.promise; return task();
+  } } });
+  let version = 'old';
+  let requests = 0;
+  const refresh = createSessionRefresh({ lockName: 'tenant-test', getVersion: () => version,
+    getToken: () => 'token', setToken: () => assert.fail('must not replace login'),
+    clear: () => assert.fail('must not clear login'), changeEvents: [] },
+    async () => { requests++; return {}; });
+  const waiting = refresh();
+  version = 'new';
+  gate.resolve();
+  assert.equal(await waiting, false);
+  assert.equal(requests, 0);
 }));
 
 test('sync makes no requests without a logged-in session', async () => browser(async () => {

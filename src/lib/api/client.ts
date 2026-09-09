@@ -43,6 +43,7 @@ const getApiBaseUrl = () => {
  */
 const refreshAccessToken = createSessionRefresh(
   {
+    lockName: 'cuecloud:tenant-refresh',
     getVersion: () => tokenStorage.getSessionVersion(),
     getToken: () => tokenStorage.get()?.accessToken ?? null,
     setToken: (accessToken) => tokenStorage.setRefreshedToken(accessToken),

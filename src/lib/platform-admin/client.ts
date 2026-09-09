@@ -58,6 +58,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 
 export const refreshPlatformAdminAccessToken = createSessionRefresh(
   {
+    lockName: 'cuecloud:platform-admin-refresh',
     getVersion: () => platformAdminStorage.getSessionVersion(),
     getToken: () => platformAdminStorage.getAccessToken(),
     setToken: (token) => {

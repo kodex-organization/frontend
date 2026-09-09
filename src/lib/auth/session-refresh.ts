@@ -1,4 +1,5 @@
 interface RefreshStore {
+  lockName: string;
   getVersion: () => string | null;
   getToken: () => string | null;
   setToken: (token: string) => void;
@@ -30,8 +31,12 @@ export function createSessionRefresh(
     if (typeof window !== 'undefined') {
       for (const event of events) window.addEventListener(event, onSessionChange);
     }
-    const promise = (async () => {
+    const refresh = async () => {
       try {
+        // A different tab may have refreshed or replaced this session while
+        // this tab waited for the origin-wide lock. Recheck before sending cookies.
+        if (store.getVersion() !== version) return false;
+        if (store.getToken() !== token) return Boolean(store.getToken());
         const result = await request(controller.signal);
         if (store.getVersion() !== version) return false;
         // Another tab may have already refreshed this same session.
@@ -43,17 +48,24 @@ export function createSessionRefresh(
         if (result.unauthorized) store.clear();
       } catch {
         // Network/server failures are not evidence that the user logged out.
-      } finally {
-        if (typeof window !== 'undefined') {
-          for (const event of events) window.removeEventListener(event, onSessionChange);
-        }
       }
       return false;
-    })();
+    };
+    // The in-memory promise only deduplicates one tab. Web Locks serialize
+    // cookie rotation across tabs without accepting replayed refresh tokens.
+    const promise = Promise.resolve(typeof navigator !== 'undefined' && navigator.locks
+      ? navigator.locks.request(store.lockName, refresh)
+      : refresh());
     pending = { version, promise };
     try {
       return await promise;
+    } catch {
+      // A denied/unavailable browser lock is not evidence of session expiry.
+      return false;
     } finally {
+      if (typeof window !== 'undefined') {
+        for (const event of events) window.removeEventListener(event, onSessionChange);
+      }
       if (pending?.promise === promise) pending = null;
     }
   };

@@ -80,7 +80,9 @@ export function PlatformAdminAuthProvider({
         event.key === PLATFORM_ADMIN_STORAGE_KEYS.accessToken ||
         event.key === PLATFORM_ADMIN_STORAGE_KEYS.admin
       ) {
-        void restoreSession();
+        // Storage events already describe the shared browser session. In
+        // particular, logout must not trigger a new cookie refresh in each tab.
+        replaceSession();
       }
     };
 
