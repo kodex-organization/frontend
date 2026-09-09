@@ -11,9 +11,15 @@ export interface CustomerTagAssignment {
 
 export interface Customer {
   id: string;
+  branchId: string | null;
+  branch?: {
+    id: string;
+    name: string | null;
+  } | null;
   fullName: string | null;
   phone: string | null;
   cnic: string | null;
+  createdAt?: string | null;
   tagAssignments: CustomerTagAssignment[];
 }
 
@@ -51,6 +57,7 @@ export interface CustomerUdhaarHistory {
 }
 
 export interface CustomerCreateInput {
+  branchId?: string | null;
   fullName: string;
   phone: string;
   cnic?: string | null;
@@ -58,6 +65,7 @@ export interface CustomerCreateInput {
 }
 
 export interface CustomerUpdateInput {
+  branchId?: string | null;
   fullName?: string;
   phone?: string;
   cnic?: string | null;

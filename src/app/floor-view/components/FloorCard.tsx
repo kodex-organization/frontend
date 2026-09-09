@@ -5,10 +5,18 @@ import { FloorViewTable } from "../types";
 
 interface FloorCardProps {
   table: FloorViewTable;
+  onStartSession?: (tableId: string) => void;
+  onPauseSession?: (sessionId: string) => void;
+  onResumeSession?: (sessionId: string) => void;
+  onEndSession?: (sessionId: string) => void;
 }
 
-function formatDuration(seconds: number) {
-  const safeSeconds = Math.max(0, Math.floor(seconds));
+function formatDuration(seconds: number | undefined, startedAt: string | null = null) {
+  const parsedStartedAt = startedAt ? new Date(startedAt) : null;
+  const elapsedSeconds = parsedStartedAt && !Number.isNaN(parsedStartedAt.getTime())
+    ? (Date.now() - parsedStartedAt.getTime()) / 1000
+    : 0;
+  const safeSeconds = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds! : elapsedSeconds));
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
@@ -45,19 +53,25 @@ function billingStateLabel(value?: string) {
     .join(" ");
 }
 
-export function FloorCard({ table }: FloorCardProps) {
+export function FloorCard({
+  table,
+  onStartSession,
+  onPauseSession,
+  onResumeSession,
+  onEndSession,
+}: FloorCardProps) {
   const isOccupied = table.status === "occupied";
   const isOvertime = table.session?.isOvertime || false;
   const isPaused = table.session?.isPaused || false;
 
   let containerStyle =
-    "bg-white border-slate-200 hover:border-emerald-500 shadow-sm";
-  let badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200";
+    "bg-white border-slate-200 hover:border-brand-500 shadow-sm";
+  let badgeStyle = "bg-brand-50 text-brand-700 border-brand-200";
   let badgeText = "Available";
 
   let statusIcon = (
     <svg
-      className="w-5 h-5 text-emerald-500"
+      className="w-5 h-5 text-brand-500"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -274,16 +288,16 @@ export function FloorCard({ table }: FloorCardProps) {
                 </span>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2.5">
-              <div>
+            <div className="flex flex-wrap sm:grid sm:grid-cols-3 gap-2 border-t border-slate-100 pt-2.5">
+              <div className="w-[45%] sm:w-auto">
                 <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Elapsed
                 </span>
                 <span className="font-medium text-slate-700">
-                  {formatDuration(table.session.durationSeconds)}
+                  {formatDuration(table.session.durationSeconds, table.session.startedAt)}
                 </span>
               </div>
-              <div className="text-center">
+              <div className="w-[45%] sm:w-auto sm:text-center">
                 <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Paused
                 </span>
@@ -293,7 +307,7 @@ export function FloorCard({ table }: FloorCardProps) {
                   )}
                 </span>
               </div>
-              <div className="text-right">
+              <div className="w-full sm:w-auto sm:text-right pt-1 sm:pt-0 border-t sm:border-0 border-slate-100/50">
                 <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Billing
                 </span>
@@ -306,65 +320,111 @@ export function FloorCard({ table }: FloorCardProps) {
             </div>
           </div>
         ) : (
-          <div className="text-xs text-slate-400 flex items-center justify-center gap-2 py-5 bg-slate-50/50 rounded-lg border border-dashed border-slate-200 mt-2">
-            <svg
-              className="w-4 h-4 text-slate-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 002-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
-            <span>
-              {table.status === "available"
-                ? "Ready for allocation"
-                : table.status || "Inactive Station"}
-            </span>
+          <div className="text-xs text-slate-400 flex flex-col items-center justify-center gap-2 py-4 bg-slate-50/50 rounded-lg border border-dashed border-slate-200 mt-2">
+            <div className="flex items-center gap-2">
+              <svg
+                className="w-4 h-4 text-slate-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 002-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+              <span>
+                {table.status === "available"
+                  ? "Ready for allocation"
+                  : table.status || "Inactive Station"}
+              </span>
+            </div>
+            {table.status === "available" && onStartSession && (
+              <button
+                type="button"
+                onClick={() => onStartSession(table.tableId)}
+                className="mt-1 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition-all"
+              >
+                + Start Session
+              </button>
+            )}
           </div>
         )}
       </div>
 
       {/* Card Footer Actions */}
       {isOccupied && table.session && (
-        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-              Rate:
-            </span>
-            <span className="text-xs font-bold text-slate-800">
-              {formatAmount(
-                table.session.appliedHourlyRate,
-                table.currency,
-              )}
-              <span className="text-[10px] text-slate-400 font-normal">
-                /hr
+        <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                Rate:
               </span>
-            </span>
+              <span className="text-xs font-bold text-slate-800">
+                {formatAmount(
+                  table.session.appliedHourlyRate,
+                  table.currency,
+                )}
+                <span className="text-[10px] text-slate-400 font-normal">
+                  /hr
+                </span>
+              </span>
+            </div>
+
+            <div className="text-right shrink-0">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Current charge
+              </span>
+              <span className="text-xs font-bold text-slate-800">
+                {formatAmount(
+                  table.session.estimatedCharge,
+                  table.currency,
+                )}
+              </span>
+            </div>
+
+            {isOvertime && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded border border-rose-100 shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                Overtime Action Required
+              </span>
+            )}
           </div>
 
-          <div className="text-right">
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Current charge
-            </span>
-            <span className="text-xs font-bold text-slate-800">
-              {formatAmount(
-                table.session.estimatedCharge,
-                table.currency,
-              )}
-            </span>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            {table.session.isPaused ? (
+              onResumeSession && (
+                <button
+                  type="button"
+                  onClick={() => onResumeSession(table.session!.sessionId)}
+                  className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1 rounded-md transition-colors"
+                >
+                  Resume
+                </button>
+              )
+            ) : (
+              onPauseSession && (
+                <button
+                  type="button"
+                  onClick={() => onPauseSession(table.session!.sessionId)}
+                  className="bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium px-2.5 py-1 rounded-md transition-colors"
+                >
+                  Pause
+                </button>
+              )
+            )}
+            {onEndSession && (
+              <button
+                type="button"
+                onClick={() => onEndSession(table.session!.sessionId)}
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3 py-1 rounded-md transition-colors shadow-sm"
+              >
+                End Session
+              </button>
+            )}
           </div>
-
-          {isOvertime && (
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded border border-rose-100">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-              Action Required
-            </span>
-          )}
         </div>
       )}
     </div>

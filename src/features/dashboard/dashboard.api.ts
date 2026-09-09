@@ -6,6 +6,10 @@ export interface LiveTableSession {
   startedAt: string;
   expectedEndTime?: string;
   status: string;
+  branch: {
+    id: string;
+    name: string;
+  };
   table?: {
     tableNumber: string;
     status: string;

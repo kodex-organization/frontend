@@ -105,6 +105,19 @@ test("assigned branches render and a single assignment hides the selector", () =
   assert.equal(singleBranchMarkup, "");
 });
 
+test("global selector shows the active branch even for a single-branch owner", () => {
+  const markup = renderToStaticMarkup(<BranchSelector branches={[assignedBranch(BRANCH_A, "Main Hall", true)]} activeBranchId={BRANCH_A} switching={false} onSwitch={() => {}} showSingle />);
+  assert.match(markup, /Main Hall/);
+  assert.match(markup, new RegExp(`value="${BRANCH_A}" selected`));
+  assert.doesNotMatch(markup, /All Branches/);
+});
+
+test("global selector does not silently select a different branch when the active one is unavailable", () => {
+  const markup = renderToStaticMarkup(<BranchSelector branches={[assignedBranch(BRANCH_B, "Second", false)]} activeBranchId={BRANCH_A} switching={false} onSwitch={() => {}} showSingle />);
+  assert.match(markup, /Select an active branch/);
+  assert.match(markup, new RegExp(`value="${BRANCH_A}" selected`));
+});
+
 test("successful switch replaces auth before refreshing branch-scoped state", async () => {
   const events: string[] = [];
 

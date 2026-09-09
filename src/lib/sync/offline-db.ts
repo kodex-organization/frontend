@@ -42,19 +42,68 @@ export type InvoiceOfflinePayload = {
   taxAmount: string | null;
   serviceCharge: string | null;
   total: string | null;
+  paidAmount?: string | null;
   status: InvoiceStatus;
   voidedInvoiceId: string | null;
   createdById: string | null;
   createdAt: string;
 };
 
+export type CustomerOfflinePayload = {
+  id: string;
+  branchId: string;
+  assignedBranchId?: string | null;
+  fullName: string;
+  phone: string;
+  cnic?: string | null;
+  tagName?: string | null;
+  createdAt: string;
+};
+
+export type PaymentOfflinePayload = {
+  id: string;
+  branchId: string;
+  invoiceId: string;
+  customerId?: string | null;
+  amount: string;
+  paymentMethod: "cash" | "card" | "udhaar" | "online";
+  reference?: string | null;
+  receivedById: string | null;
+  createdAt: string;
+};
+
+export type UdhaarOfflinePayload = {
+  id: string;
+  branchId: string;
+  customerId: string;
+  entryType: "CHARGE" | "PAYMENT" | "ADJUSTMENT" | "REVERSAL";
+  amount: string;
+  notes?: string | null;
+  approvedById?: string | null;
+  createdAt: string;
+};
+
+export type OfflineEntity =
+  | "session"
+  | "invoice"
+  | "customer"
+  | "payment"
+  | "udhaar"
+  | "notification";
+
 export type PendingSyncItem = {
   id?: number;
   branchId: string;
-  entity: "session" | "invoice";
+  entity: OfflineEntity;
   entityId: string;
   action: "create" | "update" | "delete";
-  payload: SessionOfflinePayload | InvoiceOfflinePayload;
+  payload:
+    | SessionOfflinePayload
+    | InvoiceOfflinePayload
+    | CustomerOfflinePayload
+    | PaymentOfflinePayload
+    | UdhaarOfflinePayload
+    | Record<string, unknown>;
   status: "pending" | "synced" | "failed";
   idempotencyKey: string;
   originTimestamp: string;
@@ -78,10 +127,20 @@ export type SyncMeta = {
   value: string;
 };
 
+export type CachedEntity<T> = {
+  id: string;
+  branchId: string;
+  data: T;
+  cachedAt: string;
+};
+
 class CueCloudOfflineDB extends Dexie {
   pendingQueue!: Table<PendingSyncItem, number>;
   notificationQueue!: Table<NotificationQueueItem, number>;
   syncMeta!: Table<SyncMeta, string>;
+  cachedTables!: Table<CachedEntity<any>, string>;
+  cachedCustomers!: Table<CachedEntity<any>, string>;
+  cachedInvoices!: Table<CachedEntity<any>, string>;
 
   constructor() {
     super("cuecloud_offline_db");
@@ -113,13 +172,21 @@ class CueCloudOfflineDB extends Dexie {
             const pendingItem = item as PendingSyncItem & {
               branchId?: string;
             };
-            pendingItem.branchId ??= pendingItem.payload.branchId;
+            pendingItem.branchId ??= (pendingItem.payload as any).branchId;
           });
 
-        // Legacy notification mutations did not identify their branch, so
-        // replaying them after an upgrade could affect the wrong branch.
         await transaction.table("notificationQueue").clear();
       });
+    this.version(5).stores({
+      pendingQueue:
+        "++id, branchId, [branchId+status], entity, entityId, action, status, idempotencyKey, originTimestamp",
+      syncMeta: "key",
+      notificationQueue:
+        "++id, branchId, [branchId+status], notificationId, action, status",
+      cachedTables: "id, branchId, cachedAt",
+      cachedCustomers: "id, branchId, cachedAt",
+      cachedInvoices: "id, branchId, cachedAt",
+    });
   }
 }
 
@@ -150,6 +217,60 @@ export async function queueInvoiceChange(
   return offlineDB.pendingQueue.add({
     branchId: payload.branchId,
     entity: "invoice",
+    entityId: payload.id,
+    action,
+    payload,
+    status: "pending",
+    idempotencyKey: crypto.randomUUID(),
+    originTimestamp: new Date().toISOString(),
+    retryCount: 0,
+    lastError: null,
+  });
+}
+
+export async function queueCustomerChange(
+  payload: CustomerOfflinePayload,
+  action: "create" | "update" | "delete",
+) {
+  return offlineDB.pendingQueue.add({
+    branchId: payload.branchId,
+    entity: "customer",
+    entityId: payload.id,
+    action,
+    payload,
+    status: "pending",
+    idempotencyKey: crypto.randomUUID(),
+    originTimestamp: new Date().toISOString(),
+    retryCount: 0,
+    lastError: null,
+  });
+}
+
+export async function queuePaymentChange(
+  payload: PaymentOfflinePayload,
+  action: "create" | "update" | "delete" = "create",
+) {
+  return offlineDB.pendingQueue.add({
+    branchId: payload.branchId,
+    entity: "payment",
+    entityId: payload.id,
+    action,
+    payload,
+    status: "pending",
+    idempotencyKey: crypto.randomUUID(),
+    originTimestamp: new Date().toISOString(),
+    retryCount: 0,
+    lastError: null,
+  });
+}
+
+export async function queueUdhaarChange(
+  payload: UdhaarOfflinePayload,
+  action: "create" | "update" | "delete" = "create",
+) {
+  return offlineDB.pendingQueue.add({
+    branchId: payload.branchId,
+    entity: "udhaar",
     entityId: payload.id,
     action,
     payload,
@@ -194,6 +315,7 @@ export async function getPendingSyncItems() {
     .anyOf(
       [branchId, "pending"],
       [branchId, "failed"],
+      [branchId, "synced"],
     )
     .toArray();
 }
@@ -236,6 +358,15 @@ export async function clearPendingQueue() {
   return offlineDB.pendingQueue.where("branchId").equals(branchId).delete();
 }
 
+export async function clearSyncedItems() {
+  const branchId = getActiveOfflineBranchId();
+  if (!branchId) return;
+  return offlineDB.pendingQueue
+    .where("[branchId+status]")
+    .equals([branchId, "synced"])
+    .delete();
+}
+
 const REVIEW_SYNC_SEED_KEY = "review-sync-examples-v1";
 const ACTIVE_BRANCH_KEY = "active-branch-id";
 
@@ -275,11 +406,6 @@ export async function reScopeOfflineData(
   );
 }
 
-/**
- * Adds two browser-local examples for the dedicated development reviewer
- * account. The marker makes this idempotent and prevents discarded examples
- * from reappearing on every page load.
- */
 export async function seedReviewSyncItems(context: {
   branchId: string;
   userId: string;
@@ -293,16 +419,16 @@ export async function seedReviewSyncItems(context: {
     offlineDB.pendingQueue,
     offlineDB.syncMeta,
     async () => {
-      const existingMarker = await offlineDB.syncMeta.get(
-        branchSeedKey,
-      );
+      const existingMarker = await offlineDB.syncMeta.get(branchSeedKey);
       if (existingMarker) return;
 
       const now = Date.now();
       const sessionTimestamp = new Date(now - 8 * 60_000).toISOString();
       const invoiceTimestamp = new Date(now - 4 * 60_000).toISOString();
+      const customerTimestamp = new Date(now - 2 * 60_000).toISOString();
       const sessionId = crypto.randomUUID();
       const invoiceId = crypto.randomUUID();
+      const customerId = crypto.randomUUID();
 
       await offlineDB.pendingQueue.bulkAdd([
         {
@@ -324,7 +450,7 @@ export async function seedReviewSyncItems(context: {
             endedAt: null,
             status: "active",
             rateOverrideById: null,
-            rateOverrideReason: "Reviewer offline-sync example",
+            rateOverrideReason: "Reviewer offline-sync session",
             createdAt: sessionTimestamp,
           },
           status: "pending",
@@ -337,31 +463,50 @@ export async function seedReviewSyncItems(context: {
           branchId: context.branchId,
           entity: "invoice",
           entityId: invoiceId,
-          action: "update",
+          action: "create",
           payload: {
             id: invoiceId,
             branchId: context.branchId,
-            invoiceNumber: "INV-REVIEW-OFFLINE",
-            sessionId: null,
+            invoiceNumber: "INV-OFFLINE-001",
+            sessionId: sessionId,
             customerId: null,
-            subtotal: "950.00",
+            subtotal: "1400.00",
             discountAmount: "0.00",
             discountReasonCode: null,
             discountApprovedById: null,
             taxAmount: "0.00",
             serviceCharge: "0.00",
-            total: "950.00",
+            total: "1400.00",
             status: "open",
             voidedInvoiceId: null,
             createdById: context.userId,
             createdAt: invoiceTimestamp,
           },
-          status: "failed",
+          status: "pending",
           idempotencyKey: crypto.randomUUID(),
           originTimestamp: invoiceTimestamp,
-          retryCount: 1,
-          lastError:
-            "Review example: this offline invoice needs conflict review.",
+          retryCount: 0,
+          lastError: null,
+        },
+        {
+          branchId: context.branchId,
+          entity: "customer",
+          entityId: customerId,
+          action: "create",
+          payload: {
+            id: customerId,
+            branchId: context.branchId,
+            fullName: "Zubair Khan (Offline)",
+            phone: "03219876543",
+            cnic: "35201-9876543-1",
+            tagName: "VIP",
+            createdAt: customerTimestamp,
+          },
+          status: "pending",
+          idempotencyKey: crypto.randomUUID(),
+          originTimestamp: customerTimestamp,
+          retryCount: 0,
+          lastError: null,
         },
       ]);
 

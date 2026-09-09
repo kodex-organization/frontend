@@ -17,8 +17,8 @@ import {
   type Notification,
 } from "../types";
 
-const POLL_INTERVAL_MS = 30_000;
-const REQUEST_TIMEOUT_MS = 15_000;
+const POLL_INTERVAL_MS = 8_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 
 function requestErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.code === "NETWORK_ERROR") {
@@ -29,14 +29,14 @@ function requestErrorMessage(error: unknown): string {
     : "The floor view could not be refreshed.";
 }
 
-export function useFloorView() {
+export function useFloorView(selectedBranchId?: string) {
   const {
     isAuthenticated,
     isLoading: authLoading,
     user,
   } = useAuth();
   const isOnline = useOnlineStatus();
-  const authScope = user ? `${user.id}:${user.branchId}` : null;
+  const authScope = user ? `${user.id}:${user.branchId}:${selectedBranchId ?? "all"}` : null;
   const [tables, setTables] = useState<FloorViewTable[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +60,24 @@ export function useFloorView() {
       }
       overtimeToastIdsRef.current.clear();
     };
+  }, []);
+
+  const dismissOvertimeAlert = useCallback((sessionId: string) => {
+    const toastId = `overtime-${sessionId}`;
+    toast.dismiss(toastId);
+    overtimeToastIdsRef.current.delete(toastId);
+  }, []);
+
+  const updateSessionOptimistically = useCallback((sessionId: string, nextStatus: "active" | "paused" | "ended") => {
+    setTables((current) => current.map((table) => {
+      if (table.session?.sessionId !== sessionId) return table;
+      if (nextStatus === "ended") return { ...table, status: "available", session: null };
+      return {
+        ...table,
+        status: "occupied",
+        session: { ...table.session, billingState: nextStatus === "paused" ? "paused" : "accruing", isPaused: nextStatus === "paused" },
+      };
+    }));
   }, []);
 
   const fetchData = useCallback(async (): Promise<void> => {
@@ -94,9 +112,7 @@ export function useFloorView() {
       if (mountedRef.current) setRefreshing(true);
 
       try {
-        // Fetching notifications after the floor ensures an overtime
-        // notification created by this floor read is visible immediately.
-        const nextTables = await fetchFloorView({ signal: controller.signal });
+        const nextTables = await fetchFloorView({ signal: controller.signal, branchId: selectedBranchId });
         if (!mountedRef.current) return;
 
         setTables(nextTables);
@@ -105,14 +121,12 @@ export function useFloorView() {
         const activeOvertimeToastIds = new Set(
           nextTables.flatMap((table) =>
             table.session?.isOvertime
-              ? [
-                  `overtime-${table.session.sessionId}-${table.session.expectedEndTime ?? "unbounded"}`,
-                ]
+              ? [`overtime-${table.session.sessionId}`]
               : [],
           ),
         );
 
-        for (const toastId of overtimeToastIdsRef.current) {
+        for (const toastId of Array.from(overtimeToastIdsRef.current)) {
           if (!activeOvertimeToastIds.has(toastId)) {
             toast.dismiss(toastId);
             overtimeToastIdsRef.current.delete(toastId);
@@ -123,16 +137,14 @@ export function useFloorView() {
           const session = table.session;
           if (!session?.isOvertime) continue;
 
-          const toastId =
-            `overtime-${session.sessionId}-` +
-            `${session.expectedEndTime ?? "unbounded"}`;
+          const toastId = `overtime-${session.sessionId}`;
           if (overtimeToastIdsRef.current.has(toastId)) continue;
 
           overtimeToastIdsRef.current.add(toastId);
-          toast.error(
-            `Table ${table.tableNumber ?? "N/A"} has exceeded its expected end time.`,
+          toast.warning(
+            `Table ${table.tableNumber ?? "N/A"} (${session.customerName || "Walk-in"}) has exceeded its expected time.`,
             {
-              autoClose: false,
+              autoClose: 8000,
               toastId,
               position: "top-right",
             },
@@ -163,7 +175,6 @@ export function useFloorView() {
           ? "The floor service timed out. Existing data is still available."
           : requestErrorMessage(requestError);
         setError(message);
-        toast.error(message, { toastId: "floor-view-fetch-error" });
       } finally {
         window.clearTimeout(timeoutId);
         const isCurrentRequest = activeControllerRef.current === controller;
@@ -183,7 +194,7 @@ export function useFloorView() {
     } finally {
       if (requestRef.current === operation) requestRef.current = null;
     }
-  }, [authLoading, authScope, isAuthenticated, isOnline]);
+  }, [authLoading, authScope, isAuthenticated, isOnline, selectedBranchId]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -301,5 +312,7 @@ export function useFloorView() {
     fetchData,
     markAsRead,
     markAllAsRead,
+    dismissOvertimeAlert,
+    updateSessionOptimistically,
   };
 }

@@ -43,7 +43,7 @@ function errorMessage(error: unknown, fallback: string) {
 export function PeakHourSettingsScreen() {
   const { user } = useAuth();
   const [branches, setBranches] = useState<AssignedBranch[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const selectedBranchId = user?.branchId ?? "";
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [rules, setRules] = useState<PeakHourRule[]>([]);
@@ -67,14 +67,6 @@ export function PeakHourSettingsScreen() {
     try {
       const assigned = await getAssignedBranches();
       setBranches(assigned);
-      setSelectedBranchId((current) => {
-        if (assigned.some((branch) => branch.id === current)) return current;
-        return (
-          assigned.find((branch) => branch.id === user?.branchId)?.id ??
-          assigned[0]?.id ??
-          ""
-        );
-      });
       setBranchesError(null);
     } catch (error) {
       setBranchesError(errorMessage(error, "Could not load branches."));
@@ -190,22 +182,7 @@ export function PeakHourSettingsScreen() {
             Configure branch-local rate multipliers.
           </p>
         </div>
-        <label className="min-w-56 text-sm font-medium text-slate-700">
-          Branch
-          <select
-            value={selectedBranchId}
-            disabled={branchesLoading || branches.length <= 1}
-            onChange={(event) => setSelectedBranchId(event.target.value)}
-            className="mt-1 block h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm disabled:bg-slate-50"
-          >
-            {branches.length === 0 ? <option value="">No branches</option> : null}
-            {branches.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name ?? `Branch ${branch.id.slice(0, 8)}`}
-              </option>
-            ))}
-          </select>
-        </label>
+        <p className="text-sm text-slate-500">Active branch: {selectedBranch?.name ?? "See header"}</p>
       </div>
 
       {selectedBranch ? (

@@ -1,13 +1,34 @@
 "use client";
 
 import { useMemo, useState, useRef, useEffect, type FormEvent } from "react";
-
 import { useUdhaarLedger } from "@/features/udhaar/hooks/useUdhaarLedger";
+import {
+  recordSettlement,
+  getThresholds,
+  updateThresholds,
+  type UdhaarThresholdSettings,
+} from "@/features/udhaar/api/udhaarApi";
+import { useAuth } from "@/lib/auth/auth-context";
+import { toast } from "@/lib/toast";
+import {
+  AlertCircle,
+  Clock,
+  Coins,
+  CreditCard,
+  Download,
+  Plus,
+  Printer,
+  Search,
+  SlidersHorizontal,
+  UserCheck,
+  Users,
+  X,
+} from "lucide-react";
 
 const statusOptions = ["all", "pending", "cleared", "overdue"] as const;
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "PKR" }).format(value);
+  return `PKR ${Number(value ?? 0).toLocaleString("en-PK", { maximumFractionDigits: 2 })}`;
 }
 
 function getInitials(name?: string) {
@@ -21,6 +42,9 @@ function getInitials(name?: string) {
 }
 
 export default function UdhaarPage() {
+  const { user } = useAuth();
+  const isOwner = user?.roles.includes("OWNER");
+
   const {
     filteredCustomers,
     aging,
@@ -38,6 +62,8 @@ export default function UdhaarPage() {
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [statementRange, setStatementRange] = useState({ from: "", to: "" });
+
+  // Manual Adjustment State
   const [showAdjustment, setShowAdjustment] = useState(false);
   const [adjustmentForm, setAdjustmentForm] = useState({
     customerId: "",
@@ -48,6 +74,26 @@ export default function UdhaarPage() {
   const [adjustmentState, setAdjustmentState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+
+  // Settlement State
+  const [showSettlement, setShowSettlement] = useState(false);
+  const [settlementForm, setSettlementForm] = useState({
+    customerId: "",
+    amount: "",
+    reason: "Debt repayment / cash settlement",
+  });
+  const [settlementCustomerSearch, setSettlementCustomerSearch] = useState("");
+  const [showSettlementDropdown, setShowSettlementDropdown] = useState(false);
+  const [settlementSubmitting, setSettlementSubmitting] = useState(false);
+
+  // Credit Thresholds State
+  const [showThresholds, setShowThresholds] = useState(false);
+  const [thresholdsForm, setThresholdsForm] = useState<UdhaarThresholdSettings>({
+    individualLimit: 5000,
+    aggregateLimit: 50000,
+  });
+  const [thresholdsSubmitting, setThresholdsSubmitting] = useState(false);
+
   const modalRef = useRef<HTMLDivElement>(null);
   const customerInputRef = useRef<HTMLInputElement>(null);
 
@@ -61,15 +107,28 @@ export default function UdhaarPage() {
     );
   }, [filteredCustomers, customerSearch]);
 
+  const filteredSettlementOptions = useMemo(() => {
+    if (!settlementCustomerSearch.trim()) return filteredCustomers;
+    const query = settlementCustomerSearch.toLowerCase();
+    return filteredCustomers.filter(
+      (c) =>
+        (c.fullName?.toLowerCase().includes(query) || "") ||
+        (c.phone?.toLowerCase().includes(query) || "")
+    );
+  }, [filteredCustomers, settlementCustomerSearch]);
+
   useEffect(() => {
-    if (!showAdjustment) return;
+    if (!showAdjustment && !showSettlement && !showThresholds) return;
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeModal();
+      if (e.key === "Escape") {
+        closeModal();
+        setShowSettlement(false);
+        setShowThresholds(false);
+      }
     };
     document.addEventListener("keydown", handleEscape);
-    customerInputRef.current?.focus();
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [showAdjustment]);
+  }, [showAdjustment, showSettlement, showThresholds]);
 
   const closeModal = () => {
     setShowAdjustment(false);
@@ -80,42 +139,91 @@ export default function UdhaarPage() {
   };
 
   const openAdjustmentModal = (customerId?: string) => {
-  if (customerId) {
-    const customer = filteredCustomers.find((c) => c.id === customerId);
-    setAdjustmentForm((current) => ({ ...current, customerId }));
-    setCustomerSearch(customer?.fullName ?? ""); // 👈 Set to clean name so search matches
-  } else {
-    setAdjustmentForm({ customerId: "", amount: "", reason: "", approvedByPin: "" });
-    setCustomerSearch("");
-  }
-  setShowCustomerDropdown(false);
-  setAdjustmentState("idle");
-  setShowAdjustment(true);
-};
+    if (customerId) {
+      const customer = filteredCustomers.find((c) => c.id === customerId);
+      setAdjustmentForm((current) => ({ ...current, customerId }));
+      setCustomerSearch(customer?.fullName ?? "");
+    } else {
+      setAdjustmentForm({ customerId: "", amount: "", reason: "", approvedByPin: "" });
+      setCustomerSearch("");
+    }
+    setShowCustomerDropdown(false);
+    setAdjustmentState("idle");
+    setShowAdjustment(true);
+  };
 
-  const summaryCards = useMemo(
-    () => [
-      {
-        label: "Total Outstanding",
-        value: aging ? formatCurrency(aging.summary.totalOutstanding) : "—",
-        tone: "bg-slate-900 text-white border-slate-800",
-        accent: "text-slate-400",
-      },
-      {
-        label: "Overdue Balance",
-        value: aging ? formatCurrency(aging.summary.overdueBalance) : "—",
-        tone: "bg-amber-500 text-white border-amber-600",
-        accent: "text-amber-100",
-      },
-      {
-        label: "Active Accounts",
-        value: aging ? String(aging.summary.activeAccounts) : "—",
-        tone: "bg-emerald-600 text-white border-emerald-700",
-        accent: "text-emerald-100",
-      },
-    ],
-    [aging]
-  );
+  const openSettlementModal = (customerId?: string) => {
+    if (customerId) {
+      const customer = filteredCustomers.find((c) => c.id === customerId);
+      setSettlementForm({
+        customerId,
+        amount: customer?.outstandingBalance ? String(customer.outstandingBalance) : "",
+        reason: "Debt repayment / cash settlement",
+      });
+      setSettlementCustomerSearch(customer?.fullName ?? "");
+    } else {
+      setSettlementForm({
+        customerId: "",
+        amount: "",
+        reason: "Debt repayment / cash settlement",
+      });
+      setSettlementCustomerSearch("");
+    }
+    setShowSettlementDropdown(false);
+    setShowSettlement(true);
+  };
+
+  const handleSettlementSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!settlementForm.customerId) {
+      toast.error("Please select a customer.");
+      return;
+    }
+    const amount = Number(settlementForm.amount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Please enter a valid positive payment amount.");
+      return;
+    }
+    try {
+      setSettlementSubmitting(true);
+      await recordSettlement({
+        customerId: settlementForm.customerId,
+        amount,
+        reason: settlementForm.reason || "Debt repayment / cash settlement",
+      });
+      toast.success(`Settlement of PKR ${amount.toLocaleString()} recorded.`);
+      setShowSettlement(false);
+      await refresh();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to record settlement");
+    } finally {
+      setSettlementSubmitting(false);
+    }
+  };
+
+  const openThresholdsModal = async () => {
+    try {
+      const current = await getThresholds();
+      setThresholdsForm(current);
+      setShowThresholds(true);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load threshold settings");
+    }
+  };
+
+  const handleThresholdsSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      setThresholdsSubmitting(true);
+      await updateThresholds(thresholdsForm);
+      toast.success("Credit thresholds updated successfully.");
+      setShowThresholds(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update credit thresholds");
+    } finally {
+      setThresholdsSubmitting(false);
+    }
+  };
 
   const handleStatementOpen = async (customerId: string) => {
     setSelectedCustomerId(customerId);
@@ -142,7 +250,7 @@ export default function UdhaarPage() {
     });
     if (saved) {
       setAdjustmentState("success");
-      setTimeout(() => closeModal(), 1200);
+      setTimeout(() => closeModal(), 1000);
     } else {
       setAdjustmentState("error");
     }
@@ -171,24 +279,24 @@ export default function UdhaarPage() {
   if (loading) {
     return (
       <section className="space-y-6 p-6 max-w-7xl mx-auto">
-        <div className="h-20 animate-pulse rounded-2xl bg-slate-200" />
+        <div className="h-16 animate-pulse rounded-xl bg-slate-200/70" />
         <div className="grid gap-4 md:grid-cols-3">
           {[0, 1, 2].map((item) => (
-            <div key={item} className="h-28 animate-pulse rounded-2xl bg-slate-200" />
+            <div key={item} className="h-24 animate-pulse rounded-xl bg-slate-200/70" />
           ))}
         </div>
-        <div className="h-96 animate-pulse rounded-2xl bg-slate-200" />
+        <div className="h-80 animate-pulse rounded-xl bg-slate-200/70" />
       </section>
     );
   }
 
   if (error) {
     return (
-      <section className="max-w-7xl mx-auto m-6 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-700 shadow-sm">
-        <h3 className="font-semibold text-lg">Failed to load Udhaar Ledger</h3>
+      <section className="max-w-7xl mx-auto m-6 rounded-xl border border-rose-200 bg-rose-50 p-6 text-rose-700 shadow-sm">
+        <h3 className="font-bold text-base">Failed to load Udhaar Ledger</h3>
         <p className="mt-1 text-sm text-rose-600">{error}</p>
         <button
-          className="mt-4 rounded-xl bg-rose-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-800"
+          className="mt-4 rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-rose-700"
           onClick={() => void refresh()}
         >
           Retry Connection
@@ -198,399 +306,440 @@ export default function UdhaarPage() {
   }
 
   return (
-    <main className="space-y-8 p-6 max-w-7xl mx-auto">
-      {/* Page Header */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/80 pb-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">
-              Finance & Credit
-            </p>
-          </div>
-          <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-950">
-            Udhaar Ledger
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Monitor customer credit balances, aging buckets, and manual ledger adjustments.
-          </p>
-        </div>
-        <button
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2"
-          onClick={() => openAdjustmentModal()}
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Manual Adjustment
-        </button>
-      </header>
-
-      {/* KPI Cards */}
-      <section className="grid gap-4 sm:grid-cols-3">
-        {summaryCards.map((card) => (
-          <article
-            key={card.label}
-            className={`relative overflow-hidden rounded-2xl border p-5 shadow-sm transition-all duration-200 hover:shadow-md ${card.tone}`}
-          >
-            <p className={`text-xs font-semibold uppercase tracking-wider ${card.accent}`}>
-              {card.label}
-            </p>
-            <p className="mt-2 text-3xl font-extrabold tracking-tight">{card.value}</p>
-          </article>
-        ))}
-      </section>
-
-      {/* Aging Analysis Section */}
-      <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">Aging Analysis</h2>
-            <p className="text-xs text-slate-500">Outstanding credit balances grouped by debt age.</p>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          {aging ? (
-            Object.entries(aging.buckets).map(([bucket, value]) => {
-              const label =
-                bucket === "current"
-                  ? "Current (0-1d)"
-                  : bucket === "days1to30"
-                  ? "1 - 30 Days"
-                  : bucket === "days30to60"
-                  ? "30 - 60 Days"
-                  : bucket === "days60to90"
-                  ? "60 - 90 Days"
-                  : "90+ Days (Overdue)";
-
-              const isOverdueBucket = bucket === "days90plus";
-
-              return (
-                <div
-                  key={bucket}
-                  className={`rounded-xl border p-4 transition ${
-                    isOverdueBucket && value > 0
-                      ? "border-amber-200 bg-amber-50/50"
-                      : "border-slate-200/80 bg-slate-50/50"
-                  }`}
-                >
-                  <p className="text-xs font-medium text-slate-500">{label}</p>
-                  <p
-                    className={`mt-2 text-lg font-bold ${
-                      isOverdueBucket && value > 0 ? "text-amber-700" : "text-slate-900"
-                    }`}
-                  >
-                    {formatCurrency(value)}
-                  </p>
-                </div>
-              );
-            })
-          ) : (
-            <p className="col-span-full py-4 text-center text-sm text-slate-400">
-              No aging breakdown available.
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Main Unified Customer Ledger Table */}
-      <section className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden">
-        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 bg-slate-50/50">
+    <main className="min-h-screen bg-slate-50/60 pb-16 text-slate-900">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6">
+        {/* Page Header */}
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-slate-900">Customer Ledger</h2>
-              <span className="rounded-full bg-slate-200/80 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-                {filteredCustomers.length}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500">Filter and view customer account balances.</p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center gap-2.5">
-            <div className="relative w-full sm:w-64">
-              <input
-                type="text"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search name or phone..."
-                className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
-              <svg
-                className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </div>
-
-            <select
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              className="w-full sm:w-auto rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-            >
-              {statusOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option === "all"
-                    ? "All Statuses"
-                    : option.charAt(0).toUpperCase() + option.slice(1)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {filteredCustomers.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-              </svg>
-            </div>
-            <p className="mt-3 text-sm font-medium text-slate-900">No customer accounts found</p>
-            <p className="mt-1 text-xs text-slate-500">Try adjusting your search query or status filter.</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {filteredCustomers.map((customer) => (
-              <div
-                key={customer.id}
-                className="flex flex-col gap-4 p-4 transition hover:bg-slate-50/80 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-700 text-xs">
-                    {getInitials(customer.fullName ?? "")}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900">
-                      {customer.fullName ?? "Unnamed Customer"}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {customer.phone ?? "No Phone"}{" "}
-                      <span className="text-slate-300">|</span>{" "}
-                      {customer.cnic ? `CNIC: ${customer.cnic}` : "No CNIC registered"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                      customer.status === "overdue"
-                        ? "bg-rose-50 text-rose-700 ring-1 ring-rose-600/20"
-                        : customer.status === "pending"
-                        ? "bg-amber-50 text-amber-700 ring-1 ring-amber-600/20"
-                        : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20"
-                    }`}
-                  >
-                    {customer.status}
-                  </span>
-
-                  <span className="text-base font-extrabold text-slate-900 min-w-[90px] text-right">
-                    {formatCurrency(customer.outstandingBalance)}
-                  </span>
-
-                  <button
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
-                    onClick={() => void handleStatementOpen(customer.id)}
-                  >
-                    Statement
-                  </button>
-
-                  <button
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
-                    onClick={() => openAdjustmentModal(customer.id)}
-                  >
-                    Adjust
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Customer Statement Drawer */}
-      {selectedCustomerId && (
-        <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm space-y-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-slate-100 pb-4">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Customer Statement</h2>
-              <p className="text-xs text-slate-500">
-                Select a date range to generate and inspect itemized ledger entries.
+              <span className="h-2 w-2 rounded-full bg-indigo-600" />
+              <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                Finance & Credit Control
               </p>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="date"
-                value={statementRange.from}
-                onChange={(event) =>
-                  setStatementRange((current) => ({ ...current, from: event.target.value }))
-                }
-                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
-              <span className="text-xs text-slate-400">to</span>
-              <input
-                type="date"
-                value={statementRange.to}
-                onChange={(event) =>
-                  setStatementRange((current) => ({ ...current, to: event.target.value }))
-                }
-                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
-              <button
-                className="rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-                onClick={() => void handleStatementView()}
-              >
-                Fetch
-              </button>
-              {statement && (
-                <>
-                  <button
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    onClick={() => window.print()}
-                  >
-                    Print
-                  </button>
-                  <button
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    onClick={exportStatement}
-                  >
-                    Export CSV
-                  </button>
-                </>
-              )}
-            </div>
+            <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              Udhaar Ledger
+            </h1>
+            <p className="mt-0.5 text-xs sm:text-sm text-slate-500">
+              Track outstanding customer debt, aging buckets, and settlement receipts.
+            </p>
           </div>
 
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4">
-            {statement ? (
-              statement.entries.length === 0 ? (
-                <p className="text-center py-6 text-xs text-slate-500">
-                  No ledger entries recorded for this date range.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
-                        <th className="pb-2">Date</th>
-                        <th className="pb-2">Type</th>
-                        <th className="pb-2">Description / Reason</th>
-                        <th className="pb-2 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200/60">
-                      {statement.entries.map((entry) => (
-                        <tr key={entry.id} className="text-slate-800">
-                          <td className="py-2.5 text-slate-500">
-                            {new Date(entry.createdAt).toLocaleDateString()}
-                          </td>
-                          <td className="py-2.5">
-                            <span className="font-semibold uppercase text-[10px] tracking-wider text-slate-600 bg-slate-200/70 px-1.5 py-0.5 rounded">
-                              {entry.entryType ?? "ADJUSTMENT"}
-                            </span>
-                          </td>
-                          <td className="py-2.5 font-medium">
-                            {entry.reason ?? "No reason recorded"}
-                          </td>
-                          <td className="py-2.5 text-right font-bold text-slate-900">
-                            {formatCurrency(entry.amount)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
+          <div className="flex flex-wrap items-center gap-2">
+            {isOwner && (
+              <button
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                onClick={openThresholdsModal}
+              >
+                <SlidersHorizontal size={14} className="text-slate-500" />
+                Credit Limits
+              </button>
+            )}
+            <button
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              onClick={() => openAdjustmentModal()}
+            >
+              <Plus size={14} className="text-slate-500" />
+              Manual Adjustment
+            </button>
+            <button
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+              onClick={() => openSettlementModal()}
+            >
+              <Coins size={14} />
+              Record Settlement
+            </button>
+          </div>
+        </header>
+
+        {/* KPI Cards */}
+        <section className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Total Outstanding
+              </span>
+              <span className="rounded-lg bg-slate-100 p-2 text-slate-600">
+                <CreditCard size={16} />
+              </span>
+            </div>
+            <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              {aging ? formatCurrency(aging.summary.totalOutstanding) : "—"}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-400">Total active credit across all accounts</p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-600">
+                Overdue (90+ Days)
+              </span>
+              <span className="rounded-lg bg-amber-50 p-2 text-amber-600">
+                <AlertCircle size={16} />
+              </span>
+            </div>
+            <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-amber-700">
+              {aging ? formatCurrency(aging.summary.overdueBalance) : "—"}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-400">Requires collection priority</p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                Active Accounts
+              </span>
+              <span className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
+                <Users size={16} />
+              </span>
+            </div>
+            <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              {aging ? String(aging.summary.activeAccounts) : "—"}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-400">Customers with outstanding balance</p>
+          </div>
+        </section>
+
+        {/* Aging Buckets Overview */}
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Aging Analysis</h2>
+              <p className="text-xs text-slate-500">Unsettled credit broken down by debt duration.</p>
+            </div>
+            <span className="flex items-center gap-1 text-xs font-semibold text-slate-400">
+              <Clock size={13} /> Real-time aging
+            </span>
+          </div>
+
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+            {aging ? (
+              Object.entries(aging.buckets).map(([bucket, value]) => {
+                const label =
+                  bucket === "current"
+                    ? "Current (0-1d)"
+                    : bucket === "days1to30"
+                    ? "1 - 30 Days"
+                    : bucket === "days30to60"
+                    ? "30 - 60 Days"
+                    : bucket === "days60to90"
+                    ? "60 - 90 Days"
+                    : "90+ Days (Overdue)";
+
+                const isOverdue = bucket === "days90plus" && value > 0;
+
+                return (
+                  <div
+                    key={bucket}
+                    className={`rounded-lg border p-3 transition ${
+                      isOverdue
+                        ? "border-amber-200 bg-amber-50/50"
+                        : "border-slate-200/80 bg-slate-50/50"
+                    }`}
+                  >
+                    <p className="text-[11px] font-medium text-slate-500">{label}</p>
+                    <p
+                      className={`mt-1.5 text-base font-bold ${
+                        isOverdue ? "text-amber-700" : "text-slate-900"
+                      }`}
+                    >
+                      {formatCurrency(value)}
+                    </p>
+                  </div>
+                );
+              })
             ) : (
-              <p className="text-center py-6 text-xs text-slate-500">
-                Pick a starting and ending date above, then click <strong>Fetch</strong> to view the customer's itemized statement.
+              <p className="col-span-full py-4 text-center text-xs text-slate-400">
+                No aging breakdown recorded.
               </p>
             )}
           </div>
         </section>
-      )}
 
-      {/* Manual Adjustment Modal */}
-      {showAdjustment && (
-        <>
+        {/* Customer Ledger Table */}
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 bg-slate-50/50">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-900">Customer Accounts</h2>
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-700">
+                {filteredCustomers.length}
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <div className="relative w-full sm:w-60">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name or phone..."
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <div className="relative w-full sm:w-auto">
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                >
+                  {statusOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt === "all" ? "All Statuses" : opt.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {filteredCustomers.length === 0 ? (
+            <div className="p-12 text-center">
+              <UserCheck className="mx-auto h-8 w-8 text-slate-300" />
+              <p className="mt-2 text-sm font-semibold text-slate-700">No customer ledgers found</p>
+              <p className="text-xs text-slate-400">Try adjusting your filters or search keywords.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {filteredCustomers.map((customer) => (
+                <div
+                  key={customer.id}
+                  className="flex flex-col gap-3 p-4 transition hover:bg-slate-50/70 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+                      {getInitials(customer.fullName ?? "")}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-900 leading-tight">
+                        {customer.fullName ?? "Walk-in Customer"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {customer.phone || "No phone"}
+                        {customer.cnic && (
+                          <>
+                            {" "}<span className="text-slate-300">·</span> CNIC: {customer.cnic}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span
+                      className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                        customer.status === "overdue"
+                          ? "bg-rose-50 text-rose-700 border border-rose-200"
+                          : customer.status === "pending"
+                          ? "bg-amber-50 text-amber-700 border border-amber-200"
+                          : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      }`}
+                    >
+                      {customer.status.toUpperCase()}
+                    </span>
+
+                    <span className="min-w-[100px] text-right font-mono text-sm font-bold text-slate-900">
+                      {formatCurrency(customer.outstandingBalance)}
+                    </span>
+
+                    <div className="flex items-center gap-1.5 ml-2">
+                      <button
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50"
+                        onClick={() => void handleStatementOpen(customer.id)}
+                      >
+                        Statement
+                      </button>
+
+                      <button
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50"
+                        onClick={() => openAdjustmentModal(customer.id)}
+                      >
+                        Adjust
+                      </button>
+
+                      <button
+                        className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700"
+                        onClick={() => openSettlementModal(customer.id)}
+                      >
+                        Settle Debt
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Customer Statement Inspection Drawer */}
+        {selectedCustomerId && (
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">Account Statement</h2>
+                <p className="text-xs text-slate-500">
+                  Inspect itemized ledger transactions across date ranges.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="date"
+                  value={statementRange.from}
+                  onChange={(e) =>
+                    setStatementRange((cur) => ({ ...cur, from: e.target.value }))
+                  }
+                  className="h-8.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                />
+                <span className="text-xs text-slate-400">to</span>
+                <input
+                  type="date"
+                  value={statementRange.to}
+                  onChange={(e) =>
+                    setStatementRange((cur) => ({ ...cur, to: e.target.value }))
+                  }
+                  className="h-8.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                />
+                <button
+                  className="h-8.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700"
+                  onClick={() => void handleStatementView()}
+                >
+                  Fetch
+                </button>
+                {statement && (
+                  <>
+                    <button
+                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => window.print()}
+                    >
+                      <Printer size={13} /> Print
+                    </button>
+                    <button
+                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={exportStatement}
+                    >
+                      <Download size={13} /> CSV
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+              {statement ? (
+                statement.entries.length === 0 ? (
+                  <p className="text-center py-6 text-xs text-slate-500">
+                    No ledger entries recorded for this date range.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
+                          <th className="pb-2">Date</th>
+                          <th className="pb-2">Type</th>
+                          <th className="pb-2">Description</th>
+                          <th className="pb-2 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {statement.entries.map((entry) => (
+                          <tr key={entry.id} className="text-slate-800">
+                            <td className="py-2.5 text-slate-500">
+                              {new Date(entry.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="py-2.5">
+                              <span className="font-semibold text-[10px] tracking-wider text-slate-600 bg-slate-200/80 px-1.5 py-0.5 rounded">
+                                {entry.entryType ?? "ADJUSTMENT"}
+                              </span>
+                            </td>
+                            <td className="py-2.5 font-medium">
+                              {entry.reason ?? "No description recorded"}
+                            </td>
+                            <td className="py-2.5 text-right font-mono font-bold text-slate-900">
+                              {formatCurrency(entry.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              ) : (
+                <p className="text-center py-6 text-xs text-slate-500">
+                  Pick dates above and click <strong>Fetch</strong> to inspect entries.
+                </p>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Manual Adjustment Modal (No Darkened Background) */}
+        {showAdjustment && (
           <div
-            className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm transition-opacity"
-            onClick={closeModal}
-          />
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            ref={modalRef}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeModal();
+            }}
           >
-            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div
+              ref={modalRef}
+              className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+            >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h2 className="text-lg font-bold text-slate-900">Manual Udhaar Adjustment</h2>
+                <h3 className="text-base font-bold text-slate-900">Manual Ledger Adjustment</h3>
                 <button
                   type="button"
                   onClick={closeModal}
                   className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 >
-                  ✕
+                  <X size={16} />
                 </button>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                Adjust customer credit balance directly with a required audit reason. Use negative numbers (e.g. -20) to record payments or reduce balance.
+                Adjust credit balance directly with an audit trail. Use negative amounts (e.g. -50) to credit/reduce debt.
               </p>
 
-              <form className="mt-5 space-y-4" onSubmit={handleAdjustmentSubmit}>
-                {/* Customer Dropdown */}
+              <form className="mt-4 space-y-3.5" onSubmit={handleAdjustmentSubmit}>
                 <div className="relative">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Customer
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Target Customer <span className="text-rose-500">*</span>
                   </label>
                   <input
                     ref={customerInputRef}
                     type="text"
-                    placeholder="Search customer by name or phone..."
+                    placeholder="Search by name or phone..."
                     value={customerSearch}
                     onChange={(e) => {
                       setCustomerSearch(e.target.value);
                       setShowCustomerDropdown(true);
-                      setAdjustmentForm((current) => ({ ...current, customerId: "" }));
+                      setAdjustmentForm((cur) => ({ ...cur, customerId: "" }));
                     }}
                     onFocus={() => setShowCustomerDropdown(true)}
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs text-slate-900 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                   />
                   {showCustomerDropdown && customerSearch && (
-                    <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                    <div className="absolute top-full left-0 right-0 z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
                       {filteredCustomerOptions.length === 0 ? (
-                        <div className="px-3 py-2 text-xs text-slate-500">No customers found</div>
+                        <div className="p-3 text-xs text-slate-400">No matching customers</div>
                       ) : (
-                        filteredCustomerOptions.map((customer) => (
+                        filteredCustomerOptions.map((c) => (
                           <button
-                            key={customer.id}
+                            key={c.id}
                             type="button"
                             onClick={() => {
-                              setAdjustmentForm((current) => ({
-                                ...current,
-                                customerId: customer.id,
-                              }));
-                              setCustomerSearch(
-                                `${customer.fullName} (${customer.phone})`
-                              );
+                              setAdjustmentForm((cur) => ({ ...cur, customerId: c.id }));
+                              setCustomerSearch(`${c.fullName} (${c.phone})`);
                               setShowCustomerDropdown(false);
                             }}
                             className="w-full px-3 py-2 text-left text-xs transition hover:bg-slate-50 border-b border-slate-100 last:border-0"
                           >
-                            <p className="font-semibold text-slate-900">{customer.fullName}</p>
-                            <p className="text-slate-500">
-                              {customer.phone} · Balance:{" "}
-                              <span className="font-medium text-slate-700">
-                                {formatCurrency(customer.outstandingBalance)}
+                            <p className="font-semibold text-slate-900">{c.fullName}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {c.phone} · Balance:{" "}
+                              <span className="font-bold text-slate-800">
+                                {formatCurrency(c.outstandingBalance)}
                               </span>
                             </p>
                           </button>
@@ -600,44 +749,41 @@ export default function UdhaarPage() {
                   )}
                 </div>
 
-                {/* Amount Input */}
                 <div>
-                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Amount (PKR)
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Adjustment Amount (PKR) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     required
                     type="number"
                     step="any"
-                    placeholder="e.g. 50 or -20"
+                    placeholder="e.g. 100 or -50"
                     value={adjustmentForm.amount}
                     onChange={(e) =>
-                      setAdjustmentForm((current) => ({ ...current, amount: e.target.value }))
+                      setAdjustmentForm((cur) => ({ ...cur, amount: e.target.value }))
                     }
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-mono font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
 
-                {/* Reason Input */}
                 <div>
-                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Reason
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Audit Reason <span className="text-rose-500">*</span>
                   </label>
                   <textarea
                     required
-                    placeholder="e.g., Opening balance adjustment, System correction"
+                    rows={2}
+                    placeholder="e.g., Billing discrepancy correction, Cash received directly"
                     value={adjustmentForm.reason}
                     onChange={(e) =>
-                      setAdjustmentForm((current) => ({ ...current, reason: e.target.value }))
+                      setAdjustmentForm((cur) => ({ ...cur, reason: e.target.value }))
                     }
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                    rows={2}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-900 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
 
-                {/* Manager PIN (Optional) */}
                 <div>
-                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                     Manager PIN <span className="text-slate-400 font-normal">(Optional)</span>
                   </label>
                   <input
@@ -645,49 +791,261 @@ export default function UdhaarPage() {
                     placeholder="Enter PIN if required"
                     value={adjustmentForm.approvedByPin}
                     onChange={(e) =>
-                      setAdjustmentForm((current) => ({
-                        ...current,
-                        approvedByPin: e.target.value,
-                      }))
+                      setAdjustmentForm((cur) => ({ ...cur, approvedByPin: e.target.value }))
                     }
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs text-slate-900 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
 
-                {/* Status Alerts */}
                 {adjustmentState === "success" && (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-700">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-medium text-emerald-800">
                     ✓ Adjustment saved successfully.
                   </div>
                 )}
                 {adjustmentState === "error" && (
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-700">
-                    ✗ Unable to save adjustment. Check fields and try again.
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs font-medium text-rose-700">
+                    ✗ Please verify the fields and try again.
                   </div>
                 )}
 
-                {/* Actions */}
-                <div className="flex gap-2.5 pt-2">
-                  <button
-                    type="submit"
-                    disabled={adjustmentState === "loading"}
-                    className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50"
-                  >
-                    {adjustmentState === "loading" ? "Saving..." : "Save Adjustment"}
-                  </button>
+                <div className="flex gap-2 pt-2">
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                    className="flex-1 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={adjustmentState === "loading"}
+                    className="flex-1 rounded-lg bg-indigo-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {adjustmentState === "loading" ? "Saving..." : "Save Adjustment"}
                   </button>
                 </div>
               </form>
             </div>
           </div>
-        </>
-      )}
+        )}
+
+        {/* Record Settlement Modal (No Darkened Background) */}
+        {showSettlement && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowSettlement(false);
+            }}
+          >
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-3.5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-base font-bold text-slate-900">Record Debt Settlement</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowSettlement(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">
+                Log a customer debt payment to clear or reduce their open credit balance.
+              </p>
+
+              <form onSubmit={handleSettlementSubmit} className="space-y-3.5">
+                <div className="relative">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Customer <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Search customer..."
+                    value={settlementCustomerSearch}
+                    onChange={(e) => {
+                      setSettlementCustomerSearch(e.target.value);
+                      setShowSettlementDropdown(true);
+                      setSettlementForm((cur) => ({ ...cur, customerId: "" }));
+                    }}
+                    onFocus={() => setShowSettlementDropdown(true)}
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs text-slate-900 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                  />
+                  {showSettlementDropdown && settlementCustomerSearch && (
+                    <div className="absolute top-full left-0 right-0 z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
+                      {filteredSettlementOptions.length === 0 ? (
+                        <div className="p-3 text-xs text-slate-400">No matching customers</div>
+                      ) : (
+                        filteredSettlementOptions.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setSettlementForm((cur) => ({
+                                ...cur,
+                                customerId: c.id,
+                                amount: c.outstandingBalance > 0 ? String(c.outstandingBalance) : cur.amount,
+                              }));
+                              setSettlementCustomerSearch(`${c.fullName || "Customer"} (${c.phone || "No phone"})`);
+                              setShowSettlementDropdown(false);
+                            }}
+                            className="w-full px-3 py-2 text-left text-xs transition hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                          >
+                            <p className="font-semibold text-slate-900">{c.fullName}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {c.phone} · Balance:{" "}
+                              <span className="font-bold text-slate-800">
+                                {formatCurrency(c.outstandingBalance)}
+                              </span>
+                            </p>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Settlement Amount (PKR) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    step="any"
+                    placeholder="e.g. 1000"
+                    value={settlementForm.amount}
+                    onChange={(e) =>
+                      setSettlementForm((cur) => ({ ...cur, amount: e.target.value }))
+                    }
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-mono font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Notes / Receipt Memo
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Cash received at register, bank ref #4321"
+                    value={settlementForm.reason}
+                    onChange={(e) =>
+                      setSettlementForm((cur) => ({ ...cur, reason: e.target.value }))
+                    }
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs text-slate-900 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSettlement(false)}
+                    className="flex-1 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={settlementSubmitting || !settlementForm.customerId || !settlementForm.amount}
+                    className="flex-1 rounded-lg bg-indigo-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {settlementSubmitting ? "Processing..." : "Record Payment"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Credit Thresholds Modal (No Darkened Background) */}
+        {showThresholds && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowThresholds(false);
+            }}
+          >
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-3.5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-base font-bold text-slate-900">Credit Limit & Governance</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowThresholds(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">
+                Set hard limits on allowed customer credit to prevent cashiers from issuing excessive unpaid debt.
+              </p>
+
+              <form onSubmit={handleThresholdsSubmit} className="space-y-3.5 text-xs">
+                <div>
+                  <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Individual Customer Credit Ceiling (PKR)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={thresholdsForm.individualLimit}
+                    onChange={(e) =>
+                      setThresholdsForm({
+                        ...thresholdsForm,
+                        individualLimit: Number(e.target.value),
+                      })
+                    }
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 font-mono font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Prevents checkout if this customer's balance exceeds this amount.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Club-Wide Aggregate Limit (PKR) <span className="text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={thresholdsForm.aggregateLimit || ""}
+                    onChange={(e) =>
+                      setThresholdsForm({
+                        ...thresholdsForm,
+                        aggregateLimit: e.target.value ? Number(e.target.value) : undefined,
+                      })
+                    }
+                    placeholder="e.g. 100000"
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 font-mono font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-white"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Total unpaid balance permitted across all accounts combined.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowThresholds(false)}
+                    className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={thresholdsSubmitting}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {thresholdsSubmitting ? "Saving..." : "Save Limits"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
     </main>
   );
 }

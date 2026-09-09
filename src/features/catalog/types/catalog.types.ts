@@ -8,6 +8,7 @@ export type TableStatus =
 export interface SnookerTable {
   id: string;
   branchId: string;
+  branch?: { id: string; name: string | null };
   tableNumber: string;
   defaultHourlyRate: number;
   status: TableStatus;
@@ -19,6 +20,7 @@ export interface CreateTableInput {
   tableNumber: string;
   hourlyRate: number;
   status?: string;
+  branchId?: string;
 }
 
 export interface RatePlan {

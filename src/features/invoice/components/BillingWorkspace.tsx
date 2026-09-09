@@ -9,6 +9,7 @@ import type { InvoiceStatus } from "../types/invoice";
 import { formatCurrency } from "../utils/formatCurrency";
 import InvoiceTable from "./InvoiceTable";
 import TransactionTable from "./TransactionTable";
+import { useAuth } from "@/lib/auth/auth-context";
 
 const statusOptions: Array<{
   value: "" | InvoiceStatus;
@@ -45,6 +46,8 @@ export default function BillingWorkspace({
   const [date, setDate] = useState("");
   const [invoicePage, setInvoicePage] = useState(1);
   const [transactionPage, setTransactionPage] = useState(1);
+  const { user } = useAuth();
+  const branchId = user?.branchId ?? "";
   const range = useMemo(() => dateRange(date), [date]);
 
   const {
@@ -59,6 +62,7 @@ export default function BillingWorkspace({
     search: search || undefined,
     status: status || undefined,
     ...range,
+    branchId: branchId || undefined,
   });
   const transactionState = useTransactions({
     page: transactionPage,
@@ -162,7 +166,7 @@ export default function BillingWorkspace({
             </div>
             <form
               onSubmit={applySearch}
-              className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_160px_160px_auto]"
+              className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_160px_160px_160px_auto]"
             >
               <label className="sr-only" htmlFor="invoice-search">
                 Search invoice number

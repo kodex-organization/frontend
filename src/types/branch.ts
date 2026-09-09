@@ -78,4 +78,10 @@ export interface BranchListResponse {
   limit: number;
   totalPages: number;
   branches: BranchItem[];
+  branchUsage: {
+    planName: string | null;
+    usedBranches: number;
+    maxBranches: number | null;
+    canCreate: boolean;
+  };
 }

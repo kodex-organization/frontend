@@ -3,14 +3,16 @@
 import { useEffect, useState } from "react";
 
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { useAuth } from "@/lib/auth/auth-context";
+import { toast } from "@/lib/toast";
 
 import { sessionApi } from "./session-api";
-import type { Customer, TableOption } from "./types";
+import type { ActiveSession, Customer, TableOption } from "./types";
 
 interface StartSessionModalProps {
   open: boolean;
   onClose: () => void;
-  onStarted: () => void | Promise<void>;
+  onStarted: (session?: ActiveSession) => void | Promise<void>;
 }
 
 function formatRate(table: TableOption) {
@@ -35,6 +37,8 @@ export function StartSessionModal({
   onStarted,
 }: StartSessionModalProps) {
   const isOnline = useOnlineStatus();
+  const { user } = useAuth();
+  const selectedBranchId = user?.branchId ?? "";
   const [tables, setTables] = useState<TableOption[]>([]);
   const [query, setQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -45,12 +49,12 @@ export function StartSessionModal({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!open || !isOnline) return;
+    if (!open || !selectedBranchId) return;
 
     let cancelled = false;
     setError("");
     void sessionApi
-      .tables()
+      .tables(selectedBranchId)
       .then((nextTables) => {
         if (!cancelled) setTables(nextTables);
       })
@@ -67,7 +71,7 @@ export function StartSessionModal({
     return () => {
       cancelled = true;
     };
-  }, [isOnline, open]);
+  }, [isOnline, open, selectedBranchId]);
 
   useEffect(() => {
     const trimmedQuery = query.trim();
@@ -104,19 +108,16 @@ export function StartSessionModal({
   if (!open) return null;
 
   async function submit() {
-    if (!isOnline) {
-      setError("Starting a session requires an online connection.");
-      return;
-    }
-
     setBusy(true);
     setError("");
     try {
-      await sessionApi.start({
+      const started = await sessionApi.start({
+        branchId: selectedBranchId || undefined,
         tableId,
         customerId: walkIn ? null : customerId,
       });
-      await onStarted();
+      await onStarted(started);
+      if (!isOnline || "offlineQueued" in started) toast.info("Saved offline. Action queued for sync.");
       onClose();
     } catch (submitError) {
       setError(
@@ -151,15 +152,17 @@ export function StartSessionModal({
           </button>
         </div>
 
-        <label className="mt-5 block text-sm font-medium">
+        <p className="mt-5 text-sm text-slate-500">This session will start in the active branch shown in the header.</p>
+
+        <label className="mt-4 block text-sm font-medium">
           Table
           <select
             className="mt-1 w-full rounded-lg border p-3"
             value={tableId}
             onChange={(event) => setTableId(event.target.value)}
-            disabled={busy || !isOnline}
+            disabled={busy || !selectedBranchId}
           >
-            <option value="">Select an available table</option>
+            <option value="">{tables.length === 0 ? "No tables found in this branch" : "Select an available table"}</option>
             {tables.map((table) => (
               <option key={table.id} value={table.id}>
                 Table {table.tableNumber} — {formatRate(table)}
@@ -198,7 +201,7 @@ export function StartSessionModal({
                   onClick={() => setCustomerId(customer.id)}
                   className={`block w-full p-3 text-left text-sm ${
                     customerId === customer.id
-                      ? "bg-emerald-50"
+                      ? "bg-brand-50"
                       : "hover:bg-slate-50"
                   }`}
                 >
@@ -211,23 +214,18 @@ export function StartSessionModal({
           </div>
         )}
 
-        {!isOnline && (
-          <p className="mt-3 text-sm text-amber-700">
-            You are offline. Reconnect to start a session.
-          </p>
-        )}
+        {!isOnline && <p className="mt-3 text-sm text-amber-700">Offline Mode active. Actions are saved locally and will synchronize when connection returns.</p>}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
         <button
           type="button"
           disabled={
-            !isOnline ||
             !tableId ||
             (!walkIn && !customerId) ||
             busy
           }
           onClick={() => void submit()}
-          className="mt-6 w-full rounded-lg bg-emerald-600 p-3 font-semibold text-white disabled:opacity-40"
+          className="mt-6 w-full rounded-lg bg-brand-600 p-3 font-semibold text-white disabled:opacity-40"
         >
           {busy ? "Starting…" : "Start timer"}
         </button>

@@ -1,408 +1,146 @@
-
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Users,
+  UserPlus,
+  Search,
+  Edit2,
+  Trash2,
+  ArrowRight,
+  GitMerge,
+  ShieldAlert,
+  Star,
+  Tag,
+  Phone,
+  CreditCard,
+  X,
+} from "lucide-react";
 
-import { ArrowRight, Edit, Trash2 } from "lucide-react";
-
-import EmptyState from "@/components/common/EmptyState";
-import ErrorState from "@/components/common/ErrorState";
-import Loading from "@/components/common/Loading";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Button } from "@/components/ui/button";
 import { FormField, Input } from "@/components/ui/input";
-import { Alert } from "@/components/ui/alert";
-
+import { toast } from "@/lib/toast";
 import { useAuth } from "@/lib/auth/auth-context";
 import { customerApi } from "@/features/customers/customer-api";
-import type {
-  Customer,
-  CustomerTag,
-} from "@/features/customers/types";
+import type { Customer, CustomerTag } from "@/features/customers/types";
+import { fetchBranches } from "@/lib/api/branch";
 
 export default function CustomersPage() {
   const router = useRouter();
   const { user } = useAuth();
-
-  const strings = {
-    en: {
-      title: "Customers",
-      description: "Create and find customer records by name, phone, or CNIC.",
-      newCustomer: "New Customer",
-      editCustomer: "Edit Customer",
-      createHelp: "Add a new customer record.",
-      editHelp: "Update this customer's information.",
-      saveCustomer: "Save Customer",
-      updateCustomer: "Update Customer",
-      cancel: "Cancel",
-      fullName: "Full name",
-      phone: "Phone",
-      cnic: "CNIC (optional)",
-      customerTag: "Customer Tag (optional)",
-      noTag: "No Tag",
-      enterFullName: "Enter full name",
-      enterPhoneNumber: "Enter phone number",
-      enterCnic: "Enter CNIC",
-      deleteConfirmation: "Are you sure you want to delete",
-      onlyManagersCanMerge: "Only Owners and Managers can merge customers.",
-      customersMerged: "Customers merged successfully.",
-      failedMerge: "Failed to merge customers.",
-      checking: "Checking...",
-      searchTitle: "Find Customer",
-      searchHelp: "Search by name, phone number, or CNIC.",
-      searchPlaceholder: "Search by phone, name, or CNIC",
-      noCustomersFound: "No customers found",
-      noCustomerMatches: "No customer matches your search.",
-      noCustomersCreated: "No customers have been created yet.",
-      customerProfile: "Customer Profile",
-      unnamedCustomer: "Unnamed customer",
-      noPhone: "No phone number",
-      customerTagNone: "No tag",
-      edit: "Edit customer",
-      delete: "Delete customer",
-      viewDetails: "View customer details",
-      merge: "Merge",
-      mergeTitle: "Merge Customer",
-      mergeDescription: "Combine duplicate customer records and preserve history.",
-      sourceCustomer: "Source customer",
-      targetCustomer: "Merge target customer",
-      selectTargetCustomer: "Select target customer",
-      confirmMerge: "Confirm Merge",
-      recheckEligibility: "Re-check eligibility",
-      mergeError: "Select a target customer before merging.",
-      successCreated: "Customer created successfully.",
-      successUpdated: "Customer updated successfully.",
-      successDeleted: "Customer deleted successfully.",
-      successTagUpdated: "Customer tag updated.",
-      successTagRemoved: "Customer tag removed.",
-      failedLoad: "Failed to load customers.",
-      failedCreate: "Could not create customer.",
-      failedUpdate: "Could not update customer.",
-      failedDelete: "Failed to delete customer.",
-      failedTag: "Failed to update customer tag.",
-      blockedCustomer: "Blocked",
-      requestCancellation: "Request Cancellation",
-      back: "Back",
-      searching: "Searching customers...",
-    },
-    ur: {
-      title: "صارفین",
-      description: "نام، فون، یا CNIC کے ذریعے صارف کا ریکارڈ بنائیں اور تلاش کریں۔",
-      newCustomer: "نیا صارف",
-      editCustomer: "صارف میں ترمیم کریں",
-      createHelp: "نیا صارف کا ریکارڈ شامل کریں۔",
-      editHelp: "اس صارف کی معلومات کو اپ ڈیٹ کریں۔",
-      saveCustomer: "صارف محفوظ کریں",
-      updateCustomer: "صارف اپ ڈیٹ کریں",
-      cancel: "منسوخ کریں",
-      fullName: "پورا نام",
-      phone: "فون",
-      cnic: "CNIC (اختیاری)",
-      customerTag: "صارف کا ٹیگ (اختیاری)",
-      noTag: "کوئی ٹیگ نہیں",
-      enterFullName: "پورا نام درج کریں",
-      enterPhoneNumber: "فون نمبر درج کریں",
-      enterCnic: "CNIC درج کریں",
-      deleteConfirmation: "کیا آپ واقعی حذف کرنا چاہتے ہیں",
-      onlyManagersCanMerge: "صرف اوونرز اور مینیجرز صارفین کو مرج کر سکتے ہیں۔",
-      customersMerged: "صارفین کامیابی کے ساتھ مرج ہو گئے۔",
-      failedMerge: "صارفین کو مرج کرنے میں ناکامی۔",
-      checking: "چیک ہو رہا ہے...",
-      searchTitle: "صارف تلاش کریں",
-      searchHelp: "نام، فون نمبر، یا CNIC سے تلاش کریں۔",
-      searchPlaceholder: "فون، نام، یا CNIC سے تلاش کریں",
-      noCustomersFound: "کوئی صارف نہیں ملا",
-      noCustomerMatches: "آپ کی تلاش سے کوئی صارف مطابقت نہیں رکھتا۔",
-      noCustomersCreated: "اب تک کوئی صارف نہیں بنایا گیا۔",
-      customerProfile: "صارف کا پروفائل",
-      unnamedCustomer: "بلا نام صارف",
-      noPhone: "کوئی فون نہیں",
-      customerTagNone: "کوئی ٹیگ نہیں",
-      edit: "صارف میں ترمیم کریں",
-      delete: "صارف حذف کریں",
-      viewDetails: "تفصیلات دیکھیں",
-      merge: "مرج کریں",
-      mergeTitle: "صارف کو مرج کریں",
-      mergeDescription: "مقلد صارف کے ریکارڈز کو ضم کریں اور تاریخ کو محفوظ کریں۔",
-      sourceCustomer: "سورس صارف",
-      targetCustomer: "مرج ٹارگٹ صارف",
-      selectTargetCustomer: "ٹارگٹ صارف منتخب کریں",
-      confirmMerge: "مرج کی تصدیق کریں",
-      recheckEligibility: "اہلیت دوبارہ چیک کریں",
-      mergeError: "مرج سے پہلے ٹارگٹ صارف منتخب کریں۔",
-      successCreated: "صارف کامیابی سے بنایا گیا۔",
-      successUpdated: "صارف کامیابی سے اپ ڈیٹ ہوا۔",
-      successDeleted: "صارف کامیابی سے حذف ہوا۔",
-      successTagUpdated: "صارف کا ٹیگ اپ ڈیٹ ہوا۔",
-      successTagRemoved: "صارف کا ٹیگ ہٹا دیا گیا۔",
-      failedLoad: "صارفین لوڈ کرنے میں ناکامی۔",
-      failedCreate: "صارف بنانے میں ناکام۔",
-      failedUpdate: "صارف اپ ڈیٹ کرنے میں ناکام۔",
-      failedDelete: "صارف حذف کرنے میں ناکام۔",
-      failedTag: "صارف کا ٹیگ اپ ڈیٹ کرنے میں ناکام۔",
-      blockedCustomer: "بلاک شدہ",
-      requestCancellation: "منسوخی کی درخواست",
-      back: "واپس",
-      searching: "صارف تلاش کیا جا رہا ہے...",
-    },
-  };
-
-  const t = strings[user?.language ?? "en"];
+  const isManagerOrOwner = user?.roles.some((role) =>
+    ["OWNER", "MANAGER"].includes(role.toUpperCase()),
+  );
 
   const [items, setItems] = useState<Customer[]>([]);
   const [q, setQ] = useState("");
+  const [selectedFilterTag, setSelectedFilterTag] = useState<string>("all");
   const [availableTags, setAvailableTags] = useState<CustomerTag[]>([]);
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Modals & form state
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Customer | null>(null);
   const [mergeSource, setMergeSource] = useState<Customer | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [mergeLoading, setMergeLoading] = useState(false);
-  const [mergeError, setMergeError] = useState("");
-
-  const isManager = user?.roles.some((role) =>
-    ["OWNER", "MANAGER"].includes(role),
-  );
-
-  const tagOptions = useMemo(
-    () => availableTags,
-    [availableTags],
-  );
-
-  type TagName = string;
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
   const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [tagLoading, setTagLoading] = useState<string | null>(null);
-
-  const [editingCustomer, setEditingCustomer] =
-    useState<Customer | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const deleteInFlight = useRef(false);
+  const deletedCustomerIds = useRef(new Set<string>());
 
   const [form, setForm] = useState({
     fullName: "",
     phone: "",
     cnic: "",
     tag: "",
+    branchId: user?.branchId ?? "",
   });
 
-  const loadCustomers = useCallback(async (searchQuery = q, brief = true) => {
+  const loadCustomers = useCallback(async (searchQuery = q) => {
     setLoading(true);
-    setError("");
-
     try {
-      const customers = await customerApi.search(searchQuery, 20, brief);
-      setItems(customers);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t.failedLoad,
-      );
+      const customers = await customerApi.search(searchQuery, 100, true);
+      setItems(customers.filter((customer) => !deletedCustomerIds.current.has(customer.id)));
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load customers.");
     } finally {
       setLoading(false);
     }
-  }, [q, t]);
+  }, [q]);
 
   const loadAvailableTags = useCallback(async () => {
     try {
       const tags = await customerApi.availableTags();
       setAvailableTags(tags);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t.failedLoad,
-      );
+    } catch {
+      // Tags fallback
     }
-  }, [t]);
+  }, []);
+
+  const loadBranches = useCallback(async () => {
+    try {
+      const result = await fetchBranches({ limit: 100, isActive: true });
+      setBranches(
+        result.branches.map((branch) => ({
+          id: branch.id,
+          name: branch.name || "Unnamed branch",
+        })),
+      );
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load branches.");
+    }
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      void loadCustomers(q, true);
+      void loadCustomers(q);
     }, 250);
-
     return () => clearTimeout(timer);
   }, [loadCustomers, q]);
 
   useEffect(() => {
-  void loadAvailableTags();
-}, [loadAvailableTags]);
+    void loadAvailableTags();
+    void loadBranches();
+  }, [loadAvailableTags, loadBranches]);
 
-  function resetForm() {
+  const resetForm = () => {
     setForm({
       fullName: "",
       phone: "",
       cnic: "",
       tag: "",
+      branchId: user?.branchId ?? "",
     });
-
     setEditingCustomer(null);
-  }
+    setCustomerModalOpen(false);
+  };
 
-  function startEdit(customer: Customer) {
-    const currentTag =
-      customer.tagAssignments[0]?.tag.name ?? "";
+  const openCreateModal = () => {
+    resetForm();
+    setCustomerModalOpen(true);
+  };
 
+  const openEditModal = (customer: Customer) => {
+    const currentTag = customer.tagAssignments[0]?.tag.name ?? "";
     setEditingCustomer(customer);
-
     setForm({
       fullName: customer.fullName ?? "",
       phone: customer.phone ?? "",
       cnic: customer.cnic ?? "",
       tag: currentTag,
+      branchId: customer.branchId ?? "",
     });
+    setCustomerModalOpen(true);
+  };
 
-    setSuccess("");
-    setError("");
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-  }
-
-  async function handleDelete(customer: Customer) {
-    const confirmed = window.confirm(
-      `${t.deleteConfirmation} ${
-        customer.fullName ?? t.unnamedCustomer
-      }?`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDeletingId(customer.id);
-    setError("");
-    setSuccess("");
-
-    try {
-      await customerApi.remove(customer.id);
-
-      // Immediately remove customer from UI.
-      setItems((current) =>
-        current.filter(
-          (item) => item.id !== customer.id,
-        ),
-      );
-
-      if (editingCustomer?.id === customer.id) {
-        resetForm();
-      }
-
-      setSuccess(
-        t.successDeleted,
-      );
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t.failedDelete,
-      );
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
-  async function handleTagChange(
-  customer: Customer,
-  tagName: TagName | "",
-) {
-  setTagLoading(customer.id);
-  setError("");
-  setSuccess("");
-
-  try {
-    for (const assignment of customer.tagAssignments) {
-      await customerApi.removeTag(
-        customer.id,
-        assignment.tag.id,
-      );
-    }
-
-    if (!tagName) {
-      setSuccess(t.successTagRemoved);
-      await loadCustomers();
-      return;
-    }
-
-    const selectedTag = availableTags.find(
-      (tag) =>
-        tag.name?.toLowerCase() === tagName.toLowerCase(),
-    );
-
-    if (!selectedTag) {
-      throw new Error(
-        `Customer tag "${tagName}" not found.`,
-      );
-    }
-
-    await customerApi.addTag(customer.id, {
-      tagId: selectedTag.id,
-    });
-
-    setSuccess(t.successTagUpdated);
-    await loadCustomers();
-  } catch (e) {
-    setError(
-      e instanceof Error
-        ? e.message
-        : t.failedTag,
-    );
-  } finally {
-    setTagLoading(null);
-  }
-}
-
-  function handleMerge(customer: Customer) {
-    if (!isManager) {
-      setMergeError(t.onlyManagersCanMerge);
-      return;
-    }
-
-    setMergeSource(customer);
-    setMergeTargetId("");
-    setMergeError("");
-  }
-
-  async function performMerge() {
-    if (!mergeSource || !mergeTargetId) {
-      setMergeError(t.mergeError);
-      return;
-    }
-
-    setMergeLoading(true);
-    setMergeError("");
-    setSuccess("");
-
-    try {
-      await customerApi.merge(mergeSource.id, {
-        targetCustomerId: mergeTargetId,
-      });
-
-      setSuccess(t.customersMerged);
-      setMergeSource(null);
-      setMergeTargetId("");
-      await loadCustomers();
-    } catch (e) {
-      setMergeError(
-        e instanceof Error
-          ? e.message
-          : t.failedMerge,
-      );
-    } finally {
-      setMergeLoading(false);
-    }
-  }
-
-  async function submit(e: FormEvent) {
+  const handleSubmitCustomer = async (e: FormEvent) => {
     e.preventDefault();
-
     setSaving(true);
-    setError("");
-    setSuccess("");
-
     try {
       const fullName = form.fullName.trim();
       const phone = form.phone.trim();
@@ -413,511 +151,601 @@ export default function CustomersPage() {
           fullName,
           phone,
           cnic: cnic || null,
+          branchId: form.branchId || null,
         });
 
-        setSuccess(t.successUpdated);
-      }  else {
-  const createdCustomer = await customerApi.create({
-    fullName,
-    phone,
-    cnic: cnic || null,
-  });
+        // Tag management
+        if (form.tag) {
+          const currentTagName = editingCustomer.tagAssignments[0]?.tag.name;
+          if (currentTagName !== form.tag) {
+            for (const a of editingCustomer.tagAssignments) {
+              await customerApi.removeTag(editingCustomer.id, a.tag.id);
+            }
+            const matchingTag = availableTags.find(
+              (t) => t.name?.toLowerCase() === form.tag.toLowerCase(),
+            );
+            if (matchingTag) {
+              await customerApi.addTag(editingCustomer.id, { tagId: matchingTag.id });
+            }
+          }
+        } else if (editingCustomer.tagAssignments.length > 0) {
+          for (const a of editingCustomer.tagAssignments) {
+            await customerApi.removeTag(editingCustomer.id, a.tag.id);
+          }
+        }
 
-  if (form.tag) {
-    const selectedTag = availableTags.find(
-      (tag) => tag.name === form.tag,
-    );
+        toast.success("Customer profile updated successfully.");
+      } else {
+        const created = await customerApi.create({
+          fullName,
+          phone,
+          cnic: cnic || null,
+          branchId: form.branchId || null,
+        });
 
-    if (!selectedTag) {
-      throw new Error(
-        `Customer tag "${form.tag}" not found.`,
-      );
-    }
+        if (form.tag) {
+          const matchingTag = availableTags.find(
+            (t) => t.name?.toLowerCase() === form.tag.toLowerCase(),
+          );
+          if (matchingTag) {
+            await customerApi.addTag(created.id, { tagId: matchingTag.id });
+          }
+        }
 
-    await customerApi.addTag(createdCustomer.id, {
-      tagId: selectedTag.id,
-    });
-  }
-
-  setSuccess(t.successCreated);
-}
+        toast.success("New customer created successfully.");
+      }
 
       resetForm();
-
       await loadCustomers();
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : editingCustomer
-            ? t.failedUpdate
-            : t.failedCreate,
-      );
+    } catch (e: any) {
+      toast.error(e?.message || "Operation failed.");
     } finally {
       setSaving(false);
     }
-  }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete || deleteInFlight.current) return;
+    const customerId = pendingDelete.id;
+    deleteInFlight.current = true;
+    setDeleting(true);
+    try {
+      await customerApi.remove(customerId);
+      deletedCustomerIds.current.add(customerId);
+      setItems((customers) => customers.filter((customer) => customer.id !== customerId));
+      toast.success("Customer deleted successfully.");
+      setPendingDelete(null);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to delete customer.");
+    } finally {
+      deleteInFlight.current = false;
+      setDeleting(false);
+    }
+  };
+
+  const handlePerformMerge = async () => {
+    if (!mergeSource || !mergeTargetId) {
+      toast.warning("Please select a target customer to merge into.");
+      return;
+    }
+    setMergeLoading(true);
+    try {
+      await customerApi.merge(mergeSource.id, { targetCustomerId: mergeTargetId });
+      toast.success("Customer records merged successfully.");
+      setMergeSource(null);
+      setMergeTargetId("");
+      await loadCustomers();
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to merge customers.");
+    } finally {
+      setMergeLoading(false);
+    }
+  };
+
+  const handleQuickTagToggle = async (customer: Customer, nextTagName: string) => {
+    try {
+      for (const a of customer.tagAssignments) {
+        await customerApi.removeTag(customer.id, a.tag.id);
+      }
+      if (nextTagName) {
+        const matchingTag = availableTags.find(
+          (t) => t.name?.toLowerCase() === nextTagName.toLowerCase(),
+        );
+        if (matchingTag) {
+          await customerApi.addTag(customer.id, { tagId: matchingTag.id });
+        }
+      }
+      toast.success("Customer tag updated.");
+      await loadCustomers();
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to update tag.");
+    }
+  };
+
+  // KPIs
+  const stats = useMemo(() => {
+    const total = items.length;
+    const vip = items.filter((c) =>
+      c.tagAssignments.some((a) => a.tag.name?.toLowerCase() === "vip"),
+    ).length;
+    const blocked = items.filter((c) =>
+      c.tagAssignments.some((a) => a.tag.name?.toLowerCase() === "blocked"),
+    ).length;
+    const regular = total - vip - blocked;
+    return { total, vip, blocked, regular };
+  }, [items]);
+
+  // Filtered items
+  const filteredCustomers = useMemo(() => {
+    if (selectedFilterTag === "all") return items;
+    if (selectedFilterTag === "vip") {
+      return items.filter((c) =>
+        c.tagAssignments.some((a) => a.tag.name?.toLowerCase() === "vip"),
+      );
+    }
+    if (selectedFilterTag === "blocked") {
+      return items.filter((c) =>
+        c.tagAssignments.some((a) => a.tag.name?.toLowerCase() === "blocked"),
+      );
+    }
+    if (selectedFilterTag === "regular") {
+      return items.filter(
+        (c) =>
+          !c.tagAssignments.some((a) =>
+            ["vip", "blocked"].includes(a.tag.name?.toLowerCase() ?? ""),
+          ),
+      );
+    }
+    return items;
+  }, [items, selectedFilterTag]);
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 p-6">
+    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">
-          {t.title}
-        </h1>
-
-        <p className="mt-1 text-sm text-slate-500">
-          {t.description}
-        </p>
-      </div>
-
-      {/* Messages */}
-      {success && (
-        <Alert variant="success">
-          {success}
-        </Alert>
-      )}
-
-      {error && (
-        <ErrorState
-          message={error}
-          onRetry={() => void loadCustomers()}
-        />
-      )}
-
-      {/* Create / Edit */}
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">
-              {editingCustomer
-                ? t.editCustomer
-                : t.newCustomer}
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              {editingCustomer ? t.editHelp : t.createHelp}
-            </p>
-          </div>
-
-          {editingCustomer && (
-            <Button
-              type="button"
-              onClick={resetForm}
-            >
-              {t.cancel}
-            </Button>
-          )}
-        </div>
-
-        <form
-          onSubmit={submit}
-          className="mt-5 space-y-4"
-        >
-          <FormField
-            label={t.fullName}
-            htmlFor="customer-full-name"
-          >
-            <Input
-              id="customer-full-name"
-              value={form.fullName}
-              onChange={(e) =>
-                setForm((current) => ({
-                  ...current,
-                  fullName: e.target.value,
-                }))
-              }
-              placeholder={t.enterFullName}
-              required
-            />
-          </FormField>
-
-          <FormField
-            label={t.phone}
-            htmlFor="customer-phone"
-          >
-            <Input
-              id="customer-phone"
-              value={form.phone}
-              onChange={(e) =>
-                setForm((current) => ({
-                  ...current,
-                  phone: e.target.value,
-                }))
-              }
-              placeholder={t.enterPhoneNumber}
-              required
-            />
-          </FormField>
-
-          <FormField
-            label={t.cnic}
-            htmlFor="customer-cnic"
-          >
-            <Input
-              id="customer-cnic"
-              value={form.cnic}
-              onChange={(e) =>
-                setForm((current) => ({
-                  ...current,
-                  cnic: e.target.value,
-                }))
-              }
-              placeholder="12345-1234567-1"
-            />
-          </FormField>
-
-          {/* Customer Tag */}
-          <FormField
-            label={t.customerTag}
-            htmlFor="customer-tag"
-          >
-            <select
-              id="customer-tag"
-              value={form.tag}
-              onChange={(e) =>
-                setForm((current) => ({
-                  ...current,
-                  tag: e.target.value,
-                }))
-              }
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
-            >
-              <option value="">{t.noTag}</option>
-              {tagOptions.map((tag) => (
-                <option
-                  key={tag.id || tag.name}
-                  value={tag.name ?? ""}
-                >
-                  {tag.name}
-                </option>
-              ))}
-            </select>
-          </FormField>
-
-          <div className="flex gap-3">
-            <Button
-              type="submit"
-              isLoading={saving}
-              disabled={saving}
-            >
-              {editingCustomer
-                ? t.updateCustomer
-                : t.saveCustomer}
-            </Button>
-
-            {editingCustomer && (
-              <Button
-                type="button"
-                onClick={resetForm}
-              >
-                Cancel
-              </Button>
-            )}
-          </div>
-        </form>
-      </section>
-
-      {/* Search */}
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-4 border-b border-slate-200">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">
-            {t.searchTitle}
-          </h2>
-
-          <p className="mt-1 text-sm text-slate-500">
-            {t.searchHelp}
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950">
+              Customer Directory
+            </h1>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200">
+              {items.length} Registered
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Manage player profiles, VIP tiers, contact directories, and visit history
           </p>
         </div>
 
-        <div className="mt-4">
-          <Input
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-sm transition-all"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Add Customer</span>
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Ribbon */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+          <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
+            <Users className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-xs font-medium text-slate-400">Total Customers</span>
+            <p className="text-xl font-bold text-slate-900">{stats.total}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+          <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg">
+            <Star className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-xs font-medium text-slate-400">VIP Clients</span>
+            <p className="text-xl font-bold text-slate-900">{stats.vip}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+          <div className="p-2.5 bg-slate-50 text-slate-600 rounded-lg">
+            <Tag className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-xs font-medium text-slate-400">Regular Players</span>
+            <p className="text-xl font-bold text-slate-900">{stats.regular}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+          <div className="p-2.5 bg-rose-50 text-rose-600 rounded-lg">
+            <ShieldAlert className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-xs font-medium text-slate-400">Blocked / Flagged</span>
+            <p className="text-xl font-bold text-slate-900">{stats.blocked}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Search & Tag Filter Bar */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between gap-4">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
             value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              void loadCustomers(e.target.value, true);
-            }}
-            placeholder={t.searchPlaceholder}
-            aria-label="Search customers"
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search by full name, phone number, or CNIC..."
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 rounded-lg border border-slate-200 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
-        {!error && loading && (
-          <div className="py-8">
-            <Loading message="Searching customers..." />
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+          {(["all", "vip", "regular", "blocked"] as const).map((tagKey) => (
+            <button
+              key={tagKey}
+              type="button"
+              onClick={() => setSelectedFilterTag(tagKey)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+                selectedFilterTag === tagKey
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {tagKey}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Customer Directory Table */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {loading && items.length === 0 ? (
+          <div className="py-16 text-center text-slate-400 text-sm">
+            Loading customer records...
+          </div>
+        ) : filteredCustomers.length === 0 ? (
+          <div className="py-16 text-center space-y-2">
+            <Users className="w-8 h-8 text-slate-300 mx-auto" />
+            <p className="text-sm font-semibold text-slate-700">No customers found</p>
+            <p className="text-xs text-slate-400">
+              {q ? "No customer matches your search query." : "No customer records registered yet."}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <tr>
+                  <th className="px-5 py-3.5">Customer</th>
+                  <th className="px-5 py-3.5">Contact Details</th>
+                  <th className="px-5 py-3.5">CNIC</th>
+                  <th className="px-5 py-3.5">Branch</th>
+                  <th className="px-5 py-3.5">Tag / Status</th>
+                  <th className="px-5 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredCustomers.map((customer) => {
+                  const tagName = customer.tagAssignments[0]?.tag.name?.toLowerCase();
+                  const isVip = tagName === "vip";
+                  const isBlocked = tagName === "blocked";
+
+                  return (
+                    <tr
+                      key={customer.id}
+                      className="hover:bg-slate-50/70 transition-colors group"
+                    >
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs uppercase ${
+                              isVip
+                                ? "bg-amber-100 text-amber-800 ring-2 ring-amber-400/30"
+                                : isBlocked
+                                ? "bg-rose-100 text-rose-800"
+                                : "bg-brand-100 text-brand-800"
+                            }`}
+                          >
+                            {(customer.fullName || "W")[0]}
+                          </div>
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => router.push(`/customers/${customer.id}`)}
+                              className="font-semibold text-slate-900 hover:text-brand-600 text-left transition-colors"
+                            >
+                              {customer.fullName || "Unnamed Customer"}
+                            </button>
+                            <span className="block text-[11px] text-slate-400">
+                              ID: {customer.id.slice(0, 8)}…
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-1.5 text-slate-700">
+                          <Phone className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{customer.phone || "No phone registered"}</span>
+                        </div>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-1.5 text-slate-700">
+                          <CreditCard className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{customer.cnic || "—"}</span>
+                        </div>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <span className="text-xs font-medium text-slate-700">
+                          {customer.branch?.name || "All Branches"}
+                        </span>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <select
+                          value={customer.tagAssignments[0]?.tag.name ?? ""}
+                          onChange={(e) => void handleQuickTagToggle(customer, e.target.value)}
+                          className={`text-xs font-semibold px-2.5 py-1 rounded-full border outline-none cursor-pointer ${
+                            isVip
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : isBlocked
+                              ? "bg-rose-50 text-rose-700 border-rose-200"
+                              : tagName
+                              ? "bg-blue-50 text-blue-700 border-blue-200"
+                              : "bg-slate-50 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          <option value="">No Tag</option>
+                          {availableTags.map((tag) => (
+                            <option key={tag.id} value={tag.name ?? ""}>
+                              {tag.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/customers/${customer.id}`)}
+                            title="View History & Udhaar Profile"
+                            className="p-1.5 text-slate-500 hover:text-brand-600 hover:bg-brand-50 rounded-md transition-colors"
+                          >
+                            <ArrowRight className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(customer)}
+                            title="Edit Profile"
+                            className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+
+                          {isManagerOrOwner && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMergeSource(customer);
+                                setMergeTargetId("");
+                              }}
+                              title="Merge with duplicate account"
+                              className="p-1.5 text-slate-500 hover:text-violet-600 hover:bg-violet-50 rounded-md transition-colors"
+                            >
+                              <GitMerge className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => setPendingDelete(customer)}
+                            title="Delete Customer"
+                            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
+      </div>
 
-        {!error &&
-          !loading &&
-          items.length === 0 && (
-            <div className="py-8">
-              <EmptyState
-                title={t.noCustomersFound}
-                description={
-                  q.trim()
-                    ? t.noCustomerMatches
-                    : t.noCustomersCreated
-                }
-              />
-            </div>
-          )}
-
-        {!error &&
-          !loading &&
-          items.length > 0 && (
-            <div className="mt-6 space-y-3">
-              {items.map((customer) => {
-                const isBlocked =
-                  customer.tagAssignments.some(
-                    (assignment) =>
-                      assignment.tag.name?.toLowerCase() ===
-                      "blocked",
-                  );
-
-                return (
-                  <div
-                    key={customer.id}
-                    className={`rounded-xl border p-4 transition-colors ${
-                      isBlocked
-                        ? "border-red-200 bg-red-50"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
-                    }`}
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      {/* Customer information */}
-                      <div
-                        className="cursor-pointer"
-                        onClick={() => {
-                          window.location.href =
-                            `/customers/${customer.id}`;
-                        }}
-                      >
-                        <h3 className="font-semibold text-slate-900">
-                          {customer.fullName || t.unnamedCustomer}
-                        </h3>
-
-                        <p className="mt-1 text-sm text-slate-600">
-                          {customer.phone || t.noPhone}
-                        </p>
-
-                        {customer.cnic && (
-                          <p className="mt-1 text-sm text-slate-500">
-                            CNIC: {customer.cnic}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Tags */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        {customer.tagAssignments.map(
-                          (assignment) => (
-                            <span
-                              key={assignment.id}
-                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                assignment.tag.name?.toLowerCase() ===
-                                "blocked"
-                                  ? "bg-red-100 text-red-700"
-                                  : assignment.tag.name?.toLowerCase() ===
-                                      "vip"
-                                    ? "bg-yellow-100 text-yellow-700"
-                                    : "bg-blue-100 text-blue-700"
-                              }`}
-                            >
-                              {assignment.tag.name ||
-                                "Tag"}
-                            </span>
-                          ),
-                        )}
-
-                        {!customer.tagAssignments.length && (
-                          <span className="text-xs text-slate-400">
-                            {t.customerTagNone}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-3">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() =>
-                          startEdit(customer)
-                        }
-                        aria-label="Edit customer"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="text-destructive"
-                        disabled={
-                          deletingId === customer.id
-                        }
-                        onClick={() =>
-                          void handleDelete(customer)
-                        }
-                        aria-label="Delete customer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() =>
-                          router.push(
-                            `/customers/${customer.id}`,
-                          )
-                        }
-                        aria-label="View customer details"
-                      >
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-
-                      {isManager && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() =>
-                            handleMerge(customer)
-                          }
-                        >
-                          {t.merge}
-                        </Button>
-                      )}
-
-                      {/* Tag selector */}
-                      <select
-                        value={
-                          customer.tagAssignments[0]
-                            ?.tag.name ?? ""
-                        }
-                        disabled={
-                          tagLoading === customer.id
-                        }
-                        onChange={(e) =>
-                          void handleTagChange(
-                            customer,
-                            e.target.value as
-                              | TagName
-                              | "",
-                          )
-                        }
-                        className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-                      >
-                        <option value="">
-                          {t.noTag}
-                        </option>
-                        {tagOptions.map((tag) => (
-                          <option
-                            key={tag.id || tag.name}
-                            value={tag.name ?? ""}
-                          >
-                            {tag.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-      </section>
-
-      {mergeSource && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
+      {/* Customer Create/Edit Modal */}
+      {customerModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
-                <h2 className="text-xl font-semibold text-slate-900">
-                  {t.mergeTitle}
+                <h2 className="text-lg font-bold text-slate-900">
+                  {editingCustomer ? "Edit Customer Profile" : "Register New Customer"}
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  {t.mergeDescription}
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {editingCustomer
+                    ? "Update contact information, branch access & tag"
+                    : "Choose one branch or make the customer available to all"}
                 </p>
               </div>
-
               <button
                 type="button"
-                onClick={() => setMergeSource(null)}
-                className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 hover:bg-slate-50"
-                aria-label="Close merge dialog"
+                onClick={resetForm}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="mt-6 space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm text-slate-500">
-                  {t.sourceCustomer}
-                </p>
-                <p className="mt-1 font-semibold text-slate-900">
-                  {mergeSource.fullName || t.unnamedCustomer} — {mergeSource.phone || t.noPhone}
-                </p>
-              </div>
+            <form onSubmit={handleSubmitCustomer} className="space-y-4">
+              <FormField label="Full Name" htmlFor="cust-name">
+                <Input
+                  id="cust-name"
+                  value={form.fullName}
+                  onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                  placeholder="e.g. Tariq Mahmood"
+                  required
+                />
+              </FormField>
 
-              <div>
-                <FormField
-                  label={t.targetCustomer}
-                  htmlFor="merge-target"
+              <FormField label="Phone Number" htmlFor="cust-phone">
+                <Input
+                  id="cust-phone"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="e.g. 03001234567"
+                  required
+                />
+              </FormField>
+
+              <FormField label="CNIC (Optional)" htmlFor="cust-cnic">
+                <Input
+                  id="cust-cnic"
+                  value={form.cnic}
+                  onChange={(e) => setForm({ ...form, cnic: e.target.value })}
+                  placeholder="e.g. 35201-1234567-1"
+                />
+              </FormField>
+
+              <FormField label="Branch Access" htmlFor="cust-branch">
+                <select
+                  id="cust-branch"
+                  value={form.branchId}
+                  onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
-                  <select
-                    id="merge-target"
-                    value={mergeTargetId}
-                    onChange={(e) => setMergeTargetId(e.target.value)}
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500"
-                  >
-                    <option value="">{t.selectTargetCustomer}</option>
-                    {items
-                      .filter((customer) => customer.id !== mergeSource.id)
-                      .map((customer) => (
-                        <option
-                          key={customer.id}
-                          value={customer.id}
-                        >
-                          {customer.fullName || t.unnamedCustomer} — {customer.phone || t.noPhone}
-                        </option>
-                      ))}
-                  </select>
-                </FormField>
-              </div>
+                  <option value="">All Branches</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
 
-              {mergeError && (
-                <div className="rounded-lg bg-red-50 p-4 text-sm text-red-700">
-                  {mergeError}
+              <FormField label="Customer Tier / Tag" htmlFor="cust-tag">
+                <select
+                  id="cust-tag"
+                  value={form.tag}
+                  onChange={(e) => setForm({ ...form, tag: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="">No Tag (Standard)</option>
+                  {availableTags.map((tag) => (
+                    <option key={tag.id} value={tag.name ?? ""}>
+                      {tag.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <Button type="button" variant="secondary" onClick={resetForm}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={saving} disabled={saving}>
+                  {editingCustomer ? "Save Changes" : "Create Customer"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Merge Modal */}
+      {mergeSource && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-violet-50 text-violet-600 rounded-lg">
+                  <GitMerge className="w-5 h-5" />
                 </div>
-              )}
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Merge Customer Records</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Combine duplicate profiles and consolidate session and udhaar history
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMergeSource(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-              <div className="flex flex-wrap gap-3 pt-2">
-                <Button
-                  type="button"
-                  isLoading={mergeLoading}
-                  onClick={performMerge}
+            <div className="space-y-4">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-[11px] font-bold uppercase text-slate-400">Source Profile (Will be merged)</span>
+                <p className="font-semibold text-slate-900 mt-0.5">
+                  {mergeSource.fullName || "Unnamed"} — {mergeSource.phone || "No Phone"}
+                </p>
+              </div>
+
+              <FormField label="Target Customer Profile (Will receive history)" htmlFor="target-customer">
+                <select
+                  id="target-customer"
+                  value={mergeTargetId}
+                  onChange={(e) => setMergeTargetId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
-                  {t.confirmMerge}
+                  <option value="">Select Target Customer...</option>
+                  {items
+                    .filter((c) => c.id !== mergeSource.id)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.fullName || "Unnamed"} — {c.phone || "No Phone"}
+                      </option>
+                    ))}
+                </select>
+              </FormField>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <Button type="button" variant="secondary" onClick={() => setMergeSource(null)}>
+                  Cancel
                 </Button>
                 <Button
                   type="button"
-                  variant="secondary"
-                  onClick={() => setMergeSource(null)}
+                  onClick={handlePerformMerge}
+                  isLoading={mergeLoading}
+                  disabled={mergeLoading || !mergeTargetId}
+                  className="bg-violet-600 hover:bg-violet-700 text-white"
                 >
-                  {t.cancel}
+                  Confirm Merge
                 </Button>
               </div>
             </div>
           </div>
         </div>
       )}
-    </main>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(pendingDelete)}
+        title="Delete Customer Profile"
+        description={`Are you sure you want to delete ${pendingDelete?.fullName || "this customer"}? Their historical invoices and sessions will remain safe as walk-in records.`}
+        confirmText="Delete Customer"
+        cancelText="Keep Customer"
+        variant="danger"
+        isLoading={deleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => { if (!deleteInFlight.current) setPendingDelete(null); }}
+      />
+    </div>
   );
 }

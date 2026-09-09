@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import type { BranchItem } from "../../types/branch";
 
 interface BranchListProps {
@@ -18,6 +19,8 @@ export function BranchList({
   onEditConfig,
   onDeleteBranch,
 }: BranchListProps) {
+  const [pendingDelete, setPendingDelete] = useState<BranchItem | null>(null);
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -55,7 +58,8 @@ export function BranchList({
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
       {branches.map((branch) => (
         <div
           key={branch.id}
@@ -75,7 +79,7 @@ export function BranchList({
               <span
                 className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full shrink-0 border ${
                   branch.isActive
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    ? "bg-brand-50 text-brand-700 border-brand-200"
                     : "bg-slate-100 text-slate-600 border-slate-200"
                 }`}
               >
@@ -153,11 +157,7 @@ export function BranchList({
             </div>
 
             <button
-              onClick={() => {
-                if (confirm(`Are you sure you want to deactivate or remove ${branch.name}?`)) {
-                  onDeleteBranch(branch.id);
-                }
-              }}
+              onClick={() => setPendingDelete(branch)}
               className="p-2 text-slate-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50"
               title="Delete / Deactivate Branch"
             >
@@ -174,5 +174,22 @@ export function BranchList({
         </div>
       ))}
     </div>
+
+    <ConfirmModal
+      isOpen={Boolean(pendingDelete)}
+      title="Delete branch"
+      description={pendingDelete ? `This will remove ${pendingDelete.name} and any associated branch configuration. This action cannot be undone.` : ""}
+      confirmText="Delete branch"
+      cancelText="Keep branch"
+      variant="danger"
+      onConfirm={() => {
+        if (pendingDelete) {
+          onDeleteBranch(pendingDelete.id);
+        }
+        setPendingDelete(null);
+      }}
+      onCancel={() => setPendingDelete(null)}
+    />
+  </>
   );
 }

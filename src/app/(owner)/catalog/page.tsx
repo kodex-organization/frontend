@@ -13,12 +13,15 @@ import {
   createRatePlan,
 } from "@/services/catalog.service";
 import { RatePlan } from "@/features/catalog/types/catalog.types";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { useAuth } from "@/lib/auth/auth-context";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The request failed";
 }
 
 export default function CatalogPage() {
+  const { user } = useAuth();
 
   // ── table state ──────────────────────────────
   const [tables, setTables]             = useState<SnookerTable[]>([]);
@@ -33,6 +36,9 @@ export default function CatalogPage() {
   const [tableStatus, setTableStatus]   = useState("available");
   const [saving, setSaving]             = useState(false);
   const [formError, setFormError]       = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SnookerTable | null>(null);
+  const branchFilter = user?.branchId ?? "";
+  const selectedBranchId = branchFilter;
 
   // ── rate modal state ─────────────────────────
   const [rateTable, setRateTable]       = useState<SnookerTable | null>(null);
@@ -44,13 +50,13 @@ export default function CatalogPage() {
   const [rateError, setRateError]       = useState<string | null>(null);
 
   // ── fetch tables on load ─────────────────────
-  useEffect(() => { fetchTables(); }, []);
+  useEffect(() => { void fetchTables(branchFilter || undefined); }, [branchFilter]);
 
-  async function fetchTables() {
+  async function fetchTables(branchId?: string) {
     try {
       setLoading(true);
       setError(null);
-      const data = await getTables();
+      const data = await getTables(branchId);
       setTables(data);
     } catch (err: unknown) {
       setError(errorMessage(err));
@@ -94,10 +100,15 @@ export default function CatalogPage() {
       setFormError("Enter a valid hourly rate");
       return;
     }
+    if (!editingTable && !selectedBranchId) {
+      setFormError("Branch is required");
+      return;
+    }
 
     const input: CreateTableInput = {
       tableNumber: tableNumber.trim(),
       hourlyRate: Number(hourlyRate),
+      branchId: selectedBranchId,
       ...(editingTable && { status: tableStatus }),
     };
 
@@ -110,7 +121,7 @@ export default function CatalogPage() {
         );
       } else {
         const newTable = await createTable(input);
-        setTables((prev) => [...prev, newTable]);
+          setTables((prev) => [...prev, newTable]);
       }
       handleCloseForm();
     } catch (err: unknown) {
@@ -121,12 +132,20 @@ export default function CatalogPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Are you sure you want to delete this table?")) return;
+    const target = tables.find((table) => table.id === id);
+    if (!target) return;
+    setDeleteTarget(target);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
     try {
-      await deleteTable(id);
-      setTables((prev) => prev.filter((t) => t.id !== id));
+      await deleteTable(deleteTarget.id);
+      setTables((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      setDeleteTarget(null);
     } catch (err: unknown) {
-      alert(errorMessage(err));
+      setFormError(errorMessage(err));
+      setDeleteTarget(null);
     }
   }
 
@@ -244,6 +263,7 @@ export default function CatalogPage() {
               <tr className="bg-slate-50 text-left text-xs
                              font-medium text-slate-500 uppercase">
                 <th className="px-4 py-3 border-b">Table No.</th>
+                <th className="px-4 py-3 border-b">Branch</th>
                 <th className="px-4 py-3 border-b">Hourly Rate</th>
                 <th className="px-4 py-3 border-b">Status</th>
                 <th className="px-4 py-3 border-b">Actions</th>
@@ -256,6 +276,7 @@ export default function CatalogPage() {
                   <td className="px-4 py-3 font-medium text-slate-800">
                     Table #{table.tableNumber}
                   </td>
+                  <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">{table.branch?.name ?? "Unknown branch"}</span></td>
                   <td className="px-4 py-3 text-slate-600">
                     Rs. {table.defaultHourlyRate}/hr
                   </td>
@@ -306,7 +327,7 @@ export default function CatalogPage() {
           ADD / EDIT TABLE MODAL
       ══════════════════════════════════════════ */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex
                         items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl
                           w-full max-w-md p-6">
@@ -367,6 +388,8 @@ export default function CatalogPage() {
                 />
               </div>
 
+              {!editingTable && <p className="text-sm text-slate-500">This table belongs to the active branch shown in the header.</p>}
+
               {/* status — only when editing */}
               {editingTable && (
                 <div>
@@ -420,7 +443,7 @@ export default function CatalogPage() {
           RATE HISTORY MODAL
       ══════════════════════════════════════════ */}
       {rateTable && (
-        <div className="fixed inset-0 bg-black/40 flex
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex
                         items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl
                           w-full max-w-lg p-6">
@@ -530,6 +553,17 @@ export default function CatalogPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="Delete table"
+        description={deleteTarget ? `This will delete table ${deleteTarget.tableNumber}. This action is permanent.` : ""}
+        confirmText="Delete table"
+        cancelText="Keep table"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
     </div>
   );

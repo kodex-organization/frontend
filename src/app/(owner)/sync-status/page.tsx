@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -16,18 +16,28 @@ import {
   Server,
   Timer,
   Trash2,
+  Users,
+  CreditCard,
+  BookOpen,
   Wifi,
   WifiOff,
+  Sparkles,
+  Info,
+  CheckCircle2,
 } from "lucide-react";
 import {
   getPendingSyncItems,
   markItemAsFailed,
   markItemsAsSynced,
   removePendingQueueItem,
+  clearSyncedItems,
   seedReviewSyncItems,
   type InvoiceOfflinePayload,
   type PendingSyncItem,
   type SessionOfflinePayload,
+  type CustomerOfflinePayload,
+  type PaymentOfflinePayload,
+  type UdhaarOfflinePayload,
 } from "@/lib/sync/offline-db";
 import {
   getServerTime,
@@ -37,11 +47,14 @@ import {
   type HeartbeatResponse,
 } from "@/services/sync.service";
 import { AUTHENTICATED_HEARTBEAT_EVENT } from "@/components/sync/authenticated-heartbeat";
-import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { SYNC_STATUS_EVENT } from "@/lib/sync/sync-manager";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { useConnectionStatus, connectionLabel, checkServerConnection } from "@/lib/connectivity/online-status";
 import { useAuth } from "@/lib/auth/auth-context";
 import { tokenStorage } from "@/lib/auth/session";
+import { getQueueCount, triggerSyncPush } from "@/lib/offline-sync";
 
-type ActiveAction = "push" | "pull" | "connection" | "remove" | null;
+type ActiveAction = "push" | "pull" | "connection" | "remove" | "clearSynced" | null;
 
 function formatDateTime(value: string | null) {
   if (!value) return "Not available yet";
@@ -54,12 +67,12 @@ function formatDateTime(value: string | null) {
   }).format(date);
 }
 
-function relativeTime(value: string | null) {
+function relativeTime(value: string | null, now = Date.now()) {
   if (!value) return "Never";
   const time = new Date(value).getTime();
   if (Number.isNaN(time)) return "Never";
 
-  const seconds = Math.round((time - Date.now()) / 1000);
+  const seconds = Math.round((time - now) / 1000);
   const ranges: Array<[number, Intl.RelativeTimeFormatUnit]> = [
     [60, "second"],
     [60, "minute"],
@@ -88,34 +101,79 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function getEntityIcon(entity: string) {
+  switch (entity) {
+    case "session":
+      return <Timer size={18} />;
+    case "invoice":
+      return <FileText size={18} />;
+    case "customer":
+      return <Users size={18} />;
+    case "payment":
+      return <CreditCard size={18} />;
+    case "udhaar":
+      return <BookOpen size={18} />;
+    default:
+      return <Cloud size={18} />;
+  }
+}
+
+function getEntityBadgeColor(entity: string) {
+  switch (entity) {
+    case "session":
+      return "bg-blue-50 text-blue-700 border-blue-200";
+    case "invoice":
+      return "bg-violet-50 text-violet-700 border-violet-200";
+    case "customer":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "payment":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    case "udhaar":
+      return "bg-rose-50 text-rose-700 border-rose-200";
+    default:
+      return "bg-slate-50 text-slate-700 border-slate-200";
+  }
+}
+
 function itemDescription(item: PendingSyncItem) {
   if (item.entity === "session") {
     const payload = item.payload as SessionOfflinePayload;
-    return `${payload.status} session${payload.appliedHourlyRate ? ` · rate ${payload.appliedHourlyRate}/hr` : ""}`;
+    return `${payload.status || "active"} session${payload.appliedHourlyRate ? ` · Rs. ${payload.appliedHourlyRate}/hr` : ""}`;
   }
-
-  const payload = item.payload as InvoiceOfflinePayload;
-  return `${payload.invoiceNumber ? `Invoice ${payload.invoiceNumber}` : "Unnumbered invoice"}${payload.total ? ` · total ${payload.total}` : ""}`;
+  if (item.entity === "invoice") {
+    const payload = item.payload as InvoiceOfflinePayload;
+    return `${payload.invoiceNumber ? `Invoice ${payload.invoiceNumber}` : "Unnumbered invoice"}${payload.total ? ` · Total Rs. ${payload.total}` : ""}`;
+  }
+  if (item.entity === "customer") {
+    const payload = item.payload as CustomerOfflinePayload;
+    return `${payload.fullName || "Customer"} · Phone: ${payload.phone || "No phone"}`;
+  }
+  if (item.entity === "payment") {
+    const payload = item.payload as PaymentOfflinePayload;
+    return `Payment Rs. ${payload.amount || "0"} (${payload.paymentMethod || "CASH"})`;
+  }
+  if (item.entity === "udhaar") {
+    const payload = item.payload as UdhaarOfflinePayload;
+    return `Udhaar ${payload.entryType || "CHARGE"} Rs. ${payload.amount || "0"}`;
+  }
+  return `Offline mutation (${item.action})`;
 }
 
 export default function SyncStatusPage() {
-  const {
-    user,
-    isAuthenticated,
-    isLoading: authLoading,
-  } = useAuth();
-  const isOnline = useOnlineStatus();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const connectionStatus = useConnectionStatus();
+  const isOnline = connectionStatus === 'online';
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, []);
   const accessContext = tokenStorage.getAccessContext();
-  const syncDeviceId = isAuthenticated
-    ? accessContext?.deviceId
-    : null;
-  const syncBranchId = isAuthenticated
-    ? user?.branchId
-    : null;
-  const isReviewAccount =
-    process.env.NODE_ENV === "development" &&
-    user?.email?.toLowerCase() === "reviewer@cuecloud.local";
+  const syncDeviceId = isAuthenticated ? accessContext?.deviceId : null;
+  const syncBranchId = isAuthenticated ? user?.branchId : null;
+
   const [pendingItems, setPendingItems] = useState<PendingSyncItem[]>([]);
+  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "failed" | "synced">("all");
   const [pulledChanges, setPulledChanges] = useState(0);
   const [serverTime, setServerTime] = useState<string | null>(null);
   const [lastHeartbeat, setLastHeartbeat] = useState<string | null>(null);
@@ -123,10 +181,14 @@ export default function SyncStatusPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<PendingSyncItem | null>(null);
+  const [inspectItem, setInspectItem] = useState<PendingSyncItem | null>(null);
+  const [localQueueCount, setLocalQueueCount] = useState(0);
 
   const loadQueue = useCallback(async () => {
     const items = await getPendingSyncItems();
     setPendingItems(items.sort((a, b) => b.originTimestamp.localeCompare(a.originTimestamp)));
+    setLocalQueueCount(getQueueCount());
   }, []);
 
   const checkConnection = useCallback(async (showProgress = false) => {
@@ -135,17 +197,14 @@ export default function SyncStatusPage() {
     setError("");
 
     try {
+      if (await checkServerConnection() !== 'online') {
+        throw new Error('The sync server is unreachable. Pending changes remain on this device.');
+      }
       const time = await getServerTime();
       setServerTime(time.serverTime);
 
-      if (
-        !isAuthenticated ||
-        !syncDeviceId ||
-        !syncBranchId
-      ) {
-        throw new Error(
-          "Sign in again to establish the device and branch sync context.",
-        );
+      if (!isAuthenticated || !syncDeviceId || !syncBranchId) {
+        throw new Error("Sign in again to establish device sync context.");
       }
 
       const heartbeat = await sendHeartbeat(syncDeviceId, syncBranchId);
@@ -155,12 +214,7 @@ export default function SyncStatusPage() {
     } finally {
       if (showProgress) setActiveAction(null);
     }
-  }, [
-    authLoading,
-    isAuthenticated,
-    syncBranchId,
-    syncDeviceId,
-  ]);
+  }, [authLoading, isAuthenticated, syncBranchId, syncDeviceId]);
 
   const handlePush = async () => {
     setActiveAction("push");
@@ -168,18 +222,27 @@ export default function SyncStatusPage() {
     setNotice("");
 
     try {
-      if (!navigator.onLine) throw new Error("You are offline. Pending work remains safe on this device.");
+      if (await checkServerConnection() !== 'online') throw new Error('The sync server is unreachable. Operations remain stored locally.');
       if (!syncDeviceId) throw new Error("This device is not configured for synchronization.");
 
+      if (getQueueCount() > 0) {
+        await triggerSyncPush();
+        setLocalQueueCount(0);
+        setLastSynced(new Date().toISOString());
+        setNotice("Synchronization Complete: All pending actions have been processed.");
+        return;
+      }
+
       const items = await getPendingSyncItems();
-      if (items.length === 0) {
-        setNotice("Everything is already synchronized.");
+      const pushable = items.filter((i) => i.status === "pending" || i.status === "failed");
+      if (pushable.length === 0) {
+        setNotice("All changes are already synchronized.");
         return;
       }
 
       const response = await pushSyncChanges(
         syncDeviceId,
-        items.map((item) => ({
+        pushable.map((item) => ({
           idempotencyKey: item.idempotencyKey,
           entityType: item.entity,
           entityId: item.entityId,
@@ -200,20 +263,20 @@ export default function SyncStatusPage() {
           change,
         ]),
       );
-      const acceptedIds = items
+
+      const acceptedIds = pushable
         .filter((item) => acceptedKeys.has(item.idempotencyKey))
         .map((item) => item.id)
         .filter((id): id is number => typeof id === "number");
 
       await markItemsAsSynced(acceptedIds);
 
-      for (const item of items.filter((entry) => !acceptedKeys.has(entry.idempotencyKey))) {
+      for (const item of pushable.filter((entry) => !acceptedKeys.has(entry.idempotencyKey))) {
         if (typeof item.id === "number") {
           const rejection = rejectedByKey.get(item.idempotencyKey);
           await markItemAsFailed(
             item.id,
-            rejection?.error ??
-              "The server rejected this local change.",
+            rejection?.error ?? "The server rejected this local change.",
           );
         }
       }
@@ -238,7 +301,7 @@ export default function SyncStatusPage() {
     setNotice("");
 
     try {
-      if (!navigator.onLine) throw new Error("Reconnect to retrieve the latest server changes.");
+      if (await checkServerConnection() !== 'online') throw new Error('Reconnect to retrieve latest server changes.');
       if (!syncDeviceId) throw new Error("This device is not configured for synchronization.");
 
       const response = await pullSyncChanges(syncDeviceId, lastSynced ?? undefined);
@@ -246,8 +309,8 @@ export default function SyncStatusPage() {
       setLastSynced(response.serverTime);
       setNotice(
         response.changeCount
-          ? `${response.changeCount} ${response.changeCount === 1 ? "change" : "changes"} received from the server.`
-          : "This device already has the latest server changes.",
+          ? `${response.changeCount} changes received from the server.`
+          : "This device has the latest updates from the server.",
       );
     } catch (pullError) {
       setError(getErrorMessage(pullError, "Server changes could not be retrieved."));
@@ -256,15 +319,28 @@ export default function SyncStatusPage() {
     }
   };
 
-  const handleRemove = async (item: PendingSyncItem) => {
-    if (typeof item.id !== "number") return;
-    if (!window.confirm(`Discard this pending ${item.entity} change from this device?`)) return;
+  const handleClearSynced = async () => {
+    setActiveAction("clearSynced");
+    try {
+      await clearSyncedItems();
+      await loadQueue();
+      setNotice("Cleared successfully synced records.");
+    } finally {
+      setActiveAction(null);
+    }
+  };
 
+  const confirmRemove = async () => {
+    if (!pendingRemoval || typeof pendingRemoval.id !== "number") return;
     setActiveAction("remove");
-    await removePendingQueueItem(item.id);
-    await loadQueue();
-    setNotice("The local pending change was removed.");
-    setActiveAction(null);
+    try {
+      await removePendingQueueItem(pendingRemoval.id);
+      await loadQueue();
+      setNotice("The local pending change was discarded.");
+    } finally {
+      setPendingRemoval(null);
+      setActiveAction(null);
+    }
   };
 
   useEffect(() => {
@@ -272,259 +348,379 @@ export default function SyncStatusPage() {
   }, [loadQueue]);
 
   useEffect(() => {
-    if (
-      !isReviewAccount ||
-      !user ||
-      !syncDeviceId ||
-      !syncBranchId
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    void seedReviewSyncItems({
-      branchId: syncBranchId,
-      userId: user.id,
-      deviceId: syncDeviceId,
-    })
-      .then((seeded) => {
-        if (!cancelled && seeded) return loadQueue();
-      })
-      .catch((seedError: unknown) => {
-        if (!cancelled) {
-          setError(
-            getErrorMessage(
-              seedError,
-              "Review sync examples could not be prepared.",
-            ),
-          );
-        }
-      });
-
+    const refreshLocalQueue = () => setLocalQueueCount(getQueueCount());
+    window.addEventListener("online", refreshLocalQueue);
+    window.addEventListener("cuecloud:offline-queue-changed", refreshLocalQueue);
+    window.addEventListener(SYNC_STATUS_EVENT, refreshLocalQueue);
     return () => {
-      cancelled = true;
+      window.removeEventListener("online", refreshLocalQueue);
+      window.removeEventListener("cuecloud:offline-queue-changed", refreshLocalQueue);
+      window.removeEventListener(SYNC_STATUS_EVENT, refreshLocalQueue);
     };
-  }, [
-    isReviewAccount,
-    loadQueue,
-    syncBranchId,
-    syncDeviceId,
-    user,
-  ]);
+  }, []);
 
+  // Listen to background sync manager events
   useEffect(() => {
-    if (!isOnline) return;
-
-    let cancelled = false;
-    void getServerTime()
-      .then((time) => {
-        if (!cancelled) setServerTime(time.serverTime);
-      })
-      .catch((connectionError: unknown) => {
-        if (!cancelled) {
-          setError(
-            getErrorMessage(
-              connectionError,
-              "The sync service could not be reached.",
-            ),
-          );
-        }
-      });
-
-    return () => {
-      cancelled = true;
+    const onSyncStatusChanged = () => {
+      void loadQueue();
     };
-  }, [isOnline]);
+
+    window.addEventListener(SYNC_STATUS_EVENT, onSyncStatusChanged);
+    return () => window.removeEventListener(SYNC_STATUS_EVENT, onSyncStatusChanged);
+  }, [loadQueue]);
 
   useEffect(() => {
     const onHeartbeat = (event: Event) => {
-      const heartbeat = (
-        event as CustomEvent<HeartbeatResponse>
-      ).detail;
-      if (
-        heartbeat.deviceId === syncDeviceId &&
-        heartbeat.branchId === syncBranchId
-      ) {
+      const heartbeat = (event as CustomEvent<HeartbeatResponse>).detail;
+      if (heartbeat.deviceId === syncDeviceId && heartbeat.branchId === syncBranchId) {
         setLastHeartbeat(heartbeat.lastHeartbeatAt);
       }
     };
 
-    window.addEventListener(
-      AUTHENTICATED_HEARTBEAT_EVENT,
-      onHeartbeat,
-    );
-    return () => {
-      window.removeEventListener(
-        AUTHENTICATED_HEARTBEAT_EVENT,
-        onHeartbeat,
-      );
-    };
+    window.addEventListener(AUTHENTICATED_HEARTBEAT_EVENT, onHeartbeat);
+    return () => window.removeEventListener(AUTHENTICATED_HEARTBEAT_EVENT, onHeartbeat);
   }, [syncBranchId, syncDeviceId]);
 
   const isBusy = activeAction !== null;
+  const pendingCount = pendingItems.filter((item) => item.status === "pending").length;
   const failedCount = pendingItems.filter((item) => item.status === "failed").length;
-  const status = error ? "attention" : !isOnline ? "offline" : pendingItems.length ? "pending" : "ready";
+  const syncedCount = pendingItems.filter((item) => item.status === "synced").length;
+
+  const filteredItems = useMemo(() => {
+    if (filterStatus === "all") return pendingItems;
+    return pendingItems.filter((item) => item.status === filterStatus);
+  }, [pendingItems, filterStatus]);
+
+  const status = error ? "attention" : !isOnline ? "offline" : pendingCount ? "pending" : "ready";
   const statusStyles = {
     attention: "border-red-200 bg-red-50 text-red-800",
     offline: "border-amber-200 bg-amber-50 text-amber-800",
     pending: "border-blue-200 bg-blue-50 text-blue-800",
     ready: "border-emerald-200 bg-emerald-50 text-emerald-800",
   }[status];
-  const statusCopy = {
-    attention: ["Sync needs attention", error],
-    offline: ["Working offline", "Changes stay on this device until the connection returns."],
-    pending: ["Changes are waiting", `${pendingItems.length} local ${pendingItems.length === 1 ? "change is" : "changes are"} ready to send.`],
-    ready: ["Everything is up to date", "The device is connected and the local sync queue is clear."],
-  }[status];
 
   return (
-    <main className="mx-auto w-full max-w-6xl pb-12">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <main className="mx-auto w-full max-w-6xl space-y-6 pb-16 font-sans">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center pb-4 border-b border-slate-200">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Device &amp; data</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Synchronization</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-            Monitor locally saved session and invoice changes, then exchange them securely with CueCloud.
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950">
+              Offline Sync &amp; Replication
+            </h1>
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                isOnline
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : "bg-amber-50 text-amber-700 border-amber-200"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
+              {connectionLabel(connectionStatus)}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            All sessions, invoices, payments, customers, and udhaar actions operate seamlessly offline and synchronize automatically.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-          <span className={`h-2.5 w-2.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"}`} />
-          {isOnline ? "Network available" : "Offline mode"}
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handlePush}
+            disabled={isBusy || !isOnline || (localQueueCount === 0 && pendingCount === 0 && failedCount === 0)}
+            className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-sm transition-all disabled:opacity-50"
+          >
+            <ArrowUpFromLine size={15} className={activeAction === "push" ? "animate-bounce" : ""} />
+            <span>Sync Now ({localQueueCount + pendingCount + failedCount})</span>
+          </button>
         </div>
       </div>
 
-      <section className={`mt-7 rounded-2xl border p-5 shadow-sm ${statusStyles}`} aria-live="polite">
-        <div className="flex items-start gap-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/80 shadow-sm">
-            {status === "attention" ? <AlertTriangle size={21} /> : status === "offline" ? <WifiOff size={21} /> : status === "ready" ? <Check size={22} /> : <Cloud size={21} />}
-          </span>
-          <div>
-            <h2 className="font-bold text-slate-950">{statusCopy[0]}</h2>
-            <p className="mt-1 text-sm leading-6">{statusCopy[1]}</p>
-          </div>
-        </div>
-      </section>
-
+      {/* Notice Ribbon */}
       {notice && !error && (
-        <div className="mt-4 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800" role="status">
-          <Check size={18} /> {notice}
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-800 animate-in fade-in">
+          <CheckCircle2 size={16} />
+          <span>{notice}</span>
         </div>
       )}
 
-      <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Sync summary">
-        <SummaryCard icon={<ArrowUpFromLine />} label="Waiting to send" value={String(pendingItems.length)} detail={failedCount ? `${failedCount} need review` : "From Sessions and Billing"} />
-        <SummaryCard icon={<ArrowDownToLine />} label="Last received" value={String(pulledChanges)} detail="Changes from the server" />
-        <SummaryCard icon={<CircleGauge />} label="Last sync" value={relativeTime(lastSynced)} detail={formatDateTime(lastSynced)} />
-        <SummaryCard icon={<Wifi />} label="Last heartbeat" value={relativeTime(lastHeartbeat)} detail={formatDateTime(lastHeartbeat)} />
-      </section>
-
-      <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-          <div>
-            <h2 className="text-lg font-bold text-slate-950">Data exchange</h2>
-            <p className="mt-1 text-sm text-slate-600">Send local work or retrieve changes made on other devices.</p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <ActionButton onClick={handlePush} disabled={isBusy || !isOnline || pendingItems.length === 0} primary icon={<ArrowUpFromLine size={17} />} loading={activeAction === "push"}>
-              Sync pending changes
-            </ActionButton>
-            <ActionButton onClick={handlePull} disabled={isBusy || !isOnline} icon={<ArrowDownToLine size={17} />} loading={activeAction === "pull"}>
-              Get latest changes
-            </ActionButton>
-            <ActionButton onClick={() => void checkConnection(true)} disabled={isBusy || !isOnline} icon={<Wifi size={17} />} loading={activeAction === "connection"}>
-              Check connection
-            </ActionButton>
-          </div>
+      {error && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800 animate-in fade-in">
+          <AlertTriangle size={16} />
+          <span>{error}</span>
         </div>
-        <div className="mt-5 grid gap-3 border-t border-slate-100 pt-5 text-xs text-slate-500 sm:grid-cols-2">
-          <p className="flex items-center gap-2"><ArrowUpFromLine size={14} className="text-emerald-600" /> Sync uses <code className="rounded bg-slate-100 px-1.5 py-0.5">POST /sync/push</code></p>
-          <p className="flex items-center gap-2"><ArrowDownToLine size={14} className="text-blue-600" /> Latest changes use <code className="rounded bg-slate-100 px-1.5 py-0.5">GET /sync/pull</code></p>
-        </div>
-      </section>
+      )}
 
-      <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col justify-between gap-3 p-5 sm:flex-row sm:items-center sm:px-6">
+      {/* KPI Stats Ribbon */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400">Waiting to Send</span>
+            <span className="p-2 rounded-lg bg-blue-50 text-blue-600">
+              <ArrowUpFromLine size={16} />
+            </span>
+          </div>
+          <p className="text-2xl font-bold text-slate-900 mt-2">{localQueueCount + pendingCount}</p>
+          <p className="text-[11px] text-slate-500 mt-1">Pending transmission</p>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400">Needs Review</span>
+            <span className="p-2 rounded-lg bg-rose-50 text-rose-600">
+              <AlertTriangle size={16} />
+            </span>
+          </div>
+          <p className="text-2xl font-bold text-slate-900 mt-2">{failedCount}</p>
+          <p className="text-[11px] text-slate-500 mt-1">Conflict or invalid data</p>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400">Last Synced</span>
+            <span className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
+              <Check size={16} />
+            </span>
+          </div>
+          <p className="text-sm font-bold text-slate-900 mt-2">{relativeTime(lastSynced, now)}</p>
+          <p className="text-[11px] text-slate-500 mt-1">{formatDateTime(lastSynced)}</p>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400">Heartbeat Status</span>
+            <span className="p-2 rounded-lg bg-brand-50 text-brand-600">
+              <Wifi size={16} />
+            </span>
+          </div>
+          <p className="text-sm font-bold text-slate-900 mt-2">{isOnline ? relativeTime(lastHeartbeat, now) : connectionLabel(connectionStatus)}</p>
+          <p className="text-[11px] text-slate-500 mt-1">{formatDateTime(lastHeartbeat)}</p>
+        </div>
+      </div>
+
+      {/* Sync Control Actions Bar */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-sm font-bold text-slate-900">Replication Controls</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Auto-sync runs in background every 45s when online. You can also trigger manual pulls.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handlePull}
+            disabled={isBusy || !isOnline}
+            className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <ArrowDownToLine size={14} />
+            <span>Pull Server Changes</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void checkConnection(true)}
+            disabled={isBusy}
+            className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Wifi size={14} />
+            <span>Check Connection</span>
+          </button>
+
+          {syncedCount > 0 && (
+            <button
+              type="button"
+              onClick={handleClearSynced}
+              disabled={isBusy}
+              className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+            >
+              <Trash2 size={14} />
+              <span>Clear Synced Logs</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Offline Queue Items Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
           <div>
-            <h2 className="font-bold text-slate-950">Pending module changes</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              {isReviewAccount
-                ? "Two development-only examples are included for reviewer walkthroughs."
-                : "Only real locally queued records appear here—no sample data is generated."}
+            <h2 className="text-sm font-bold text-slate-900">Local Offline Queue</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Persistent browser IndexedDB buffer for this device
             </p>
           </div>
-          <div className="flex gap-2">
-            <Link href="/sessions" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Sessions</Link>
-            <Link href="/billing" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Billing</Link>
+
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+            {(["all", "pending", "failed", "synced"] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilterStatus(key)}
+                className={`px-3 py-1 rounded-lg capitalize transition-all ${
+                  filterStatus === key
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-900"
+                }`}
+              >
+                {key} ({key === "all" ? pendingItems.length : key === "pending" ? pendingCount : key === "failed" ? failedCount : syncedCount})
+              </button>
+            ))}
           </div>
         </div>
 
-        {pendingItems.length === 0 ? (
-          <div className="border-t border-slate-200 px-6 py-12 text-center">
-            <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><Check size={21} /></span>
-            <h3 className="mt-3 text-sm font-bold text-slate-900">No local changes waiting</h3>
-            <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">Session and invoice changes saved for synchronization will be listed here with their source and status.</p>
+        {filteredItems.length === 0 ? (
+          <div className="py-14 text-center space-y-2">
+            <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+            <p className="text-sm font-bold text-slate-800">Queue is completely clear</p>
+            <p className="text-xs text-slate-400">
+              No local offline operations pending in this filter category.
+            </p>
           </div>
         ) : (
-          <ul className="divide-y divide-slate-100 border-t border-slate-200">
-            {pendingItems.map((item) => (
-              <li key={item.id ?? item.idempotencyKey} className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.entity === "session" ? "bg-blue-50 text-blue-700" : "bg-violet-50 text-violet-700"}`}>
-                    {item.entity === "session" ? <Timer size={19} /> : <FileText size={19} />}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-bold capitalize text-slate-900">{item.action} {item.entity}</p>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${item.status === "failed" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>{item.status === "failed" ? "Needs review" : "Waiting"}</span>
-                    </div>
-                    <p className="mt-1 truncate text-xs text-slate-500">{itemDescription(item)} · {formatDateTime(item.originTimestamp)}</p>
-                    {item.lastError && <p className="mt-1 text-xs font-medium text-red-600">{item.lastError}</p>}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 self-end sm:self-auto">
-                  <Link href={item.entity === "session" ? "/sessions" : "/billing"} className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">Open module</Link>
-                  <button type="button" onClick={() => void handleRemove(item)} disabled={activeAction === "remove"} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label={`Discard pending ${item.entity} change`} title="Discard local change"><Trash2 size={17} /></button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-600">
+              <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
+                <tr>
+                  <th className="px-5 py-3">Operation</th>
+                  <th className="px-5 py-3">Details</th>
+                  <th className="px-5 py-3">Origin Time</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredItems.map((item) => {
+                  const badgeColor = getEntityBadgeColor(item.entity);
+                  return (
+                    <tr key={item.id ?? item.idempotencyKey} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <span className={`p-2 rounded-lg border shrink-0 ${badgeColor}`}>
+                            {getEntityIcon(item.entity)}
+                          </span>
+                          <div>
+                            <span className="font-bold text-slate-900 capitalize">
+                              {item.action} {item.entity}
+                            </span>
+                            <span className="block text-[10px] text-slate-400 font-mono">
+                              Key: {item.idempotencyKey.slice(0, 8)}…
+                            </span>
+                          </div>
+                        </div>
+                      </td>
 
-      <details className="group mt-5 rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <summary className="flex cursor-pointer list-none items-center justify-between p-5 sm:px-6">
-          <div className="flex items-center gap-3"><Database size={19} className="text-slate-500" /><div><h2 className="text-sm font-bold text-slate-900">Connection details</h2><p className="mt-0.5 text-xs text-slate-500">Server timing and device configuration</p></div></div>
-          <ChevronDown size={18} className="text-slate-400 transition group-open:rotate-180" />
-        </summary>
-        <dl className="grid gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-2 lg:grid-cols-4">
-          <Detail label="Server time" value={formatDateTime(serverTime)} icon={<Server size={15} />} />
-          <Detail label="Last heartbeat" value={formatDateTime(lastHeartbeat)} icon={<Wifi size={15} />} />
-          <Detail label="Device" value={syncDeviceId ? `Configured ···${syncDeviceId.slice(-6)}` : "Not configured"} icon={<CircleGauge size={15} />} />
-          <Detail label="Branch" value={syncBranchId ? `Configured ···${syncBranchId.slice(-6)}` : "Not configured"} icon={<Database size={15} />} />
-        </dl>
-      </details>
+                      <td className="px-5 py-3.5 font-medium text-slate-700">
+                        {itemDescription(item)}
+                        {item.lastError && (
+                          <span className="block text-rose-600 font-normal text-[11px] mt-0.5">
+                            {item.lastError}
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-5 py-3.5 text-slate-500">
+                        {formatDateTime(item.originTimestamp)}
+                      </td>
+
+                      <td className="px-5 py-3.5">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                            item.status === "synced"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : item.status === "failed"
+                              ? "bg-rose-50 text-rose-700 border-rose-200"
+                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          }`}
+                        >
+                          {item.status}
+                        </span>
+                      </td>
+
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setInspectItem(item)}
+                            title="Inspect Payload"
+                            className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                          >
+                            <Info size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingRemoval(item)}
+                            title="Discard Local Item"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Payload Inspection Modal */}
+      {inspectItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className={`p-2 rounded-lg border ${getEntityBadgeColor(inspectItem.entity)}`}>
+                  {getEntityIcon(inspectItem.entity)}
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 capitalize">
+                    {inspectItem.action} {inspectItem.entity} Payload
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Idempotency: {inspectItem.idempotencyKey}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInspectItem(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <pre className="p-3 bg-slate-900 text-slate-200 rounded-xl text-[11px] font-mono overflow-x-auto max-h-60 custom-scrollbar">
+              {JSON.stringify(inspectItem.payload, null, 2)}
+            </pre>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setInspectItem(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Discard Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(pendingRemoval)}
+        title="Discard Offline Change"
+        description={pendingRemoval ? `Discard this ${pendingRemoval.entity} mutation from this device? It will not be synchronized to the cloud.` : ""}
+        confirmText="Discard Mutation"
+        cancelText="Keep"
+        variant="warning"
+        onConfirm={confirmRemove}
+        onCancel={() => setPendingRemoval(null)}
+      />
     </main>
   );
-}
-
-function SummaryCard({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {
-  return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between"><p className="text-sm font-medium text-slate-600">{label}</p><span className="rounded-lg bg-slate-100 p-2 text-slate-600">{icon}</span></div>
-      <p className="mt-4 truncate text-2xl font-bold tracking-tight text-slate-950">{value}</p>
-      <p className="mt-1 truncate text-xs text-slate-500" title={detail}>{detail}</p>
-    </article>
-  );
-}
-
-function ActionButton({ children, icon, loading, primary = false, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: React.ReactNode; loading: boolean; primary?: boolean }) {
-  return (
-    <button {...props} type="button" className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${primary ? "bg-emerald-600 text-white shadow-sm hover:bg-emerald-700" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}>
-      {loading ? <RefreshCw size={17} className="animate-spin" /> : icon}{children}
-    </button>
-  );
-}
-
-function Detail({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
-  return <div className="bg-white p-5"><dt className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">{icon}{label}</dt><dd className="mt-2 truncate text-sm font-semibold text-slate-900" title={value}>{value}</dd></div>;
 }

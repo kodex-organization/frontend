@@ -115,6 +115,7 @@ export interface InvoiceListFilters {
   status?: InvoiceStatus;
   from?: string;
   to?: string;
+  branchId?: string;
 }
 
 export interface RecordPaymentInput {

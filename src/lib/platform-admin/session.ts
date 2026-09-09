@@ -33,6 +33,7 @@ const platformAdminAccessContextSchema = z.object({
 });
 
 export const PLATFORM_ADMIN_STORAGE_KEYS = {
+  version: 'cuecloud_platform_admin_session_version',
   accessToken: "cuecloud_platform_admin_access_token",
   admin: "cuecloud_platform_admin_user",
 } as const;
@@ -69,6 +70,9 @@ export function decodePlatformAdminAccessToken(
 }
 
 export const platformAdminStorage = {
+  getSessionVersion(): string | null {
+    return typeof window === 'undefined' ? null : window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.version);
+  },
   getAccessToken(): string | null {
     if (typeof window === "undefined") return null;
     const token = window.localStorage.getItem(
@@ -120,6 +124,7 @@ export const platformAdminStorage = {
     const previousAdmin = window.localStorage.getItem(
       PLATFORM_ADMIN_STORAGE_KEYS.admin,
     );
+    const previousVersion = window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.version);
 
     try {
       window.localStorage.setItem(
@@ -130,7 +135,10 @@ export const platformAdminStorage = {
         PLATFORM_ADMIN_STORAGE_KEYS.accessToken,
         accessToken,
       );
+      window.localStorage.setItem(PLATFORM_ADMIN_STORAGE_KEYS.version, crypto.randomUUID());
     } catch (error) {
+      if (previousVersion === null) window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.version);
+      else window.localStorage.setItem(PLATFORM_ADMIN_STORAGE_KEYS.version, previousVersion);
       if (previousAdmin === null) {
         window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.admin);
       } else {
@@ -156,6 +164,7 @@ export const platformAdminStorage = {
   },
   clear(): void {
     if (typeof window === "undefined") return;
+    window.localStorage.setItem(PLATFORM_ADMIN_STORAGE_KEYS.version, crypto.randomUUID());
     const hadSession =
       window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.accessToken) !==
         null ||
