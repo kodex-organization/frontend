@@ -5,8 +5,9 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { DashboardApi, LiveTableSession, RevenueKPIs, OutstandingUdhaar, SyncDeviceStatus, RevenueTrend, TableHeatmap, AnomalyItem, TransactionItem } from "../dashboard.api";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
-import { Select } from "@/components/ui/select";
-import { Activity, CreditCard, Users, RefreshCw, AlertTriangle, ChevronRight, BarChart2, Calendar, TrendingUp } from "lucide-react";
+import { Activity, CreditCard, Users, RefreshCw, AlertTriangle, ChevronRight, TrendingUp } from "lucide-react";
+import { FullPageLoader } from "@/components/ui/loader";
+import { toast } from "@/lib/toast";
 
 export function DashboardView() {
   const { user } = useAuth();
@@ -14,8 +15,7 @@ export function DashboardView() {
   // States
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedBranch, setSelectedBranch] = useState<string>("");
-  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const selectedBranch = user?.branchId ?? "";
 
   // Data States
   const [liveTables, setLiveTables] = useState<LiveTableSession[]>([]);
@@ -36,61 +36,45 @@ export function DashboardView() {
   const [drilldownLoading, setDrilldownLoading] = useState(false);
 
   // Check roles
-  const isOwner = user?.roles.includes("OWNER");
-  const isManager = user?.roles.includes("MANAGER");
   const isCashier = user?.roles.includes("CASHIER");
 
   const fetchData = async (branchId?: string) => {
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch Live Tables
       const tablesData = await DashboardApi.getLiveTables(branchId);
       setLiveTables(tablesData.sessions);
 
-      // Cashiers only see today's sessions, no financial/admin stats
       if (isCashier) {
         setLoading(false);
         return;
       }
 
-      // 2. Fetch KPIs
-      const kpisData = await DashboardApi.getKPIs(branchId);
+      const [
+        kpisData,
+        udhaarData,
+        syncData,
+        trendData,
+        heatmapData,
+        anomaliesData,
+        staffData
+      ] = await Promise.all([
+        DashboardApi.getKPIs(branchId),
+        DashboardApi.getUdhaar(branchId),
+        DashboardApi.getSyncStatus(branchId),
+        DashboardApi.getRevenueTrend(branchId),
+        DashboardApi.getTableHeatmap(branchId),
+        DashboardApi.getAnomalies(branchId),
+        DashboardApi.getStaffPerformance(branchId)
+      ]);
+
       setKPIs(kpisData);
-
-      // 3. Fetch Udhaar
-      const udhaarData = await DashboardApi.getUdhaar(branchId);
       setUdhaar(udhaarData);
-
-      // 4. Fetch Sync status
-      const syncData = await DashboardApi.getSyncStatus(branchId);
       setSyncDevices(syncData);
-
-      // 5. Fetch Revenue Trend
-      const trendData = await DashboardApi.getRevenueTrend(branchId);
       setRevenueTrend(trendData);
-
-      // 6. Fetch Table Heatmap
-      const heatmapData = await DashboardApi.getTableHeatmap(branchId);
       setHeatmap(heatmapData);
-
-      // 7. Fetch Anomalies
-      const anomaliesData = await DashboardApi.getAnomalies(branchId);
       setAnomalies(anomaliesData);
-
-      // 8. Fetch Staff performance
-      const staffData = await DashboardApi.getStaffPerformance(branchId);
       setStaffPerf(staffData.sessionsHandledByUser);
-
-      // Extract branch list for owner filter if not set
-      if (isOwner && branches.length === 0) {
-        // Collect branches dynamically from response info if available, else simple mock list
-        // Note: Real deployment would fetch branch list, we can list them from syncDevices unique branches
-        const uniqueBranches = Array.from(
-          new Map(syncData.map(d => [d.branch.name, { id: d.id, name: d.branch.name }])).values()
-        );
-        setBranches(uniqueBranches);
-      }
     } catch (err: any) {
       setError(err.message || "Failed to load dashboard metrics.");
     } finally {
@@ -109,24 +93,14 @@ export function DashboardView() {
       const txs = await DashboardApi.getTransactions(category, selectedBranch || undefined);
       setDrilldownTransactions(txs);
     } catch (err: any) {
-      console.error(err);
+      toast.error(err.message || "Failed to load transactions for drilldown.");
     } finally {
       setDrilldownLoading(false);
     }
   };
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-10 w-48 bg-slate-200 rounded"></div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-32 bg-slate-100 rounded-xl border border-slate-200/60 p-4"></div>
-          ))}
-        </div>
-        <div className="h-96 bg-slate-100 rounded-xl border border-slate-200/60"></div>
-      </div>
-    );
+    return <FullPageLoader text="Loading metrics..." />;
   }
 
   if (error) {
@@ -164,6 +138,7 @@ export function DashboardView() {
               <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-700">
                 <tr>
                   <th className="px-6 py-4">Table Number</th>
+                  <th className="px-6 py-4">Branch</th>
                   <th className="px-6 py-4">Customer</th>
                   <th className="px-6 py-4">Started At</th>
                   <th className="px-6 py-4">Status</th>
@@ -173,6 +148,7 @@ export function DashboardView() {
                 {liveTables.map((s) => (
                   <tr key={s.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 font-medium text-slate-900">Table {s.table?.tableNumber || s.tableId}</td>
+                    <td className="px-6 py-4">{s.branch.name}</td>
                     <td className="px-6 py-4">{s.customer?.fullName || "Walk-in"}</td>
                     <td className="px-6 py-4">{new Date(s.startedAt).toLocaleTimeString()}</td>
                     <td className="px-6 py-4">
@@ -199,22 +175,10 @@ export function DashboardView() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Analytics Dashboard</h1>
-          <p className="text-sm text-slate-500">Real-time performance metrics across the organization.</p>
+          <p className="text-sm text-slate-500">Real-time performance metrics for your active branch.</p>
         </div>
 
         <div className="flex items-center gap-2">
-          {isOwner && branches.length > 0 && (
-            <div className="w-48">
-              <Select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)}>
-                <option value="">All Branches</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
           <Button onClick={() => fetchData(selectedBranch || undefined)} variant="secondary" className="w-auto px-3 py-2">
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -231,8 +195,8 @@ export function DashboardView() {
           <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 rounded-full bg-brand-50 group-hover:scale-110 transition-transform duration-300"></div>
           <div className="relative flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Today's Revenue</span>
-            <div className="rounded-lg bg-brand-500/10 p-2 text-brand-600">
-              <CreditCard className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-500/10 text-brand-600 ring-4 ring-brand-50 shadow-sm">
+              <CreditCard className="h-5 w-5" strokeWidth={2.5} />
             </div>
           </div>
           <div className="relative mt-4">
@@ -248,8 +212,8 @@ export function DashboardView() {
           <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 rounded-full bg-green-50 group-hover:scale-110 transition-transform duration-300"></div>
           <div className="relative flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Active Play Sessions</span>
-            <div className="rounded-lg bg-green-500/10 p-2 text-green-600">
-              <Activity className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10 text-green-600 ring-4 ring-green-50 shadow-sm">
+              <Activity className="h-5 w-5" strokeWidth={2.5} />
             </div>
           </div>
           <div className="relative mt-4">
@@ -268,8 +232,8 @@ export function DashboardView() {
           <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 rounded-full bg-red-50 group-hover:scale-110 transition-transform duration-300"></div>
           <div className="relative flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Outstanding Udhaar</span>
-            <div className="rounded-lg bg-red-500/10 p-2 text-red-600">
-              <Users className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10 text-red-600 ring-4 ring-red-50 shadow-sm">
+              <Users className="h-5 w-5" strokeWidth={2.5} />
             </div>
           </div>
           <div className="relative mt-4">
@@ -285,8 +249,8 @@ export function DashboardView() {
           <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 rounded-full bg-blue-50 group-hover:scale-110 transition-transform duration-300"></div>
           <div className="relative flex items-center justify-between">
             <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Sync Status</span>
-            <div className="rounded-lg bg-blue-500/10 p-2 text-blue-600">
-              <RefreshCw className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/10 text-blue-600 ring-4 ring-blue-50 shadow-sm">
+              <RefreshCw className="h-5 w-5" strokeWidth={2.5} />
             </div>
           </div>
           <div className="relative mt-4">
@@ -339,6 +303,7 @@ export function DashboardView() {
                     <div className="flex justify-between items-start">
                       <div>
                         <h4 className="text-base font-bold text-slate-900">Table {s.table?.tableNumber || s.tableId}</h4>
+                        <p className="mt-1 text-xs font-semibold text-brand-600">Branch: {s.branch.name}</p>
                         <p className="text-xs text-slate-500 mt-1">Customer: {s.customer?.fullName || "Walk-in"}</p>
                       </div>
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -614,8 +579,8 @@ export function DashboardView() {
               <div className="space-y-3">
                 {anomalies.map((item) => (
                   <div key={item.id} className="flex gap-4 rounded-xl border border-yellow-200 bg-yellow-50/50 p-4 shadow-sm">
-                    <div className="rounded-lg bg-yellow-100 p-2 text-yellow-700 self-start">
-                      <AlertTriangle className="h-5 w-5" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-100 text-yellow-700 self-start shadow-sm ring-4 ring-yellow-50">
+                      <AlertTriangle className="h-5 w-5" strokeWidth={2.5} />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">

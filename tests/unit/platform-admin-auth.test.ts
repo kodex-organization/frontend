@@ -100,12 +100,15 @@ async function withBrowser(
   };
   const originalWindow = globalThis.window;
   const originalFetch = globalThis.fetch;
+  const events = new EventTarget();
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
       localStorage: storage,
       atob: (value: string) => Buffer.from(value, "base64").toString("binary"),
-      dispatchEvent: () => true,
+      dispatchEvent: (event: Event) => events.dispatchEvent(event),
+      addEventListener: events.addEventListener.bind(events),
+      removeEventListener: events.removeEventListener.bind(events),
     } as unknown as Window,
   });
 

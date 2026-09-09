@@ -5,6 +5,7 @@ import {
   getLoginHistory,
   type LoginHistoryItem,
 } from "../api";
+import { toast } from "@/lib/toast";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -18,8 +19,8 @@ export default function LoginHistory() {
     try {
       const data = await getLoginHistory();
       setLoginHistory(data);
-    } catch (error) {
-      console.error("Failed to load login history:", error);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load login history.");
     } finally {
       setLoading(false);
     }

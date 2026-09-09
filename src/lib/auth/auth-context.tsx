@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { loginWithPassword, loginWithPin, logoutRequest, updateLanguage } from "@/features/auth";
 import {
   AUTH_SESSION_CLEARED_EVENT,
+  AUTH_SESSION_REPLACED_EVENT,
   redirectPathForRoles,
   tokenStorage,
   type SessionUser,
@@ -56,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     window.addEventListener(AUTH_SESSION_CLEARED_EVENT, clearSession);
+    window.addEventListener(AUTH_SESSION_REPLACED_EVENT, syncSessionFromStorage);
     window.addEventListener("storage", syncSessionFromStorage);
 
     // A user record without an access token is not an authenticated session.
@@ -64,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       window.removeEventListener(AUTH_SESSION_CLEARED_EVENT, clearSession);
+      window.removeEventListener(AUTH_SESSION_REPLACED_EVENT, syncSessionFromStorage);
       window.removeEventListener("storage", syncSessionFromStorage);
     };
   }, [router]);
@@ -106,11 +109,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
+    const version = tokenStorage.getSessionVersion();
     try {
       await logoutRequest();
     } catch {
       // Best-effort — clear local session regardless of server response.
     } finally {
+      if (tokenStorage.getSessionVersion() !== version && tokenStorage.get()?.accessToken) return;
       tokenStorage.clear();
       setUser(null);
       router.push("/login");
@@ -130,6 +135,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }),
     [user, isLoading, loginPassword, loginPin, logout, updateUserLanguage, applySession],
   );
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-900 text-slate-400">
+        <span>Loading session...</span>
+      </div>
+    );
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

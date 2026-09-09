@@ -1,4 +1,5 @@
-import { platformAdminFetch } from "@/lib/platform-admin/client";
+import { platformAdminFetch, refreshPlatformAdminAccessToken } from "@/lib/platform-admin/client";
+import { ApiError } from '@/lib/api/client';
 import {
   platformAdminStorage,
   type PlatformAdmin,
@@ -55,12 +56,34 @@ export function logoutPlatformAdminRequest() {
   );
 }
 
+/** Keep a late startup /me or refresh response from replacing a newer login. */
+export async function restorePlatformAdminSession(isCurrent: () => boolean = () => true): Promise<PlatformAdmin | null> {
+  const version = platformAdminStorage.getSessionVersion();
+  const canApply = () => isCurrent() && platformAdminStorage.getSessionVersion() === version;
+  try {
+    if (!platformAdminStorage.getAccessToken()) {
+      const refreshed = await refreshPlatformAdminAccessToken();
+      if (!canApply() || !refreshed) return null;
+    }
+    const current = await getCurrentPlatformAdmin();
+    if (!canApply()) return null;
+    platformAdminStorage.setAdmin(current);
+    return current;
+  } catch (error) {
+    if (canApply() && error instanceof ApiError && error.status === 401) {
+      platformAdminStorage.clear();
+    }
+    return null;
+  }
+}
+
 export async function endPlatformAdminSession(
   requestLogout: () => Promise<unknown> = logoutPlatformAdminRequest,
 ) {
+  const version = platformAdminStorage.getSessionVersion();
   try {
     await requestLogout();
   } finally {
-    platformAdminStorage.clear();
+    if (platformAdminStorage.getSessionVersion() === version) platformAdminStorage.clear();
   }
 }

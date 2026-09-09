@@ -7,67 +7,102 @@ import { redirectPathForRoles } from "@/lib/auth/session";
 import { cn } from "@/lib/utils/cn";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { KeyRound, Mail, Sparkles } from "lucide-react";
+
+const CueLogo = ({ size = 28, className = "" }: { size?: number; className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    className={className}
+  >
+    <path d="M 18.72 5.28 A 9.5 9.5 0 1 0 18.72 18.72" />
+    <path d="M 15.18 8.82 A 4.5 4.5 0 1 0 15.18 15.18" />
+  </svg>
+);
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"password" | "pin">("password");
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
-  // Issue 2 & 3 fix: if a session already exists, /login should never be
-  // reachable — bounce the user straight to their role-based landing page
-  // instead of showing the form again.
   useEffect(() => {
     if (!isLoading && user) {
       router.replace(redirectPathForRoles(user.roles));
     }
   }, [isLoading, user, router]);
 
-  // While we're checking session state, or once we know the user is
-  // authenticated (and about to be redirected), render nothing — this
-  // avoids a flash of the login form before the redirect kicks in.
   if (isLoading || user) {
     return null;
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-8">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold text-brand-700">CueCloud</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {mode === "password"
-            ? "Sign in to your account"
-            : "Cashier shift login"}
-        </p>
+    <main className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 p-4 sm:p-8 overflow-hidden font-sans">
+      {/* Subtle Background Glow Orbs */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-brand-600/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-10 right-10 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="mt-6 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 text-sm font-medium">
+      <div className="relative w-full max-w-md rounded-3xl border border-slate-700/50 bg-white/95 backdrop-blur-xl p-8 sm:p-10 shadow-2xl space-y-6">
+        {/* Header Branding */}
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center mx-auto shadow-lg shadow-brand-500/30">
+            <CueLogo size={26} />
+          </div>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">
+            Cue<span className="text-brand-600">Cloud</span>
+          </h1>
+          <p className="text-xs text-slate-500 font-medium">
+            {mode === "password"
+              ? "Sign in with your management credentials"
+              : "Enter your assigned 4-digit Cashier PIN"}
+          </p>
+        </div>
+
+        {/* Tab Selector */}
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1.5 text-xs font-semibold">
           <button
             type="button"
             onClick={() => setMode("password")}
             className={cn(
-              "rounded-md py-2 transition-colors",
+              "flex items-center justify-center gap-1.5 rounded-lg py-2.5 transition-all duration-150",
               mode === "password"
                 ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500",
+                : "text-slate-500 hover:text-slate-900",
             )}
           >
-            Email &amp; password
+            <Mail size={14} className={mode === "password" ? "text-brand-600" : "text-slate-400"} />
+            <span>Email Login</span>
           </button>
           <button
             type="button"
             onClick={() => setMode("pin")}
             className={cn(
-              "rounded-md py-2 transition-colors",
+              "flex items-center justify-center gap-1.5 rounded-lg py-2.5 transition-all duration-150",
               mode === "pin"
                 ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500",
+                : "text-slate-500 hover:text-slate-900",
             )}
           >
-            Cashier PIN
+            <KeyRound size={14} className={mode === "pin" ? "text-brand-600" : "text-slate-400"} />
+            <span>Cashier PIN</span>
           </button>
         </div>
 
-        <div className="mt-6">
+        {/* Auth Forms */}
+        <div className="pt-1">
           {mode === "password" ? <LoginForm /> : <PinLoginForm />}
+        </div>
+
+        {/* Footer info */}
+        <div className="pt-4 border-t border-slate-100 text-center">
+          <p className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
+            <Sparkles size={12} className="text-brand-500" />
+            <span>CueCloud Club OS • Encrypted & Secure</span>
+          </p>
         </div>
       </div>
     </main>

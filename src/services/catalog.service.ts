@@ -6,8 +6,10 @@ import type {
 } from "@/features/catalog/types/catalog.types";
 import { apiFetch } from "@/lib/api/client";
 
-export function getTables(): Promise<SnookerTable[]> {
-  return apiFetch<SnookerTable[]>("/catalog");
+export function getTables(branchId?: string): Promise<SnookerTable[]> {
+  return apiFetch<SnookerTable[]>(
+    `/catalog${branchId ? `?branchId=${encodeURIComponent(branchId)}` : ""}`,
+  );
 }
 
 export function createTable(
@@ -18,6 +20,7 @@ export function createTable(
     body: JSON.stringify({
       tableNumber: input.tableNumber,
       defaultHourlyRate: input.hourlyRate,
+      branchId: input.branchId,
     }),
   });
 }

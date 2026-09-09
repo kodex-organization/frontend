@@ -59,7 +59,7 @@ export async function updateCustomer(
 export async function deleteCustomer(
   id: string,
 ): Promise<void> {
-  await apiFetch(`/customers/${id}`, {
+  await apiFetch<void>(`/customers/${id}`, {
     method: "DELETE",
   });
 }

@@ -5,6 +5,8 @@ import React from "react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { FeedbackModal } from "@/components/ui/FeedbackModal";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ApiError } from "@/lib/api/client";
@@ -42,6 +44,9 @@ export function ImpersonationBanner() {
   const [switching, setSwitching] = useState(false);
   const [ending, setEnding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showEndModal, setShowEndModal] = useState(false);
+  const [endReason, setEndReason] = useState("Support diagnostics completed");
+  const [feedbackState, setFeedbackState] = useState<{ type: "success" | "warning" | "error"; title: string; message: string; transactionRef?: string } | null>(null);
 
   const branchOptions = useMemo(
     () => active?.allowedBranchIds ?? [],
@@ -51,24 +56,39 @@ export function ImpersonationBanner() {
   if (!active) return null;
   const canSwitch = active.session.allowedScopes.includes("branch_switch");
 
-  const handleEnd = async () => {
-    const reason = window.prompt(
-      "Reason for ending this support session",
-      "Support diagnostics completed",
-    );
-    if (!reason || reason.trim().length < 3) return;
+  const handleEnd = () => {
+    setShowEndModal(true);
+  };
+
+  const confirmEnd = async () => {
+    const reason = endReason.trim();
+    if (reason.length < 3) {
+      setError("Enter a reason at least 3 characters long.");
+      return;
+    }
     setEnding(true);
     setError(null);
+    setShowEndModal(false);
     try {
-      await end(reason.trim());
+      await end(reason);
+      setFeedbackState({
+        type: "success",
+        title: "Impersonation ended",
+        message: "Support access has been closed and normal admin access is restored.",
+      });
     } catch (requestError) {
-      window.alert(
+      const message =
         requestError instanceof ApiError
           ? `${requestError.message} Normal PlatformAdmin access has been restored.`
-          : "The remote session could not be ended, but normal PlatformAdmin access has been restored.",
-      );
+          : "The remote session could not be ended, but normal PlatformAdmin access has been restored.";
+      setFeedbackState({
+        type: "error",
+        title: "End session failed",
+        message,
+      });
     } finally {
       setEnding(false);
+      setEndReason("Support diagnostics completed");
     }
   };
 
@@ -92,69 +112,106 @@ export function ImpersonationBanner() {
   };
 
   return (
-    <div className="border-b-4 border-red-700 bg-red-50 px-6 py-4 text-red-950" role="status">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-red-700 text-white">
-            <AlertTriangle className="h-5 w-5" />
-          </span>
-          <ImpersonationBannerSummary
-            active={active}
-            adminName={admin?.fullName ?? active.session.platformAdminEmailSnapshot}
-          />
-        </div>
+    <>
+      <div className="border-b-4 border-red-700 bg-red-50 px-6 py-4 text-red-950" role="status">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-red-700 text-white">
+              <AlertTriangle className="h-5 w-5" />
+            </span>
+            <ImpersonationBannerSummary
+              active={active}
+              adminName={admin?.fullName ?? active.session.platformAdminEmailSnapshot}
+            />
+          </div>
 
-        <div className="flex flex-wrap items-end gap-2">
-          {canSwitch ? (
-            <>
-              <label className="text-xs font-medium text-red-900">
-                Switch branch
-                {branchOptions.length > 0 ? (
-                  <Select
-                    aria-label="Impersonation target branch"
-                    value={branchId}
-                    onChange={(event) => setBranchId(event.target.value)}
-                    className="mt-1 w-64 border-red-300"
-                  >
-                    <option value="">Select allowed branch</option>
-                    {branchOptions.map((id) => (
-                      <option key={id} value={id}>{id}</option>
-                    ))}
-                  </Select>
-                ) : (
-                  <Input
-                    aria-label="Impersonation target branch"
-                    value={branchId}
-                    onChange={(event) => setBranchId(event.target.value)}
-                    placeholder="Active branch UUID"
-                    className="mt-1 w-64 border-red-300"
-                  />
-                )}
-              </label>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                title="Switch impersonated branch"
-                aria-label="Switch impersonated branch"
-                isLoading={switching}
-                onClick={() => void handleSwitch()}
-              >
-                <CornerDownRight className="h-4 w-4" />
-              </Button>
-            </>
-          ) : null}
-          <Button
-            type="button"
-            className="bg-red-700 hover:bg-red-800 focus-visible:ring-red-700"
-            isLoading={ending}
-            onClick={() => void handleEnd()}
-          >
-            <LogOut className="h-4 w-4" /> End impersonation
-          </Button>
+          <div className="flex flex-wrap items-end gap-2">
+            {canSwitch ? (
+              <>
+                <label className="text-xs font-medium text-red-900">
+                  Switch branch
+                  {branchOptions.length > 0 ? (
+                    <Select
+                      aria-label="Impersonation target branch"
+                      value={branchId}
+                      onChange={(event) => setBranchId(event.target.value)}
+                      className="mt-1 w-64 border-red-300"
+                    >
+                      <option value="">Select allowed branch</option>
+                      {branchOptions.map((id) => (
+                        <option key={id} value={id}>{id}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input
+                      aria-label="Impersonation target branch"
+                      value={branchId}
+                      onChange={(event) => setBranchId(event.target.value)}
+                      placeholder="Active branch UUID"
+                      className="mt-1 w-64 border-red-300"
+                    />
+                  )}
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Switch impersonated branch"
+                  aria-label="Switch impersonated branch"
+                  isLoading={switching}
+                  onClick={() => void handleSwitch()}
+                >
+                  <CornerDownRight className="h-4 w-4" />
+                </Button>
+              </>
+            ) : null}
+            <Button
+              type="button"
+              className="bg-red-700 hover:bg-red-800 focus-visible:ring-red-700"
+              isLoading={ending}
+              onClick={() => void handleEnd()}
+            >
+              <LogOut className="h-4 w-4" /> End impersonation
+            </Button>
+          </div>
         </div>
+        {error ? <p role="alert" className="mt-2 text-xs font-medium text-red-800">{error}</p> : null}
       </div>
-      {error ? <p role="alert" className="mt-2 text-xs font-medium text-red-800">{error}</p> : null}
-    </div>
+
+      <ConfirmModal
+        isOpen={showEndModal}
+        title="End support impersonation"
+        description="Provide a brief reason for closing the active platform support session."
+        confirmText="End session"
+        cancelText="Keep session"
+        variant="danger"
+        onConfirm={() => void confirmEnd()}
+        onCancel={() => {
+          setShowEndModal(false);
+          setEndReason("Support diagnostics completed");
+        }}
+      >
+        <label className="block text-sm font-medium text-slate-700">
+          Reason for ending this support session
+          <textarea
+            value={endReason}
+            onChange={(event) => setEndReason(event.target.value)}
+            rows={3}
+            className="mt-2 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          />
+        </label>
+      </ConfirmModal>
+
+      {feedbackState ? (
+        <FeedbackModal
+          isOpen={Boolean(feedbackState)}
+          type={feedbackState.type}
+          title={feedbackState.title}
+          message={feedbackState.message}
+          transactionRef={feedbackState.transactionRef}
+          onClose={() => setFeedbackState(null)}
+        />
+      ) : null}
+    </>
   );
 }

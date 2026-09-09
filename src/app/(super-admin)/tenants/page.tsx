@@ -9,6 +9,12 @@ export default function TenantsPage() {
   const [view, setView] = useState<"subscriptions" | "tenants">(
     "subscriptions",
   );
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+
+  const handleSelectTenantForSubscription = (tenantId: string) => {
+    setSelectedTenantId(tenantId);
+    setView("subscriptions");
+  };
 
   return (
     <div className="space-y-6">
@@ -44,7 +50,11 @@ export default function TenantsPage() {
           Tenant accounts
         </button>
       </div>
-      {view === "subscriptions" ? <SubscriptionConsole /> : <TenantManager />}
+      {view === "subscriptions" ? (
+        <SubscriptionConsole initialTenantId={selectedTenantId} />
+      ) : (
+        <TenantManager onSelectTenantForSubscription={handleSelectTenantForSubscription} />
+      )}
     </div>
   );
 }

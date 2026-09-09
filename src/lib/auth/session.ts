@@ -55,6 +55,7 @@ export type AccessContext = z.infer<typeof accessContextSchema>;
 
 const ACCESS_TOKEN_KEY = "cuecloud_access_token";
 const USER_KEY = "cuecloud_user";
+const SESSION_VERSION_KEY = 'cuecloud_session_version';
 
 export const AUTH_SESSION_CLEARED_EVENT = "cuecloud:session-cleared";
 export const AUTH_SESSION_REPLACED_EVENT = "cuecloud:session-replaced";
@@ -90,6 +91,9 @@ function decodeAccessContext(accessToken: string): AccessContext | null {
  * Authorization header on API calls.
  */
 export const tokenStorage = {
+  getSessionVersion(): string | null {
+    return typeof window === 'undefined' ? null : window.localStorage.getItem(SESSION_VERSION_KEY);
+  },
   get(): StoredTokens | null {
     if (typeof window === "undefined") return null;
     const accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
@@ -99,6 +103,16 @@ export const tokenStorage = {
   set(tokens: { accessToken: string }): void {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+  },
+  setRefreshedToken(accessToken: string): void {
+    const previous = this.getAccessContext();
+    const next = decodeAccessContext(accessToken);
+    if (previous && (!next || previous.userId !== next.userId ||
+      previous.tenantId !== next.tenantId || previous.branchId !== next.branchId ||
+      previous.deviceId !== next.deviceId)) {
+      throw new Error('Refreshed token does not belong to the current session');
+    }
+    this.set({ accessToken });
   },
   replaceSession(
     tokens: { accessToken: string },
@@ -117,13 +131,17 @@ export const tokenStorage = {
 
     const previousAccessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
     const previousUser = window.localStorage.getItem(USER_KEY);
+    const previousVersion = window.localStorage.getItem(SESSION_VERSION_KEY);
 
     try {
       // localStorage writes are synchronous, so observers cannot read a
       // half-updated session between these writes on this page.
       window.localStorage.setItem(USER_KEY, JSON.stringify(user));
       window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+      window.localStorage.setItem(SESSION_VERSION_KEY, crypto.randomUUID());
     } catch (error) {
+      if (previousVersion === null) window.localStorage.removeItem(SESSION_VERSION_KEY);
+      else window.localStorage.setItem(SESSION_VERSION_KEY, previousVersion);
       if (previousUser === null) window.localStorage.removeItem(USER_KEY);
       else window.localStorage.setItem(USER_KEY, previousUser);
 
@@ -141,14 +159,16 @@ export const tokenStorage = {
       }),
     );
   },
-  clear(): void {
+  clear(options?: { notifyIfEmpty?: boolean }): void {
     if (typeof window === "undefined") return;
+    window.localStorage.setItem(SESSION_VERSION_KEY, crypto.randomUUID());
     const hadSession =
       window.localStorage.getItem(ACCESS_TOKEN_KEY) !== null ||
       window.localStorage.getItem(USER_KEY) !== null;
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
-    if (hadSession) {
+    // An open page can still hold its user in memory after storage is emptied.
+    if (hadSession || options?.notifyIfEmpty) {
       window.dispatchEvent(new Event(AUTH_SESSION_CLEARED_EVENT));
     }
   },

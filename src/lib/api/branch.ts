@@ -6,6 +6,7 @@ import type {
   UpdateBranchConfigPayload,
   UpdateBranchPayload,
 } from "../../types/branch";
+import { notifyAssignedBranchesChanged } from "@/features/tenancy/branch-switching";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
 
@@ -51,6 +52,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     throw new Error(json.error?.message || json.message || "An unexpected error occurred");
   }
 
+  if (options.method && options.method !== "GET") notifyAssignedBranchesChanged();
   return json.data as T;
 }
 

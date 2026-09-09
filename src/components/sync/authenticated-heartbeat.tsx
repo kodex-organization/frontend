@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { tokenStorage } from "@/lib/auth/session";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { sendHeartbeat } from "@/services/sync.service";
+import { initSyncManager } from "@/lib/sync/sync-manager";
 
 export const AUTHENTICATED_HEARTBEAT_EVENT =
   "cuecloud:authenticated-heartbeat";
@@ -13,15 +14,15 @@ export const AUTHENTICATED_HEARTBEAT_EVENT =
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const HEARTBEAT_TIMEOUT_MS = 15_000;
 
-/**
- * Keeps every visible authenticated client represented in SyncDevice. A
- * completion-based timeout prevents overlapping requests when the network is
- * slow, and hidden tabs intentionally become eligible for manager takeover
- * after the server-configured offline threshold.
- */
 export function AuthenticatedHeartbeat() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const isOnline = useOnlineStatus();
+
+  useEffect(() => {
+    if (!isAuthenticated || !isOnline) return;
+    const cleanupSync = initSyncManager();
+    return () => cleanupSync();
+  }, [isAuthenticated, isOnline, user]);
 
   useEffect(() => {
     if (
@@ -43,12 +44,19 @@ export function AuthenticatedHeartbeat() {
     }
 
     let cancelled = false;
+    const version = tokenStorage.getSessionVersion();
+    const sessionIsCurrent = () => {
+      const current = tokenStorage.getAccessContext();
+      return tokenStorage.getSessionVersion() === version && Boolean(current) &&
+        current?.userId === user.id && current?.branchId === user.branchId &&
+        current?.deviceId === accessContext.deviceId;
+    };
     let inFlight = false;
     let timeoutId: number | undefined;
     let requestController: AbortController | null = null;
 
     const schedule = () => {
-      if (cancelled || document.visibilityState !== "visible") {
+      if (cancelled || !sessionIsCurrent() || document.visibilityState !== "visible") {
         return;
       }
       timeoutId = window.setTimeout(() => {
@@ -59,6 +67,7 @@ export function AuthenticatedHeartbeat() {
     const heartbeat = async () => {
       if (
         cancelled ||
+        !sessionIsCurrent() ||
         inFlight ||
         !navigator.onLine ||
         document.visibilityState !== "visible"
@@ -83,7 +92,7 @@ export function AuthenticatedHeartbeat() {
           user.branchId,
           requestController.signal,
         );
-        if (!cancelled) {
+        if (!cancelled && sessionIsCurrent()) {
           window.dispatchEvent(
             new CustomEvent(AUTHENTICATED_HEARTBEAT_EVENT, {
               detail: result,

@@ -8,6 +8,8 @@ import { StartSessionModal } from "@/features/sessions/start-session-modal";
 import type { ActiveSession, TableOption } from "@/features/sessions/types";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { toast } from "@/lib/toast";
 
 interface SwitchTableState {
   session: ActiveSession;
@@ -40,16 +42,17 @@ export default function SessionsPage() {
   const [items, setItems] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pendingEndSessionId, setPendingEndSessionId] = useState<string | null>(null);
+  const selectedBranchId = user?.branchId ?? "";
 
   const strings = {
     en: {
       title: "Active sessions",
       description: "Live billable time and table controls",
       startSession: "Start session",
-      reconnectStartSession: "Reconnect to start a session",
       loadingSessions: "Loading sessions…",
       failedLoad: "Failed to load sessions.",
-      offlineMessage: "You are offline. Session controls are disabled until the connection returns.",
+      offlineMessage: "Offline Mode active. Actions are saved locally and will synchronize when connection returns.",
       noActiveSessions: "No active sessions. The floor is quiet.",
       walkInCustomer: "Walk-in customer",
       pause: "Pause",
@@ -107,9 +110,10 @@ export default function SessionsPage() {
 
     setError("");
     try {
+      const effectiveBranchId = selectedBranchId;
       const [active, paused] = await Promise.all([
-        sessionApi.active(),
-        sessionApi.paused(),
+        sessionApi.active(effectiveBranchId),
+        sessionApi.paused(effectiveBranchId),
       ]);
       setItems([...active, ...paused]);
     } catch (e) {
@@ -117,7 +121,7 @@ export default function SessionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [authLoading, isAuthenticated, t.failedLoad]);
+  }, [authLoading, isAuthenticated, selectedBranchId, t.failedLoad]);
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -126,25 +130,21 @@ export default function SessionsPage() {
   }, [authLoading, isAuthenticated, load]);
 
   async function action(id: string, nextAction: "pause" | "resume" | "end") {
-    if (!isOnline) {
-      setError(t.offlineMessage);
-      return;
-    }
-
     try {
-      await sessionApi.action(id, nextAction);
-      await load();
+      setItems((current) => current.map((session) =>
+        session.id === id
+          ? { ...session, status: nextAction === "pause" ? "paused" : nextAction === "end" ? "ended" : "active", endedAt: nextAction === "end" ? new Date().toISOString() : session.endedAt }
+          : session,
+      ));
+      const result = await sessionApi.action(id, nextAction);
+      if (!isOnline || "offlineQueued" in result) toast.info("Saved offline. Action queued for sync.");
+      else await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.actionFailed);
     }
   }
 
   async function openSwitchTable(session: ActiveSession) {
-    if (!isOnline) {
-      setError(t.offlineMessage);
-      return;
-    }
-
     setSwitchState({
       session,
       tables: [],
@@ -182,17 +182,6 @@ export default function SessionsPage() {
 
   async function submitSwitchTable() {
     if (!switchState?.selectedTableId) return;
-    if (!isOnline) {
-      setSwitchState((current) =>
-        current
-          ? {
-              ...current,
-              error: t.offlineMessage,
-            }
-          : current,
-      );
-      return;
-    }
 
     setSwitchState((current) =>
       current ? { ...current, submitting: true, error: "" } : current,
@@ -229,7 +218,7 @@ export default function SessionsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">{t.title}</h1>
           <p className="mt-1 text-slate-500">
@@ -238,17 +227,12 @@ export default function SessionsPage() {
         </div>
         <button
           onClick={() => setModal(true)}
-          disabled={!isOnline}
-          title={
-            isOnline
-              ? t.startSession
-              : t.reconnectStartSession
-          }
-          className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-brand-600 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t.startSession}
         </button>
       </div>
+
 
       {loading && <p className="mt-10">{t.loadingSessions}</p>}
 
@@ -279,24 +263,31 @@ export default function SessionsPage() {
             key={session.id}
             className="rounded-xl border bg-white p-5 shadow-sm"
           >
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase text-emerald-700">
+                <p className="text-xs font-semibold uppercase text-brand-700">
                   Table {session.table.tableNumber}
                 </p>
                 <h2 className="mt-1 font-semibold">
                   {session.customer?.fullName ?? t.walkInCustomer}
                 </h2>
               </div>
-              <span
-                className={`h-fit rounded-full px-3 py-1 text-xs font-semibold ${
-                  session.status === "paused"
-                    ? "bg-amber-100 text-amber-800"
-                    : "bg-emerald-100 text-emerald-800"
-                }`}
-              >
-                {session.status.toUpperCase()}
-              </span>
+              <div className="flex flex-col items-end gap-2">
+                {session.branch?.name && (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700">
+                    {session.branch.name}
+                  </span>
+                )}
+                <span
+                  className={`h-fit rounded-full px-3 py-1 text-xs font-semibold ${
+                    session.status === "paused"
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-brand-100 text-brand-800"
+                  }`}
+                >
+                  {session.status.toUpperCase()}
+                </span>
+              </div>
             </div>
 
             <div className="my-6">
@@ -307,7 +298,6 @@ export default function SessionsPage() {
               {session.status === "active" ? (
                 <button
                   onClick={() => action(session.id, "pause")}
-                  disabled={!isOnline}
                   className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t.pause}
@@ -315,7 +305,6 @@ export default function SessionsPage() {
               ) : (
                 <button
                   onClick={() => action(session.id, "resume")}
-                  disabled={!isOnline}
                   className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t.resume}
@@ -324,18 +313,13 @@ export default function SessionsPage() {
 
               <button
                 onClick={() => void openSwitchTable(session)}
-                disabled={!isOnline}
                 className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t.switchTable}
               </button>
 
               <button
-                onClick={() =>
-                  confirm(t.confirmEndSession) &&
-                  action(session.id, "end")
-                }
-                disabled={!isOnline}
+                onClick={() => setPendingEndSessionId(session.id)}
                 className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t.endSession}
@@ -349,6 +333,22 @@ export default function SessionsPage() {
         open={modal}
         onClose={() => setModal(false)}
         onStarted={load}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(pendingEndSessionId)}
+        title="End session"
+        description={t.confirmEndSession}
+        confirmText="End session"
+        cancelText="Keep session"
+        variant="warning"
+        onConfirm={() => {
+          if (pendingEndSessionId) {
+            void action(pendingEndSessionId, "end");
+          }
+          setPendingEndSessionId(null);
+        }}
+        onCancel={() => setPendingEndSessionId(null)}
       />
 
       {switchState && (
@@ -419,7 +419,7 @@ export default function SessionsPage() {
               </button>
               <button
                 onClick={() => void submitSwitchTable()}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
                 disabled={
                   switchState.loading ||
                   switchState.submitting ||

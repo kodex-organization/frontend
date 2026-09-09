@@ -1,0 +1,85 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth/auth-context";
+import { tokenStorage } from "@/lib/auth/session";
+import { useNotifications } from "@/features/notifications/context";
+import { reScopeOfflineData } from "@/lib/sync/offline-db";
+import { toast } from "@/lib/toast";
+import { ASSIGNED_BRANCHES_CHANGED_EVENT, completeBranchSwitch, getAssignedBranches, type AssignedBranch } from "../branch-switching";
+import { BranchSelector } from "./branch-selector";
+
+export function GlobalBranchSelector({ onSwitching }: { onSwitching: (value: boolean) => void }) {
+  const { user, replaceSession } = useAuth();
+  const { resetForBranch } = useNotifications();
+  const router = useRouter();
+  const [branches, setBranches] = useState<AssignedBranch[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [switching, setSwitching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const loadVersion = useRef(0);
+  const switchedVersion = useRef<string | null>(null);
+
+  const load = useCallback(async () => {
+    const version = ++loadVersion.current;
+    setLoading(true);
+    try {
+      const assigned = await getAssignedBranches();
+      if (version !== loadVersion.current) return;
+      setBranches(assigned);
+      setError(null);
+    } catch {
+      if (version === loadVersion.current) setError("Could not load branches. Retry");
+    } finally {
+      if (version === loadVersion.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    window.addEventListener(ASSIGNED_BRANCHES_CHANGED_EVENT, load);
+    return () => {
+      ++loadVersion.current;
+      window.removeEventListener(ASSIGNED_BRANCHES_CHANGED_EVENT, load);
+    };
+  }, [load, user?.id, user?.branchId]);
+
+  const switchTo = async (branchId: string) => {
+    if (!user || inFlight.current || branchId === user.branchId) return;
+    if (!branches.some((branch) => branch.id === branchId)) return;
+    inFlight.current = true;
+    setSwitching(true);
+    onSwitching(true);
+    try {
+      const result = await completeBranchSwitch(user, branchId, {
+        replaceSession: (nextUser, tokens) => {
+          replaceSession(nextUser, tokens);
+          switchedVersion.current = tokenStorage.getSessionVersion();
+        },
+        reScopeOfflineData,
+        refreshBranchState: resetForBranch,
+        navigate: (path) => router.replace(path),
+      });
+      // Do not navigate or report completion for a session replaced in another tab.
+      if (tokenStorage.getSessionVersion() !== switchedVersion.current) return;
+      router.refresh();
+      if (result.maintenanceErrors.length) toast.warning("Branch changed. Some local data could not be refreshed.");
+      else toast.success("Active branch changed across the application.");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Could not switch branch. Your active branch is unchanged.");
+    } finally {
+      inFlight.current = false;
+      setSwitching(false);
+      onSwitching(false);
+    }
+  };
+
+  return <div className="min-w-0 max-w-64">
+    <p className="text-[10px] font-semibold uppercase text-slate-500">Active branch</p>
+    {loading && branches.length === 0 ? <span className="text-xs text-slate-500">Loading branches...</span> :
+      <BranchSelector branches={branches} activeBranchId={user?.branchId ?? ""} switching={switching || loading} onSwitch={switchTo} showSingle />}
+    {error ? <button type="button" onClick={() => void load()} className="block text-xs text-rose-700">{error}</button> : null}
+  </div>;
+}

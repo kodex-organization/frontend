@@ -9,6 +9,7 @@ interface BranchSelectorProps {
   activeBranchId: string;
   switching: boolean;
   onSwitch: (branchId: string) => void;
+  showSingle?: boolean;
 }
 
 export function BranchSelector({
@@ -16,8 +17,9 @@ export function BranchSelector({
   activeBranchId,
   switching,
   onSwitch,
+  showSingle = false,
 }: BranchSelectorProps) {
-  if (branches.length <= 1) return null;
+  if (branches.length <= 1 && !showSingle) return null;
 
   return (
     <div className="flex min-w-0 items-center gap-2 text-slate-700">
@@ -39,10 +41,11 @@ export function BranchSelector({
         id="active-branch"
         aria-label="Active branch"
         value={activeBranchId}
-        disabled={switching}
+        disabled={switching || branches.length === 0}
         onChange={(event) => onSwitch(event.target.value)}
         className="h-9 w-full max-w-64 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-wait disabled:bg-slate-50"
       >
+        {!branches.some((branch) => branch.id === activeBranchId) && <option value={activeBranchId}>Select an active branch</option>}
         {branches.map((branch) => (
           <option key={branch.id} value={branch.id}>
             {branch.name ?? `Branch ${branch.id.slice(0, 8)}`}

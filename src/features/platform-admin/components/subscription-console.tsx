@@ -13,13 +13,15 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { FormField, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ApiError } from "@/lib/api/client";
+import { toast } from '@/lib/toast';
 import { formatDate, formatMoney, toDateInput } from "../format";
 import {
   cancelTenantSubscription,
@@ -103,7 +105,7 @@ function StatusBadge({ value }: { value: string }) {
     <span
       className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
         positive
-          ? "bg-emerald-50 text-emerald-700"
+          ? "bg-brand-50 text-brand-700"
           : warning
             ? "bg-amber-50 text-amber-700"
             : "bg-slate-100 text-slate-700"
@@ -114,7 +116,13 @@ function StatusBadge({ value }: { value: string }) {
   );
 }
 
-export function SubscriptionConsole() {
+import { TenancyApi, Tenant } from "@/features/tenancy";
+
+export interface SubscriptionConsoleProps {
+  initialTenantId?: string | null;
+}
+
+export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProps = {}) {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const [plansError, setPlansError] = useState<string | null>(null);
@@ -125,8 +133,9 @@ export function SubscriptionConsole() {
   const [planSaving, setPlanSaving] = useState(false);
   const [planFeedback, setPlanFeedback] = useState<string | null>(null);
 
-  const [tenantInput, setTenantInput] = useState("");
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantInput, setTenantInput] = useState(initialTenantId || "");
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(initialTenantId || null);
   const [subscription, setSubscription] = useState<TenantSubscription | null>(null);
   const [subscriptionForm, setSubscriptionForm] = useState(
     emptySubscriptionForm,
@@ -137,12 +146,22 @@ export function SubscriptionConsole() {
   const [subscriptionFeedback, setSubscriptionFeedback] = useState<string | null>(
     null,
   );
+  const [pendingPlanDelete, setPendingPlanDelete] = useState<SubscriptionPlan | null>(null);
+  const [planDeleting, setPlanDeleting] = useState(false);
+  const [planDeleteError, setPlanDeleteError] = useState<string | null>(null);
+  const planDeleteInFlight = useRef(false);
+  const [pendingSubscriptionAction, setPendingSubscriptionAction] = useState<"suspend" | "resume" | "cancel" | null>(null);
 
   const loadPlans = useCallback(async () => {
     setPlansLoading(true);
     setPlansError(null);
     try {
-      setPlans(await listSubscriptionPlans());
+      const [plansData, tenantsData] = await Promise.all([
+        listSubscriptionPlans(),
+        TenancyApi.listTenants().catch(() => []),
+      ]);
+      setPlans(plansData);
+      setTenants(tenantsData);
     } catch (error) {
       setPlansError(errorMessage(error, "Could not load subscription plans."));
     } finally {
@@ -205,23 +224,43 @@ export function SubscriptionConsole() {
     }
   };
 
-  const removePlan = async (plan: SubscriptionPlan) => {
-    if (!window.confirm(`Archive the ${plan.name} subscription plan?`)) return;
+  const removePlan = (plan: SubscriptionPlan) => {
+    if (planDeleteInFlight.current) return;
+    setPlanDeleteError(null);
+    setPendingPlanDelete(plan);
+  };
+
+  const confirmPlanDelete = async () => {
+    if (!pendingPlanDelete || planDeleteInFlight.current) return;
+    const plan = pendingPlanDelete;
+    planDeleteInFlight.current = true;
+    setPlanDeleting(true);
+    setPlanDeleteError(null);
     try {
       await deleteSubscriptionPlan(plan.id);
-      await loadPlans();
+      setPlans(current => current.filter(item => item.id !== plan.id));
+      if (editingPlanId === plan.id) resetPlanForm();
+      setSubscriptionForm(current => current.planId === plan.id ? { ...current, planId: '' } : current);
+      setPendingPlanDelete(null);
+      toast.success(`${plan.name} has been archived.`);
     } catch (error) {
-      setPlansError(errorMessage(error, "Could not archive the plan."));
+      setPlanDeleteError(error instanceof ApiError && error.status === 409
+        ? `${error.message}. Move assigned tenants to another plan before archiving this one.`
+        : errorMessage(error, 'Could not archive the plan. Please try again.'));
+    } finally {
+      planDeleteInFlight.current = false;
+      setPlanDeleting(false);
     }
   };
 
-  const loadTenantSubscription = async () => {
-    const parsed = validateTenantId(tenantInput);
+  const loadTenantSubscriptionById = async (targetId: string) => {
+    const parsed = validateTenantId(targetId);
     if (!parsed.success) {
       setSubscriptionError(parsed.error.issues[0]?.message ?? "Invalid tenant ID.");
       return;
     }
     const tenantId = parsed.data;
+    setTenantInput(tenantId);
     setSubscriptionLoading(true);
     setSubscriptionError(null);
     setSubscriptionFeedback(null);
@@ -246,6 +285,14 @@ export function SubscriptionConsole() {
       setSubscriptionLoading(false);
     }
   };
+
+  const loadTenantSubscription = () => loadTenantSubscriptionById(tenantInput);
+
+  useEffect(() => {
+    if (initialTenantId) {
+      void loadTenantSubscriptionById(initialTenantId);
+    }
+  }, [initialTenantId]);
 
   const saveSubscription = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -286,35 +333,7 @@ export function SubscriptionConsole() {
   const transitionSubscription = async (
     action: "suspend" | "resume" | "cancel",
   ) => {
-    if (!selectedTenantId || !subscription) return;
-    const prompt =
-      action === "suspend"
-        ? "Suspend this tenant subscription?"
-        : action === "resume"
-          ? "Resume this tenant subscription?"
-          : "Cancel this tenant subscription? This removes the next billing date.";
-    if (!window.confirm(prompt)) return;
-
-    setSubscriptionSaving(true);
-    setSubscriptionError(null);
-    try {
-      const updated =
-        action === "suspend"
-          ? await suspendTenantSubscription(
-              selectedTenantId,
-              subscriptionForm.gracePeriodEndsAt || null,
-            )
-          : action === "resume"
-            ? await resumeTenantSubscription(selectedTenantId)
-            : await cancelTenantSubscription(selectedTenantId);
-      setSubscription(updated);
-      setSubscriptionForm(subscriptionFormFromCurrent(updated));
-      setSubscriptionFeedback(`Subscription ${action} action completed.`);
-    } catch (error) {
-      setSubscriptionError(errorMessage(error, `Could not ${action} subscription.`));
-    } finally {
-      setSubscriptionSaving(false);
-    }
+    setPendingSubscriptionAction(action);
   };
 
   return (
@@ -412,6 +431,7 @@ export function SubscriptionConsole() {
                         variant="ghost"
                         aria-label={`Archive ${plan.name}`}
                         title="Archive plan"
+                        disabled={planSaving || planDeleting}
                         onClick={() => void removePlan(plan)}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -508,21 +528,42 @@ export function SubscriptionConsole() {
             Look up a tenant by UUID to view or change its current subscription.
           </p>
         </div>
-        <div className="mt-4 flex max-w-2xl gap-3">
-          <Input
-            aria-label="Tenant ID"
-            value={tenantInput}
-            onChange={(event) => setTenantInput(event.target.value)}
-            placeholder="Tenant UUID"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            isLoading={subscriptionLoading}
-            onClick={() => void loadTenantSubscription()}
-          >
-            <Search className="h-4 w-4" /> Load
-          </Button>
+        <div className="mt-4 flex flex-col sm:flex-row max-w-3xl gap-3">
+          <div className="flex-1">
+            <Select
+              aria-label="Select Tenant"
+              value={selectedTenantId || ""}
+              onChange={(e) => {
+                if (e.target.value) {
+                  void loadTenantSubscriptionById(e.target.value);
+                }
+              }}
+            >
+              <option value="">-- Select an Onboarded Club Tenant --</option>
+              {tenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.status})
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              aria-label="Tenant ID"
+              value={tenantInput}
+              onChange={(event) => setTenantInput(event.target.value)}
+              placeholder="Or enter UUID"
+              className="w-48"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              isLoading={subscriptionLoading}
+              onClick={() => void loadTenantSubscription()}
+            >
+              <Search className="h-4 w-4" /> Load
+            </Button>
+          </div>
         </div>
 
         {subscriptionError ? <div className="mt-4"><Alert variant="error">{subscriptionError}</Alert></div> : null}
@@ -663,6 +704,24 @@ export function SubscriptionConsole() {
           </div>
         ) : null}
       </section>
+
+      <ConfirmModal
+        isOpen={Boolean(pendingPlanDelete)}
+        title='Archive subscription plan'
+        description={`Archive ${pendingPlanDelete?.name ?? 'this plan'}? It will be removed from available plans. Historical records are retained; plans assigned to tenants cannot be archived.`}
+        confirmText='Archive plan'
+        variant='danger'
+        isLoading={planDeleting}
+        confirmDisabled={planSaving}
+        onConfirm={() => void confirmPlanDelete()}
+        onCancel={() => {
+          if (planDeleteInFlight.current) return;
+          setPendingPlanDelete(null);
+          setPlanDeleteError(null);
+        }}
+      >
+        {planDeleteError && <Alert variant='error'>{planDeleteError}</Alert>}
+      </ConfirmModal>
     </div>
   );
 }

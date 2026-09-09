@@ -34,6 +34,7 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
     status,
     from,
     to,
+    branchId,
   } = filters;
 
   const fetchInvoices = useCallback(async () => {
@@ -65,6 +66,7 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
         status,
         from,
         to,
+        branchId,
       });
       setInvoices(response.items);
       setPagination(response.pagination);
@@ -88,6 +90,7 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
     status,
     to,
     user?.branchId,
+    branchId,
   ]);
 
   useEffect(() => {

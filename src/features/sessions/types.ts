@@ -23,6 +23,8 @@ export interface ActiveSession {
   appliedHourlyRate: number | string;
   table: TableOption;
   branch: {
+    id?: string;
+    name?: string | null;
     currency: string | null;
   };
   customer: Customer | null;

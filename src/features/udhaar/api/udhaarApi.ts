@@ -68,3 +68,31 @@ export async function createUdhaarAdjustment(payload: { customerId: string; amou
     body: JSON.stringify(body),
   });
 }
+
+export async function recordSettlement(payload: {
+  customerId: string;
+  amount: number;
+  reason: string;
+  invoiceId?: string;
+}) {
+  return apiFetch<{ id: string; customerId: string; amount: number; newBalance: number }>("/udhaar/settlements", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface UdhaarThresholdSettings {
+  individualLimit: number;
+  aggregateLimit?: number;
+}
+
+export async function getThresholds() {
+  return apiFetch<UdhaarThresholdSettings>("/udhaar/thresholds");
+}
+
+export async function updateThresholds(payload: UdhaarThresholdSettings) {
+  return apiFetch<UdhaarThresholdSettings>("/udhaar/thresholds", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
