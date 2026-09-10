@@ -63,9 +63,24 @@ export interface OnboardInput {
   ownerPassword: string;
   branchName: string;
   subscriptionPlanId?: string;
+  status?: "active" | "trial" | "pending";
+  trialDays?: number;
   currency?: string;
   timezone?: string;
   defaultLanguage?: string;
+}
+
+export interface SupportNote {
+  id: string;
+  tenantId: string;
+  superAdminId: string;
+  note: string;
+  createdAt: string;
+  superAdmin?: {
+    id: string;
+    fullName: string | null;
+    email: string;
+  } | null;
 }
 
 export interface DataExportJob {
@@ -103,21 +118,28 @@ export const TenancyApi = {
       body: JSON.stringify(data),
     }),
 
-  updateTenantStatus: (id: string, status: "active" | "suspended" | "cancelled" | "trial" | "pending", reason?: string) =>
+  updateTenantStatus: (
+    id: string,
+    status: "active" | "suspended" | "cancelled" | "trial" | "pending",
+    reason?: string,
+    forceOverride?: boolean,
+    forceReason?: string,
+  ) =>
     platformAdminFetch<Tenant>(`/super-admin/tenants/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status, reason }),
+      body: JSON.stringify({ status, reason, forceOverride, forceReason }),
     }),
 
-  updateTenantBranchStatus: (tenantId: string, branchId: string, status: 'active' | 'suspended') =>
+  updateTenantBranchStatus: (tenantId: string, branchId: string, status: "active" | "suspended") =>
     platformAdminFetch<{ id: string; tenantId: string; isActive: boolean }>(
       `/super-admin/tenants/${tenantId}/branches/${branchId}/status`,
-      { method: 'PATCH', body: JSON.stringify({ status }) },
+      { method: "PATCH", body: JSON.stringify({ status }) },
     ),
 
-  terminateTenant: (id: string) =>
+  terminateTenant: (id: string, forceOverride?: boolean, forceReason?: string) =>
     platformAdminFetch<Tenant>(`/super-admin/tenants/${id}`, {
       method: "DELETE",
+      body: JSON.stringify({ forceOverride, forceReason }),
     }),
 
   listSubscriptionPlans: () =>
@@ -133,5 +155,15 @@ export const TenancyApi = {
     platformAdminFetch<{ items: DataExportJob[]; total: number }>(
       `/super-admin/tenants/${tenantId}/exports`
     ),
+
+  listSupportNotes: (tenantId: string) =>
+    platformAdminFetch<SupportNote[]>(`/super-admin/tenants/${tenantId}/notes`),
+
+  createSupportNote: (tenantId: string, note: string) =>
+    platformAdminFetch<SupportNote>(`/super-admin/tenants/${tenantId}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
 };
+
 

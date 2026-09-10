@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TenancyApi, Tenant, SubscriptionPlan, DataExportJob } from "../tenancy.api";
+import {
+  TenancyApi,
+  Tenant,
+  SubscriptionPlan,
+  DataExportJob,
+  SupportNote,
+} from "../tenancy.api";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Input, FormField } from "@/components/ui/input";
@@ -18,12 +24,11 @@ import {
   AlertTriangle,
   Building,
   Eye,
+  MessageSquare,
 } from "lucide-react";
 
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { toast } from "@/lib/toast";
-
-import { TenantAccessModal } from './TenantAccessModal';
 
 interface TenantManagerProps {
   onSelectTenantForSubscription?: (tenantId: string) => void;
@@ -47,16 +52,38 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
   // Detail Modal
   const [selectedTenantDetail, setSelectedTenantDetail] = useState<Tenant | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [supportNotes, setSupportNotes] = useState<SupportNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [newNote, setNewNote] = useState("");
+  const [addingNote, setAddingNote] = useState(false);
 
   // Termination Confirm Modal
   const [tenantToTerminate, setTenantToTerminate] = useState<Tenant | null>(null);
   const [terminateLoading, setTerminateLoading] = useState(false);
-  const [accessTenant, setAccessTenant] = useState<Tenant | null>(null);
+
+  // Force Override Modal State
+  const [overrideModal, setOverrideModal] = useState<{
+    open: boolean;
+    type: "suspend" | "terminate";
+    tenantId: string;
+    clubName: string;
+    message: string;
+  }>({
+    open: false,
+    type: "suspend",
+    tenantId: "",
+    clubName: "",
+    message: "",
+  });
+  const [forceReason, setForceReason] = useState("");
+  const [overrideLoading, setOverrideLoading] = useState(false);
 
   // Form Fields
   const [name, setName] = useState("");
   const [branchName, setBranchName] = useState("");
   const [subscriptionPlanId, setSubscriptionPlanId] = useState("");
+  const [onboardStatus, setOnboardStatus] = useState<"active" | "trial">("trial");
+  const [trialDays, setTrialDays] = useState(14);
   const [currency, setCurrency] = useState("PKR");
   const [timezone, setTimezone] = useState("Asia/Karachi");
   const [ownerName, setOwnerName] = useState("");
@@ -94,6 +121,33 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
     loadTenants();
   };
 
+  const handleToggleStatus = async (id: string, currentStatus: string, clubName: string) => {
+    const newStatus = currentStatus === "active" ? "suspended" : "active";
+    try {
+      await TenancyApi.updateTenantStatus(id, newStatus);
+      toast.success(`${clubName} is now ${newStatus}`);
+      await loadTenants();
+    } catch (err: any) {
+      const msg = err.message || "";
+      if (
+        msg.includes("active session") ||
+        msg.includes("outstanding balance") ||
+        msg.includes("Force override")
+      ) {
+        setOverrideModal({
+          open: true,
+          type: "suspend",
+          tenantId: id,
+          clubName,
+          message: msg,
+        });
+        setForceReason("");
+      } else {
+        toast.error(msg || "Failed to update tenant status");
+      }
+    }
+  };
+
   const handleConfirmTerminate = async () => {
     if (!tenantToTerminate) return;
     try {
@@ -103,9 +157,63 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
       setTenantToTerminate(null);
       await loadTenants();
     } catch (err: any) {
-      toast.error(err.message || "Failed to terminate tenant");
+      const msg = err.message || "";
+      if (
+        msg.includes("active session") ||
+        msg.includes("outstanding balance") ||
+        msg.includes("Force override")
+      ) {
+        const tId = tenantToTerminate.id;
+        const tName = tenantToTerminate.name;
+        setTenantToTerminate(null);
+        setOverrideModal({
+          open: true,
+          type: "terminate",
+          tenantId: tId,
+          clubName: tName,
+          message: msg,
+        });
+        setForceReason("");
+      } else {
+        toast.error(msg || "Failed to terminate tenant");
+      }
     } finally {
       setTerminateLoading(false);
+    }
+  };
+
+  const handleConfirmOverride = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forceReason.trim()) {
+      toast.error("A justification reason is required to force override.");
+      return;
+    }
+    setOverrideLoading(true);
+    try {
+      if (overrideModal.type === "suspend") {
+        await TenancyApi.updateTenantStatus(
+          overrideModal.tenantId,
+          "suspended",
+          undefined,
+          true,
+          forceReason.trim(),
+        );
+        toast.success(`${overrideModal.clubName} has been suspended via force override.`);
+      } else {
+        await TenancyApi.terminateTenant(
+          overrideModal.tenantId,
+          true,
+          forceReason.trim(),
+        );
+        toast.success(`${overrideModal.clubName} has been terminated via force override.`);
+      }
+      setOverrideModal({ open: false, type: "suspend", tenantId: "", clubName: "", message: "" });
+      setForceReason("");
+      await loadTenants();
+    } catch (err: any) {
+      toast.error(err.message || "Force override failed");
+    } finally {
+      setOverrideLoading(false);
     }
   };
 
@@ -119,11 +227,40 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
     }
   };
 
+  const loadSupportNotes = async (tenantId: string) => {
+    setNotesLoading(true);
+    try {
+      const notes = await TenancyApi.listSupportNotes(tenantId);
+      setSupportNotes(notes);
+    } catch {
+      setSupportNotes([]);
+    } finally {
+      setNotesLoading(false);
+    }
+  };
+
+  const handleAddSupportNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenantDetail || !newNote.trim()) return;
+    setAddingNote(true);
+    try {
+      const note = await TenancyApi.createSupportNote(selectedTenantDetail.id, newNote.trim());
+      setSupportNotes((prev) => [note, ...prev]);
+      setNewNote("");
+      toast.success("Support note recorded.");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add support note");
+    } finally {
+      setAddingNote(false);
+    }
+  };
+
   const handleViewDetail = async (id: string) => {
     setDetailLoading(true);
     try {
       const detail = await TenancyApi.getTenant(id);
       setSelectedTenantDetail(detail);
+      void loadSupportNotes(id);
     } catch (err: any) {
       toast.error(err.message || "Could not load tenant details");
     } finally {
@@ -140,6 +277,8 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
         name,
         branchName,
         subscriptionPlanId: subscriptionPlanId || undefined,
+        status: onboardStatus,
+        trialDays: Number(trialDays),
         currency,
         timezone,
         ownerName,
@@ -152,6 +291,8 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
       setName("");
       setBranchName("");
       setSubscriptionPlanId("");
+      setOnboardStatus("trial");
+      setTrialDays(14);
       setOwnerName("");
       setOwnerEmail("");
       setOwnerPassword("");
@@ -164,6 +305,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
       setModalLoading(false);
     }
   };
+
 
   return (
     <div className="space-y-6">
@@ -340,7 +482,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                         </Button>
                         {!isCancelled && (
                           <Button
-                            onClick={() => setAccessTenant(t)}
+                            onClick={() => handleToggleStatus(t.id, t.status, t.name)}
                             variant="secondary"
                             className={`w-auto px-2.5 py-1 text-xs ${
                               t.status === "active"
@@ -348,7 +490,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                                 : "hover:bg-emerald-50 text-emerald-700"
                             }`}
                           >
-                            Suspend / Activate
+                            {t.status === "active" ? "Suspend" : "Activate"}
                           </Button>
                         )}
                         {!isCancelled && (
@@ -369,18 +511,6 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
             </tbody>
           </table>
         </div>
-      )}
-
-      {accessTenant && (
-        <TenantAccessModal
-          key={accessTenant.id}
-          tenant={accessTenant}
-          onClose={() => setAccessTenant(null)}
-          onSaved={() => {
-            setAccessTenant(null);
-            void loadTenants();
-          }}
-        />
       )}
 
       {/* Tenant Details Modal */}
@@ -451,6 +581,60 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Support Notes Section (§3.15) */}
+              <div className="border-t border-slate-100 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                    <MessageSquare className="h-4 w-4 text-slate-500" />
+                    Internal Support Notes
+                  </h4>
+                  <span className="text-xs text-slate-400">SRS §3.15</span>
+                </div>
+
+                {/* Create Support Note Form */}
+                <form onSubmit={handleAddSupportNote} className="space-y-2 mb-4">
+                  <textarea
+                    rows={2}
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    placeholder="Add an internal support note regarding this club..."
+                    className="w-full text-xs rounded-lg border border-slate-200 p-2.5 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      type="submit"
+                      disabled={addingNote || !newNote.trim()}
+                      isLoading={addingNote}
+                      size="sm"
+                      className="text-xs px-3 bg-brand-600 hover:bg-brand-700 text-white"
+                    >
+                      Post Note
+                    </Button>
+                  </div>
+                </form>
+
+                {/* Notes List */}
+                <div className="space-y-2">
+                  {notesLoading ? (
+                    <p className="text-xs text-slate-400">Loading support notes...</p>
+                  ) : supportNotes.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No support notes recorded yet.</p>
+                  ) : (
+                    supportNotes.map((n) => (
+                      <div key={n.id} className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs">
+                        <div className="flex items-center justify-between text-slate-400 mb-1">
+                          <span className="font-semibold text-slate-700">
+                            {n.superAdmin?.fullName || n.superAdmin?.email || "Platform Admin"}
+                          </span>
+                          <span>{new Date(n.createdAt).toLocaleString()}</span>
+                        </div>
+                        <p className="text-slate-700 whitespace-pre-wrap">{n.note}</p>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -525,6 +709,30 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                     ))}
                   </Select>
                 </FormField>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="Initial Status" htmlFor="onboardStatus">
+                    <Select
+                      id="onboardStatus"
+                      value={onboardStatus}
+                      onChange={(e) => setOnboardStatus(e.target.value as "active" | "trial")}
+                    >
+                      <option value="trial">Trial Period</option>
+                      <option value="active">Active Immediately</option>
+                    </Select>
+                  </FormField>
+
+                  <FormField label="Trial Duration (Days)" htmlFor="trialDays">
+                    <Input
+                      id="trialDays"
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={trialDays}
+                      onChange={(e) => setTrialDays(Number(e.target.value))}
+                    />
+                  </FormField>
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label="Currency" htmlFor="currency">
@@ -617,6 +825,71 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
         onConfirm={handleConfirmTerminate}
         onCancel={() => setTenantToTerminate(null)}
       />
+
+      {/* Force Override Modal (§3.15) */}
+      {overrideModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-red-200">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-red-50">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                <h3 className="text-base font-bold text-slate-950">
+                  Force Override Guard (§3.15)
+                </h3>
+              </div>
+              <button
+                onClick={() => setOverrideModal({ ...overrideModal, open: false })}
+                className="text-slate-400 hover:text-slate-600 text-2xl font-medium"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmOverride} className="p-6 space-y-4">
+              <div className="p-3 bg-red-50 rounded-lg text-xs text-red-800 border border-red-200">
+                {overrideModal.message}
+              </div>
+
+              <p className="text-xs text-slate-600">
+                To proceed with {overrideModal.type === "suspend" ? "suspending" : "terminating"}{" "}
+                <span className="font-semibold text-slate-900">{overrideModal.clubName}</span> despite active sessions or outstanding customer balance, a mandatory justification reason must be recorded in the immutable platform audit log.
+              </p>
+
+              <FormField label="Override Justification (Required)" htmlFor="forceReason">
+                <textarea
+                  id="forceReason"
+                  required
+                  rows={3}
+                  value={forceReason}
+                  onChange={(e) => setForceReason(e.target.value)}
+                  placeholder="State the business or compliance justification for this override..."
+                  className="w-full text-xs rounded-lg border border-slate-300 p-2.5 focus:outline-none focus:ring-1 focus:ring-red-500"
+                />
+              </FormField>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <Button
+                  type="button"
+                  onClick={() => setOverrideModal({ ...overrideModal, open: false })}
+                  variant="secondary"
+                  size="sm"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  isLoading={overrideLoading}
+                  disabled={!forceReason.trim() || overrideLoading}
+                  size="sm"
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Confirm Force {overrideModal.type === "suspend" ? "Suspension" : "Termination"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

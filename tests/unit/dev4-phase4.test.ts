@@ -100,6 +100,7 @@ test("subscription plan filters and tenant lifecycle requests use backend contra
       await suspendTenantSubscription(TENANT_ID, "2026-09-05");
       await resumeTenantSubscription(TENANT_ID);
       await cancelTenantSubscription(TENANT_ID);
+      await deleteSubscriptionPlan(PLAN_ID);
     },
   );
 
@@ -110,6 +111,7 @@ test("subscription plan filters and tenant lifecycle requests use backend contra
       `/api/v1/super-admin/subscriptions/tenants/${TENANT_ID}/suspend`,
       `/api/v1/super-admin/subscriptions/tenants/${TENANT_ID}/resume`,
       `/api/v1/super-admin/subscriptions/tenants/${TENANT_ID}/cancel`,
+      `/api/v1/super-admin/subscriptions/plans/${PLAN_ID}`,
     ],
   );
   assert.deepEqual(requests[1]?.body, { gracePeriodEndsAt: "2026-09-05" });

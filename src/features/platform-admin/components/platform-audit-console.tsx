@@ -55,9 +55,12 @@ export function PlatformAuditConsole() {
   // Filter States for Logs
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string>("");
+  const [actorUserIdFilter, setActorUserIdFilter] = useState<string>("");
   const [actionTypeFilter, setActionTypeFilter] = useState<string>("");
   const [entityTypeFilter, setEntityTypeFilter] = useState<string>("");
   const [severityFilter, setSeverityFilter] = useState<string>("");
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
   // Audit Logs State
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
@@ -83,9 +86,12 @@ export function PlatformAuditConsole() {
     try {
       const params = new URLSearchParams();
       if (selectedTenantId) params.set("tenantId", selectedTenantId);
+      if (actorUserIdFilter.trim()) params.set("actorUserId", actorUserIdFilter.trim());
       if (actionTypeFilter) params.set("actionType", actionTypeFilter);
       if (entityTypeFilter) params.set("entityType", entityTypeFilter);
       if (severityFilter) params.set("severity", severityFilter);
+      if (fromDate) params.set("from", new Date(fromDate).toISOString());
+      if (toDate) params.set("to", new Date(toDate).toISOString());
       params.set("limit", "50");
 
       const res = await platformAdminFetch<{ items: AuditLogItem[]; total: number }>(
@@ -98,7 +104,7 @@ export function PlatformAuditConsole() {
     } finally {
       setLogsLoading(false);
     }
-  }, [selectedTenantId, actionTypeFilter, entityTypeFilter, severityFilter]);
+  }, [selectedTenantId, actorUserIdFilter, actionTypeFilter, entityTypeFilter, severityFilter, fromDate, toDate]);
 
   const fetchAnomalies = useCallback(async () => {
     setAnomaliesLoading(true);
@@ -200,44 +206,75 @@ export function PlatformAuditConsole() {
       {activeTab === "logs" && (
         <div className="space-y-4">
           {/* Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <Select
-              value={selectedTenantId}
-              onChange={(e) => setSelectedTenantId(e.target.value)}
-              className="text-xs"
-            >
-              <option value="">All Tenants</option>
-              {tenants.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </Select>
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <Select
+                value={selectedTenantId}
+                onChange={(e) => setSelectedTenantId(e.target.value)}
+                className="text-xs"
+              >
+                <option value="">All Tenants</option>
+                {tenants.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </Select>
 
-            <Input
-              value={actionTypeFilter}
-              onChange={(e) => setActionTypeFilter(e.target.value)}
-              placeholder="Filter by action (e.g. create, void)..."
-              className="text-xs"
-            />
+              <Input
+                value={actionTypeFilter}
+                onChange={(e) => setActionTypeFilter(e.target.value)}
+                placeholder="Filter by action (e.g. create, void)..."
+                className="text-xs"
+              />
 
-            <Input
-              value={entityTypeFilter}
-              onChange={(e) => setEntityTypeFilter(e.target.value)}
-              placeholder="Filter by entity (e.g. invoice, session)..."
-              className="text-xs"
-            />
+              <Input
+                value={entityTypeFilter}
+                onChange={(e) => setEntityTypeFilter(e.target.value)}
+                placeholder="Filter by entity (e.g. invoice, session)..."
+                className="text-xs"
+              />
 
-            <Select
-              value={severityFilter}
-              onChange={(e) => setSeverityFilter(e.target.value)}
-              className="text-xs"
-            >
-              <option value="">All Severities</option>
-              <option value="info">Info</option>
-              <option value="warning">Warning</option>
-              <option value="critical">Critical</option>
-            </Select>
+              <Select
+                value={severityFilter}
+                onChange={(e) => setSeverityFilter(e.target.value)}
+                className="text-xs"
+              >
+                <option value="">All Severities</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="critical">Critical</option>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+              <Input
+                value={actorUserIdFilter}
+                onChange={(e) => setActorUserIdFilter(e.target.value)}
+                placeholder="Filter by Actor User UUID..."
+                className="text-xs"
+              />
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-2xs text-slate-400 uppercase font-medium">From:</span>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="text-xs flex-1"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-2xs text-slate-400 uppercase font-medium">To:</span>
+                <Input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="text-xs flex-1"
+                />
+              </div>
+            </div>
           </div>
 
           {logsError && <Alert variant="error">{logsError}</Alert>}

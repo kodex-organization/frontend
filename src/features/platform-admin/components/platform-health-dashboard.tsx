@@ -2,13 +2,18 @@
 
 import {
   Activity,
+  AlertTriangle,
   BellRing,
   Building2,
   Clock3,
+  DollarSign,
+  Lock,
   Radio,
   RefreshCw,
   ServerCog,
+  ShieldAlert,
   Store,
+  Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -166,6 +171,84 @@ export function PlatformHealthDashboard() {
             </div>
           </section>
 
+          {/* Revenue & MRR/ARR (§3.15, §5.3) */}
+          <section className="border-t border-slate-200 pt-6">
+            <h2 className="text-lg font-semibold text-slate-900">Revenue & Subscriptions</h2>
+            <p className="mt-1 text-sm text-slate-500">Live aggregated platform billing metrics.</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Metric
+                label="Monthly Recurring Revenue (MRR)"
+                value={`Rs. ${(health.revenue?.mrr ?? 0).toLocaleString()}`}
+                detail="Sum of active monthly equivalent subscriptions"
+                icon={DollarSign}
+              />
+              <Metric
+                label="Annual Recurring Revenue (ARR)"
+                value={`Rs. ${(health.revenue?.arr ?? 0).toLocaleString()}`}
+                detail="MRR * 12 annual run-rate"
+                icon={DollarSign}
+              />
+              <Metric
+                label="Active Subscriptions"
+                value={health.revenue?.activeSubscriptionsCount ?? 0}
+                detail="Tenants with currently active paid plan"
+                icon={Building2}
+              />
+            </div>
+          </section>
+
+          {/* Tenant Status Distribution */}
+          <section className="border-t border-slate-200 pt-6">
+            <h2 className="text-lg font-semibold text-slate-900">Tenant Status Distribution</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-md border border-slate-200 bg-emerald-50/50 p-4">
+                <span className="text-xs font-semibold uppercase text-emerald-700">Active</span>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{health.tenantsByStatus?.active ?? 0}</p>
+                <p className="mt-1 text-xs text-slate-500">Normal operations</p>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-sky-50/50 p-4">
+                <span className="text-xs font-semibold uppercase text-sky-700">Trial</span>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{health.tenantsByStatus?.trial ?? 0}</p>
+                <p className="mt-1 text-xs text-slate-500">In evaluation period</p>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-amber-50/50 p-4">
+                <span className="text-xs font-semibold uppercase text-amber-700">Suspended</span>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{health.tenantsByStatus?.suspended ?? 0}</p>
+                <p className="mt-1 text-xs text-slate-500">Access blocked</p>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-rose-50/50 p-4">
+                <span className="text-xs font-semibold uppercase text-rose-700">Terminated</span>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{health.tenantsByStatus?.terminated ?? 0}</p>
+                <p className="mt-1 text-xs text-slate-500">Cancelled / Soft-deleted</p>
+              </div>
+            </div>
+          </section>
+
+          {/* Security & Health (§3.15, §5.3) */}
+          <section className="border-t border-slate-200 pt-6">
+            <h2 className="text-lg font-semibold text-slate-900">Security & Device Freshness</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Metric
+                label="Stale Devices (>24h)"
+                value={health.security?.staleSyncDevicesOlderThan24h ?? 0}
+                detail="Sync devices without heartbeat for >24 hours"
+                icon={Clock3}
+              />
+              <Metric
+                label="Failed Logins (24h)"
+                value={health.security?.failedLogins24h ?? 0}
+                detail="Failed authentication attempts in last 24h"
+                icon={ShieldAlert}
+              />
+              <Metric
+                label="Locked User Accounts"
+                value={health.security?.lockedAccountsCount ?? 0}
+                detail="Accounts currently locked due to failed attempts"
+                icon={Lock}
+              />
+            </div>
+          </section>
+
           <section className="border-t border-slate-200 pt-6">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -267,6 +350,47 @@ export function PlatformHealthDashboard() {
               />
             </div>
           </section>
+
+          {/* Recent High-Risk Actions Log (§3.15) */}
+          {health.recentHighRiskLogs && health.recentHighRiskLogs.length > 0 && (
+            <section className="border-t border-slate-200 pt-6">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                <h2 className="text-lg font-semibold text-slate-900">Recent High-Risk Platform Actions</h2>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">Live query of security overrides, voids, suspensions, and impersonations.</p>
+              <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                <table className="min-w-full divide-y divide-slate-200 text-xs">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left font-medium">Timestamp</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Action</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Club / Tenant</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Actor</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Severity</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {health.recentHighRiskLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-2 text-slate-500">{formatDateTime(log.occurredAt)}</td>
+                        <td className="px-4 py-2 font-mono font-medium text-slate-800">{log.actionType}</td>
+                        <td className="px-4 py-2 text-slate-700">{log.tenant?.name || log.entityId || "—"}</td>
+                        <td className="px-4 py-2 text-slate-600">{log.actorUser?.fullName || log.actorUser?.email || "Super Admin"}</td>
+                        <td className="px-4 py-2">
+                          <span className={`inline-block rounded px-1.5 py-0.5 text-2xs font-semibold uppercase ${
+                            log.severity === "critical" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                          }`}>
+                            {log.severity}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </>
       ) : (
         <div className="border border-dashed border-slate-300 p-6 text-sm text-slate-500">

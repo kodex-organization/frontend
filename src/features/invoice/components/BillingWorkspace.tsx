@@ -9,7 +9,9 @@ import type { InvoiceStatus } from "../types/invoice";
 import { formatCurrency } from "../utils/formatCurrency";
 import InvoiceTable from "./InvoiceTable";
 import TransactionTable from "./TransactionTable";
-import { useAuth } from "@/lib/auth/auth-context";
+import { fetchBranches } from "@/lib/api/branch";
+import type { BranchItem } from "@/types/branch";
+import { useEffect } from "react";
 
 const statusOptions: Array<{
   value: "" | InvoiceStatus;
@@ -46,8 +48,9 @@ export default function BillingWorkspace({
   const [date, setDate] = useState("");
   const [invoicePage, setInvoicePage] = useState(1);
   const [transactionPage, setTransactionPage] = useState(1);
-  const { user } = useAuth();
-  const branchId = user?.branchId ?? "";
+  const [branches, setBranches] = useState<BranchItem[]>([]);
+  const [branchId, setBranchId] = useState("");
+  useEffect(() => { void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches)); }, []);
   const range = useMemo(() => dateRange(date), [date]);
 
   const {

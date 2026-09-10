@@ -14,14 +14,14 @@ import {
 } from "@/services/catalog.service";
 import { RatePlan } from "@/features/catalog/types/catalog.types";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
-import { useAuth } from "@/lib/auth/auth-context";
+import { fetchBranches } from "@/lib/api/branch";
+import type { BranchItem } from "@/types/branch";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The request failed";
 }
 
 export default function CatalogPage() {
-  const { user } = useAuth();
 
   // ── table state ──────────────────────────────
   const [tables, setTables]             = useState<SnookerTable[]>([]);
@@ -37,8 +37,9 @@ export default function CatalogPage() {
   const [saving, setSaving]             = useState(false);
   const [formError, setFormError]       = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SnookerTable | null>(null);
-  const branchFilter = user?.branchId ?? "";
-  const selectedBranchId = branchFilter;
+  const [branches, setBranches] = useState<BranchItem[]>([]);
+  const [branchFilter, setBranchFilter] = useState("");
+  const [selectedBranchId, setSelectedBranchId] = useState("");
 
   // ── rate modal state ─────────────────────────
   const [rateTable, setRateTable]       = useState<SnookerTable | null>(null);
@@ -50,6 +51,9 @@ export default function CatalogPage() {
   const [rateError, setRateError]       = useState<string | null>(null);
 
   // ── fetch tables on load ─────────────────────
+  useEffect(() => {
+    void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches));
+  }, []);
   useEffect(() => { void fetchTables(branchFilter || undefined); }, [branchFilter]);
 
   async function fetchTables(branchId?: string) {
@@ -393,7 +397,13 @@ export default function CatalogPage() {
                 />
               </div>
 
-              {!editingTable && <p className="text-sm text-slate-500">This table belongs to the active branch shown in the header.</p>}
+              {!editingTable && <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
+                <select value={selectedBranchId} onChange={(event) => setSelectedBranchId(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">Select a branch</option>
+                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
+                </select>
+              </div>}
 
               {/* status — only when editing */}
               {editingTable && (
