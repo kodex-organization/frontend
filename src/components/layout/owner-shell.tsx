@@ -32,9 +32,11 @@ import {
   Globe,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useConnectionStatus } from '@/lib/connectivity/online-status';
 import { NotificationBell } from "@/features/notifications/components/NotificationBell";
 import { useNotifications } from "@/features/notifications/context";
 import { TenantAnnouncementCenter } from "@/features/announcements/components/tenant-announcement-center";
+import { GlobalBranchSelector } from "@/features/tenancy/components/global-branch-selector";
 
 const CueLogo = ({ size = 26, className = "" }: { size?: number; className?: string }) => (
   <svg
@@ -62,6 +64,7 @@ interface NavGroup {
 }
 
 export function OwnerShell({ children }: { children: React.ReactNode }) {
+  const connectionStatus = useConnectionStatus();
   const pathname = usePathname();
   const { user, logout, updateUserLanguage } = useAuth();
   const {
@@ -75,6 +78,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [branchSwitching, setBranchSwitching] = useState(false);
 
   const canManageGovernance = user?.roles.some(
     (role) => role === "OWNER" || role === "MANAGER",
@@ -466,8 +470,8 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
         <TenantAnnouncementCenter />
 
         {/* Global Sticky Top Header */}
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 backdrop-blur-md px-4 sm:px-6 shadow-sm">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-20 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-2 shadow-sm backdrop-blur-md sm:px-6">
+          <div className="flex shrink-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
@@ -477,14 +481,15 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
             </button>
 
             <div className="hidden sm:flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className={`w-2 h-2 rounded-full ${connectionStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
               <span className="text-xs font-semibold text-slate-600">
-                CueCloud POS Live
+                {connectionStatus === 'online' ? 'CueCloud POS Connected' : connectionStatus === 'checking' ? 'CueCloud POS Checking...' : 'CueCloud POS Offline'}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <GlobalBranchSelector onSwitching={setBranchSwitching} />
             <NotificationBell
               notifications={notifications}
               unreadCount={unreadCount}
@@ -497,8 +502,11 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Body */}
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24" key={user?.branchId}>
-          {children}
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24" key={`${user?.id}:${user?.branchId}`}>
+          {branchSwitching && <p role="status" className="mb-4 text-center text-slate-500">Switching active branch...</p>}
+          <fieldset disabled={branchSwitching} className={`min-w-0 ${branchSwitching ? "pointer-events-none opacity-50" : ""}`}>
+            {children}
+          </fieldset>
         </div>
       </main>
     </div>

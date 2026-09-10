@@ -11,6 +11,12 @@ import { toast } from "@/lib/toast";
 
 export default function OwnerBranchesPage() {
   const [branches, setBranches] = useState<BranchItem[]>([]);
+  const [branchUsage, setBranchUsage] = useState<{
+    planName: string | null;
+    usedBranches: number;
+    maxBranches: number | null;
+    canCreate: boolean;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ title: string; message: string; type: "success" | "error" | "warning" } | null>(null);
@@ -27,6 +33,7 @@ export default function OwnerBranchesPage() {
       setError(null);
       const res = await fetchBranches({ limit: 50 });
       setBranches(res.branches || []);
+      setBranchUsage(res.branchUsage);
     } catch (err: any) {
       const msg = err.message?.includes("jwt expired")
         ? "Your session has expired. Please log in again."
@@ -43,6 +50,14 @@ export default function OwnerBranchesPage() {
   }, [loadBranches]);
 
   const handleCreateNew = () => {
+    if (branchUsage && !branchUsage.canCreate) {
+      setFeedback({
+        title: "Branch limit reached",
+        message: `Your ${branchUsage.planName ?? "current"} plan allows ${branchUsage.maxBranches} branches. Upgrade the plan or delete an existing branch to add another.`,
+        type: "warning",
+      });
+      return;
+    }
     setSelectedBranchForEdit(null);
     setIsBranchModalOpen(true);
   };
@@ -89,6 +104,11 @@ export default function OwnerBranchesPage() {
         </div>
 
         <div className="flex items-center gap-2.5">
+          {branchUsage?.maxBranches !== null && branchUsage?.maxBranches !== undefined && (
+            <span className={`text-xs font-semibold ${branchUsage.canCreate ? "text-slate-500" : "text-amber-700"}`}>
+              {branchUsage.usedBranches} / {branchUsage.maxBranches} branches used
+            </span>
+          )}
           <button
             onClick={loadBranches}
             className="p-2 text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-xl shadow-xs transition-colors hover:bg-slate-50"
@@ -101,7 +121,9 @@ export default function OwnerBranchesPage() {
 
           <button
             onClick={handleCreateNew}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-xs"
+            disabled={branchUsage ? !branchUsage.canCreate : false}
+            title={branchUsage && !branchUsage.canCreate ? "Your subscription branch limit has been reached" : undefined}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

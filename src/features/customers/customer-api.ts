@@ -53,7 +53,8 @@ export const customerApi = {
         : await offlineDB.cachedCustomers.toArray();
 
       const term = query.trim().toLowerCase();
-      const list = cached.map((item) => item.data as Customer);
+      const list = cached.map((item) => item.data as Customer)
+        .filter((customer) => !customer.branchId || customer.branchId === branchId);
 
       if (!term) return list.slice(0, limit);
       return list
@@ -93,6 +94,8 @@ export const customerApi = {
 
     const newCustomer: Customer = {
       id: newId,
+      branchId: body.branchId ?? null,
+      branch: null,
       fullName: body.fullName,
       phone: cleanPhone,
       cnic: body.cnic && body.cnic.trim() ? body.cnic.trim() : null,
@@ -113,6 +116,7 @@ export const customerApi = {
         {
           id: newId,
           branchId,
+          assignedBranchId: body.branchId ?? null,
           fullName: body.fullName,
           phone: cleanPhone,
           cnic: body.cnic && body.cnic.trim() ? body.cnic.trim() : null,
@@ -128,6 +132,7 @@ export const customerApi = {
       const created = await request<Customer>("/customers", {
         method: "POST",
         body: JSON.stringify({
+          branchId: body.branchId ?? null,
           fullName: body.fullName,
           phone: cleanPhone,
           cnic: body.cnic && body.cnic.trim() ? body.cnic.trim() : null,
@@ -156,6 +161,7 @@ export const customerApi = {
         {
           id: newId,
           branchId,
+          assignedBranchId: body.branchId ?? null,
           fullName: body.fullName,
           phone: cleanPhone,
           cnic: body.cnic && body.cnic.trim() ? body.cnic.trim() : null,
@@ -175,7 +181,8 @@ export const customerApi = {
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       const existing = await offlineDB.cachedCustomers.get(id);
       const updatedData: Customer = {
-        ...(existing?.data || { id, createdAt: new Date().toISOString(), tagAssignments: [] }),
+        ...(existing?.data || { id, branchId: null, createdAt: new Date().toISOString(), tagAssignments: [] }),
+        ...(body.branchId !== undefined ? { branchId: body.branchId } : {}),
         ...(body.fullName ? { fullName: body.fullName } : {}),
         ...(cleanPhone ? { phone: cleanPhone } : {}),
         ...(body.cnic !== undefined ? { cnic: body.cnic && body.cnic.trim() ? body.cnic.trim() : null } : {}),
@@ -192,6 +199,7 @@ export const customerApi = {
         {
           id,
           branchId,
+          assignedBranchId: updatedData.branchId,
           fullName: updatedData.fullName || "Unnamed Customer",
           phone: updatedData.phone || "",
           cnic: updatedData.cnic,
@@ -207,6 +215,7 @@ export const customerApi = {
       const updated = await request<Customer>(`/customers/${id}`, {
         method: "PATCH",
         body: JSON.stringify({
+          ...(body.branchId !== undefined ? { branchId: body.branchId } : {}),
           ...(body.fullName ? { fullName: body.fullName } : {}),
           ...(cleanPhone ? { phone: cleanPhone } : {}),
           ...(body.cnic !== undefined ? { cnic: body.cnic && body.cnic.trim() ? body.cnic.trim() : null } : {}),
@@ -224,7 +233,8 @@ export const customerApi = {
     } catch {
       const existing = await offlineDB.cachedCustomers.get(id);
       const updatedData: Customer = {
-        ...(existing?.data || { id, createdAt: new Date().toISOString(), tagAssignments: [] }),
+        ...(existing?.data || { id, branchId: null, createdAt: new Date().toISOString(), tagAssignments: [] }),
+        ...(body.branchId !== undefined ? { branchId: body.branchId } : {}),
         ...(body.fullName ? { fullName: body.fullName } : {}),
         ...(cleanPhone ? { phone: cleanPhone } : {}),
         ...(body.cnic !== undefined ? { cnic: body.cnic && body.cnic.trim() ? body.cnic.trim() : null } : {}),
@@ -234,6 +244,7 @@ export const customerApi = {
         {
           id,
           branchId,
+          assignedBranchId: updatedData.branchId,
           fullName: updatedData.fullName || "Unnamed Customer",
           phone: updatedData.phone || "",
           cnic: updatedData.cnic,
@@ -246,10 +257,17 @@ export const customerApi = {
     }
   },
 
-  remove: (id: string) =>
-    request<void>(`/customers/${id}`, {
+  remove: async (id: string): Promise<void> => {
+    await request<void>(`/customers/${id}`, {
       method: "DELETE",
-    }),
+    });
+    // A local cache failure must not turn a completed server deletion into an error.
+    try {
+      await offlineDB.cachedCustomers.delete(id);
+    } catch {
+      console.warn("Customer deleted, but the offline customer cache could not be updated.");
+    }
+  },
 
   visits: (id: string) =>
     request<CustomerVisitHistory>(

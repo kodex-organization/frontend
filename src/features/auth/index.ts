@@ -2,7 +2,7 @@
 // Components, hooks, and API calls for login/session
 
 import { apiFetch } from "@/lib/api/client";
-import { tokenStorage, type SessionTokens, type SessionUser } from "@/lib/auth/session";
+import type { SessionTokens, SessionUser } from "@/lib/auth/session";
 
 export const FEATURE = "auth";
 
@@ -61,10 +61,9 @@ export async function loginWithPin(pin: string, identifier: { email?: string; us
 }
 
 export async function logoutRequest() {
-  const refreshToken = tokenStorage.get()?.refreshToken;
   return apiFetch<{ loggedOut: boolean }>("/auth/logout", {
     method: "POST",
-    body: JSON.stringify(refreshToken ? { refreshToken } : {}),
+    body: JSON.stringify({}),
   });
 }
 

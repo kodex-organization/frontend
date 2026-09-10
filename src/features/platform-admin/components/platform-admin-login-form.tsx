@@ -15,7 +15,7 @@ import { usePlatformAdminAuth } from "@/lib/platform-admin/auth-context";
 import { getSafePlatformAdminDestination } from "../login-navigation";
 
 const loginSchema = z.object({
-  email: z.string().email("Enter a valid email address."),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address."),
   password: z.string().min(1, "Password is required."),
 });
 

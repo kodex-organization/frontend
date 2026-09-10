@@ -46,7 +46,7 @@ export function StaffManager() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [branchFilter, setBranchFilter] = useState("ALL");
+  const branchFilter = user?.branchId ?? "";
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -83,7 +83,7 @@ export function StaffManager() {
         listStaff({
           search: search || undefined,
           role: roleFilter !== "ALL" ? roleFilter : undefined,
-          branchId: branchFilter !== "ALL" ? branchFilter : undefined,
+          branchId: branchFilter || undefined,
           status: statusFilter !== "all" ? statusFilter : undefined,
         }),
         fetchBranches({ limit: 100 }),
@@ -261,18 +261,6 @@ export function StaffManager() {
           <option value="CASHIER">Cashier</option>
         </select>
 
-        <select
-          value={branchFilter}
-          onChange={(e) => setBranchFilter(e.target.value)}
-          className="px-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-        >
-          <option value="ALL">All Branches</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
 
         <select
           value={statusFilter}
@@ -433,7 +421,13 @@ export function StaffManager() {
                 ✕
               </button>
             </div>
-            <AddStaffForm />
+            <AddStaffForm
+              onSuccess={() => {
+                setShowAddModal(false);
+                toast.success('Staff member added successfully.');
+                void loadData();
+              }}
+            />
           </div>
         </div>
       )}

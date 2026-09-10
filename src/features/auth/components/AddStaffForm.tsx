@@ -50,9 +50,9 @@ const initialForm: FormState = {
   branchId: "",
 };
 
-export function AddStaffForm() {
+export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const { user } = useAuth();
-  const [form, setForm] = useState<FormState>(initialForm);
+  const [form, setForm] = useState<FormState>(() => ({ ...initialForm, branchId: user?.branchId ?? "" }));
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -119,7 +119,8 @@ export function AddStaffForm() {
         pin: parsed.data.pin || undefined,
       });
       setSuccessMessage(`${staff.fullName} was added as ${staff.roles.join(", ")}.`);
-      setForm(initialForm);
+      setForm({ ...initialForm, branchId: user?.branchId ?? "" });
+      onSuccess?.();
     } catch (err) {
       setFormError(
         err instanceof ApiError ? err.message : "Something went wrong. Please try again.",

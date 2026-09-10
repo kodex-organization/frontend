@@ -52,6 +52,7 @@ export type InvoiceOfflinePayload = {
 export type CustomerOfflinePayload = {
   id: string;
   branchId: string;
+  assignedBranchId?: string | null;
   fullName: string;
   phone: string;
   cnic?: string | null;

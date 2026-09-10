@@ -8,24 +8,19 @@ import { NotificationBell } from "./NotificationBell";
 import { OvertimeAlert } from "./OvertimeAlert";
 import { StatsBar } from "./StatsBar";
 import { FullPageLoader } from "@/components/ui/loader";
-import { fetchBranches } from "@/lib/api/branch";
-import type { BranchItem } from "@/types/branch";
+import { useAuth } from "@/lib/auth/auth-context";
 import { sessionApi } from "@/features/sessions/session-api";
 import { StartSessionModal } from "@/features/sessions/start-session-modal";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { toast } from "@/lib/toast";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export function FloorViewDashboard() {
-  const [branches, setBranches] = useState<BranchItem[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const { user } = useAuth();
+  const selectedBranchId = user?.branchId ?? "";
   const [startSessionModalOpen, setStartSessionModalOpen] = useState(false);
   const [pendingEndSessionId, setPendingEndSessionId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-
-  useEffect(() => {
-    void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches)).catch(() => {});
-  }, []);
 
   const {
     tables,
@@ -142,20 +137,6 @@ export function FloorViewDashboard() {
         </div>
 
         <div className="flex items-center gap-3 self-end sm:self-auto bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm">
-          <label htmlFor="floor-branch" className="sr-only">Branch</label>
-          <select
-            id="floor-branch"
-            value={selectedBranchId}
-            onChange={(event) => setSelectedBranchId(event.target.value)}
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="">All Branches</option>
-            {branches.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name ?? "Unnamed branch"}
-              </option>
-            ))}
-          </select>
           <button
             type="button"
             onClick={() => setStartSessionModalOpen(true)}

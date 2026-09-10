@@ -140,6 +140,31 @@ test("platform health never presents missing telemetry as zero", async () => {
   );
 });
 
+test('plan deletion uses the selected plan ID and the archive endpoint', async () => {
+  const archived = { id: PLAN_ID, deletedAt: '2026-09-09T12:00:00.000Z' };
+  let calls = 0;
+  await withFetch(async (input, init) => {
+    calls++;
+    assert.equal(new URL(String(input)).pathname, `/api/v1/super-admin/subscriptions/plans/${PLAN_ID}`);
+    assert.equal(init?.method, 'DELETE');
+    return envelope(archived);
+  }, async () => {
+    assert.deepEqual(await deleteSubscriptionPlan(PLAN_ID), archived);
+  });
+  assert.equal(calls, 1);
+});
+
+test('assigned-plan protection is surfaced instead of treating deletion as successful', async () => {
+  await withFetch(async () => new Response(JSON.stringify({
+    success: false, data: null,
+    error: { message: 'Plan is assigned to one or more tenants', code: 'CONFLICT' },
+  }), { status: 409, headers: { 'Content-Type': 'application/json' } }), async () => {
+    await assert.rejects(deleteSubscriptionPlan(PLAN_ID), {
+      status: 409, code: 'CONFLICT', message: 'Plan is assigned to one or more tenants',
+    });
+  });
+});
+
 test("tenant announcement inbox respects schedule, expiry, and dismiss state", () => {
   const base: TenantAnnouncement = {
     id: "00000000-0000-4000-8000-000000000034",

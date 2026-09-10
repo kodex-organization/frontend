@@ -190,6 +190,7 @@ test("impersonation starts and ends without replacing the PlatformAdmin session"
   await withBrowser(async () => {
     platformAdminStorage.replaceSession(platformToken(), admin);
     const selectedConsent = consent(["tenant_read", "branch_read"]);
+    const startedSession = startResponse(selectedConsent.allowedScopes);
     let requestNumber = 0;
     globalThis.fetch = (async (input, init) => {
       requestNumber += 1;
@@ -199,12 +200,12 @@ test("impersonation starts and ends without replacing the PlatformAdmin session"
           (init?.headers as Record<string, string>).Authorization,
           `Bearer ${platformToken()}`,
         );
-        return envelope(startResponse(selectedConsent.allowedScopes), 201);
+        return envelope(startedSession, 201);
       }
       assert.ok(url.endsWith("/super-admin/impersonation/end"));
       assert.equal(
         (init?.headers as Record<string, string>).Authorization,
-        `Bearer ${impersonationToken(selectedConsent.allowedScopes)}`,
+        `Bearer ${startedSession.impersonationToken}`,
       );
       return envelope({
         impersonationSessionId: SESSION_ID,

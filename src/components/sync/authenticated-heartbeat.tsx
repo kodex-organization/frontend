@@ -19,10 +19,10 @@ export function AuthenticatedHeartbeat() {
   const isOnline = useOnlineStatus();
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !isOnline) return;
     const cleanupSync = initSyncManager();
     return () => cleanupSync();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isOnline, user]);
 
   useEffect(() => {
     if (
@@ -44,12 +44,19 @@ export function AuthenticatedHeartbeat() {
     }
 
     let cancelled = false;
+    const version = tokenStorage.getSessionVersion();
+    const sessionIsCurrent = () => {
+      const current = tokenStorage.getAccessContext();
+      return tokenStorage.getSessionVersion() === version && Boolean(current) &&
+        current?.userId === user.id && current?.branchId === user.branchId &&
+        current?.deviceId === accessContext.deviceId;
+    };
     let inFlight = false;
     let timeoutId: number | undefined;
     let requestController: AbortController | null = null;
 
     const schedule = () => {
-      if (cancelled || document.visibilityState !== "visible") {
+      if (cancelled || !sessionIsCurrent() || document.visibilityState !== "visible") {
         return;
       }
       timeoutId = window.setTimeout(() => {
@@ -60,6 +67,7 @@ export function AuthenticatedHeartbeat() {
     const heartbeat = async () => {
       if (
         cancelled ||
+        !sessionIsCurrent() ||
         inFlight ||
         !navigator.onLine ||
         document.visibilityState !== "visible"
@@ -84,7 +92,7 @@ export function AuthenticatedHeartbeat() {
           user.branchId,
           requestController.signal,
         );
-        if (!cancelled) {
+        if (!cancelled && sessionIsCurrent()) {
           window.dispatchEvent(
             new CustomEvent(AUTHENTICATED_HEARTBEAT_EVENT, {
               detail: result,

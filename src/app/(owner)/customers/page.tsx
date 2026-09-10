@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Users,
@@ -25,6 +25,7 @@ import { toast } from "@/lib/toast";
 import { useAuth } from "@/lib/auth/auth-context";
 import { customerApi } from "@/features/customers/customer-api";
 import type { Customer, CustomerTag } from "@/features/customers/types";
+import { fetchBranches } from "@/lib/api/branch";
 
 export default function CustomersPage() {
   const router = useRouter();
@@ -37,6 +38,7 @@ export default function CustomersPage() {
   const [q, setQ] = useState("");
   const [selectedFilterTag, setSelectedFilterTag] = useState<string>("all");
   const [availableTags, setAvailableTags] = useState<CustomerTag[]>([]);
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(true);
 
   // Modals & form state
@@ -48,19 +50,22 @@ export default function CustomersPage() {
   const [mergeLoading, setMergeLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const deleteInFlight = useRef(false);
+  const deletedCustomerIds = useRef(new Set<string>());
 
   const [form, setForm] = useState({
     fullName: "",
     phone: "",
     cnic: "",
     tag: "",
+    branchId: user?.branchId ?? "",
   });
 
   const loadCustomers = useCallback(async (searchQuery = q) => {
     setLoading(true);
     try {
       const customers = await customerApi.search(searchQuery, 100, true);
-      setItems(customers);
+      setItems(customers.filter((customer) => !deletedCustomerIds.current.has(customer.id)));
     } catch (e: any) {
       toast.error(e?.message || "Failed to load customers.");
     } finally {
@@ -77,6 +82,20 @@ export default function CustomersPage() {
     }
   }, []);
 
+  const loadBranches = useCallback(async () => {
+    try {
+      const result = await fetchBranches({ limit: 100, isActive: true });
+      setBranches(
+        result.branches.map((branch) => ({
+          id: branch.id,
+          name: branch.name || "Unnamed branch",
+        })),
+      );
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load branches.");
+    }
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       void loadCustomers(q);
@@ -86,7 +105,8 @@ export default function CustomersPage() {
 
   useEffect(() => {
     void loadAvailableTags();
-  }, [loadAvailableTags]);
+    void loadBranches();
+  }, [loadAvailableTags, loadBranches]);
 
   const resetForm = () => {
     setForm({
@@ -94,6 +114,7 @@ export default function CustomersPage() {
       phone: "",
       cnic: "",
       tag: "",
+      branchId: user?.branchId ?? "",
     });
     setEditingCustomer(null);
     setCustomerModalOpen(false);
@@ -112,6 +133,7 @@ export default function CustomersPage() {
       phone: customer.phone ?? "",
       cnic: customer.cnic ?? "",
       tag: currentTag,
+      branchId: customer.branchId ?? "",
     });
     setCustomerModalOpen(true);
   };
@@ -129,6 +151,7 @@ export default function CustomersPage() {
           fullName,
           phone,
           cnic: cnic || null,
+          branchId: form.branchId || null,
         });
 
         // Tag management
@@ -157,6 +180,7 @@ export default function CustomersPage() {
           fullName,
           phone,
           cnic: cnic || null,
+          branchId: form.branchId || null,
         });
 
         if (form.tag) {
@@ -181,16 +205,20 @@ export default function CustomersPage() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || deleteInFlight.current) return;
+    const customerId = pendingDelete.id;
+    deleteInFlight.current = true;
     setDeleting(true);
     try {
-      await customerApi.remove(pendingDelete.id);
+      await customerApi.remove(customerId);
+      deletedCustomerIds.current.add(customerId);
+      setItems((customers) => customers.filter((customer) => customer.id !== customerId));
       toast.success("Customer deleted successfully.");
       setPendingDelete(null);
-      await loadCustomers();
     } catch (e: any) {
       toast.error(e?.message || "Failed to delete customer.");
     } finally {
+      deleteInFlight.current = false;
       setDeleting(false);
     }
   };
@@ -397,6 +425,7 @@ export default function CustomersPage() {
                   <th className="px-5 py-3.5">Customer</th>
                   <th className="px-5 py-3.5">Contact Details</th>
                   <th className="px-5 py-3.5">CNIC</th>
+                  <th className="px-5 py-3.5">Branch</th>
                   <th className="px-5 py-3.5">Tag / Status</th>
                   <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
@@ -452,6 +481,12 @@ export default function CustomersPage() {
                           <CreditCard className="w-3.5 h-3.5 text-slate-400" />
                           <span>{customer.cnic || "—"}</span>
                         </div>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <span className="text-xs font-medium text-slate-700">
+                          {customer.branch?.name || "All Branches"}
+                        </span>
                       </td>
 
                       <td className="px-5 py-4">
@@ -540,7 +575,9 @@ export default function CustomersPage() {
                   {editingCustomer ? "Edit Customer Profile" : "Register New Customer"}
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {editingCustomer ? "Update contact information & tag" : "Add a new customer to the database"}
+                  {editingCustomer
+                    ? "Update contact information, branch access & tag"
+                    : "Choose one branch or make the customer available to all"}
                 </p>
               </div>
               <button
@@ -580,6 +617,22 @@ export default function CustomersPage() {
                   onChange={(e) => setForm({ ...form, cnic: e.target.value })}
                   placeholder="e.g. 35201-1234567-1"
                 />
+              </FormField>
+
+              <FormField label="Branch Access" htmlFor="cust-branch">
+                <select
+                  id="cust-branch"
+                  value={form.branchId}
+                  onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="">All Branches</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
               </FormField>
 
               <FormField label="Customer Tier / Tag" htmlFor="cust-tag">
@@ -691,7 +744,7 @@ export default function CustomersPage() {
         variant="danger"
         isLoading={deleting}
         onConfirm={handleConfirmDelete}
-        onCancel={() => setPendingDelete(null)}
+        onCancel={() => { if (!deleteInFlight.current) setPendingDelete(null); }}
       />
     </div>
   );

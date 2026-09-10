@@ -6,7 +6,6 @@ import { fetchBranches } from "@/lib/api/branch";
 import { DashboardApi, LiveTableSession, RevenueKPIs, OutstandingUdhaar, SyncDeviceStatus, RevenueTrend, TableHeatmap, AnomalyItem, TransactionItem } from "../dashboard.api";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
-import { Select } from "@/components/ui/select";
 import { Activity, CreditCard, Users, RefreshCw, AlertTriangle, ChevronRight, TrendingUp } from "lucide-react";
 import { FullPageLoader } from "@/components/ui/loader";
 import { toast } from "@/lib/toast";
@@ -17,8 +16,7 @@ export function DashboardView() {
   // States
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedBranch, setSelectedBranch] = useState<string>("");
-  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const selectedBranch = user?.branchId ?? "";
 
   // Data States
   const [liveTables, setLiveTables] = useState<LiveTableSession[]>([]);
@@ -39,23 +37,12 @@ export function DashboardView() {
   const [drilldownLoading, setDrilldownLoading] = useState(false);
 
   // Check roles
-  const isOwner = user?.roles.includes("OWNER");
   const isCashier = user?.roles.includes("CASHIER");
 
   const fetchData = async (branchId?: string) => {
     setLoading(true);
     setError(null);
     try {
-      if (isOwner) {
-        const branchList = await fetchBranches({ limit: 100 });
-        setBranches(
-          (branchList.branches || []).map((branch) => ({
-            id: branch.id,
-            name: branch.name || "Unnamed branch",
-          })),
-        );
-      }
-
       const tablesData = await DashboardApi.getLiveTables(branchId);
       setLiveTables(tablesData.sessions);
 
@@ -152,6 +139,7 @@ export function DashboardView() {
               <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-700">
                 <tr>
                   <th className="px-6 py-4">Table Number</th>
+                  <th className="px-6 py-4">Branch</th>
                   <th className="px-6 py-4">Customer</th>
                   <th className="px-6 py-4">Started At</th>
                   <th className="px-6 py-4">Status</th>
@@ -161,6 +149,7 @@ export function DashboardView() {
                 {liveTables.map((s) => (
                   <tr key={s.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 font-medium text-slate-900">Table {s.table?.tableNumber || s.tableId}</td>
+                    <td className="px-6 py-4">{s.branch.name}</td>
                     <td className="px-6 py-4">{s.customer?.fullName || "Walk-in"}</td>
                     <td className="px-6 py-4">{new Date(s.startedAt).toLocaleTimeString()}</td>
                     <td className="px-6 py-4">
@@ -187,22 +176,10 @@ export function DashboardView() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Analytics Dashboard</h1>
-          <p className="text-sm text-slate-500">Real-time performance metrics across the organization.</p>
+          <p className="text-sm text-slate-500">Real-time performance metrics for your active branch.</p>
         </div>
 
         <div className="flex items-center gap-2">
-          {isOwner && branches.length > 0 && (
-            <div className="w-48">
-              <Select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)}>
-                <option value="">All Branches</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
           <Button onClick={() => fetchData(selectedBranch || undefined)} variant="secondary" className="w-auto px-3 py-2">
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -327,6 +304,7 @@ export function DashboardView() {
                     <div className="flex justify-between items-start">
                       <div>
                         <h4 className="text-base font-bold text-slate-900">Table {s.table?.tableNumber || s.tableId}</h4>
+                        <p className="mt-1 text-xs font-semibold text-brand-600">Branch: {s.branch.name}</p>
                         <p className="text-xs text-slate-500 mt-1">Customer: {s.customer?.fullName || "Walk-in"}</p>
                       </div>
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${

@@ -9,7 +9,6 @@ import type { ActiveSession, TableOption } from "@/features/sessions/types";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
-import { fetchBranches } from "@/lib/api/branch";
 import { toast } from "@/lib/toast";
 
 interface SwitchTableState {
@@ -45,8 +44,7 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pendingEndSessionId, setPendingEndSessionId] = useState<string | null>(null);
-  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<string>("all");
+  const selectedBranchId = user?.branchId ?? "";
 
   const strings = {
     en: {
@@ -113,7 +111,7 @@ export default function SessionsPage() {
 
     setError("");
     try {
-      const effectiveBranchId = selectedBranchId === "all" ? undefined : selectedBranchId;
+      const effectiveBranchId = selectedBranchId;
       const [active, paused] = await Promise.all([
         sessionApi.active(effectiveBranchId),
         sessionApi.paused(effectiveBranchId),
@@ -131,17 +129,6 @@ export default function SessionsPage() {
       void load();
     }
   }, [authLoading, isAuthenticated, load]);
-
-  useEffect(() => {
-    if (!isOwner || authLoading || !isAuthenticated) return;
-
-    fetchBranches({ limit: 100 })
-      .then((result) => {
-        const nextBranches = result.branches ?? [];
-        setBranches(nextBranches.map((branch) => ({ id: branch.id, name: branch.name || "Unnamed branch" })));
-      })
-      .catch(() => setBranches([]));
-  }, [authLoading, isAuthenticated, isOwner]);
 
   async function action(id: string, nextAction: "pause" | "resume" | "end") {
     try {
@@ -247,23 +234,6 @@ export default function SessionsPage() {
         </button>
       </div>
 
-      {isOwner && branches.length > 0 && (
-        <div className="mt-4 flex items-center gap-2">
-          <label className="text-sm font-medium text-slate-700">Branch</label>
-          <select
-            value={selectedBranchId}
-            onChange={(event) => setSelectedBranchId(event.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-          >
-            <option value="all">All Branches</option>
-            {branches.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       {loading && <p className="mt-10">{t.loadingSessions}</p>}
 

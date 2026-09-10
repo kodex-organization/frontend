@@ -11,6 +11,7 @@ export interface SubscriptionPlan {
 export interface TenantBranch {
   id: string;
   name: string;
+  isActive: boolean;
   address?: string | null;
   tablesCount?: number;
   activeSessionsCount?: number;
@@ -128,6 +129,12 @@ export const TenancyApi = {
       method: "PATCH",
       body: JSON.stringify({ status, reason, forceOverride, forceReason }),
     }),
+
+  updateTenantBranchStatus: (tenantId: string, branchId: string, status: "active" | "suspended") =>
+    platformAdminFetch<{ id: string; tenantId: string; isActive: boolean }>(
+      `/super-admin/tenants/${tenantId}/branches/${branchId}/status`,
+      { method: "PATCH", body: JSON.stringify({ status }) },
+    ),
 
   terminateTenant: (id: string, forceOverride?: boolean, forceReason?: string) =>
     platformAdminFetch<Tenant>(`/super-admin/tenants/${id}`, {

@@ -55,6 +55,9 @@ export function getQueueCount() {
 }
 
 export async function triggerSyncPush(): Promise<{ pushedCount: number }> {
+  const version = tokenStorage.getSessionVersion();
+  const context = tokenStorage.getAccessContext();
+  if (!context) return { pushedCount: 0 };
   const changes = getSyncQueue();
   if (changes.length === 0) return { pushedCount: 0 };
 
@@ -75,6 +78,9 @@ export async function triggerSyncPush(): Promise<{ pushedCount: number }> {
     },
   );
 
+  if (tokenStorage.getSessionVersion() !== version || !tokenStorage.getAccessContext()) {
+    return { pushedCount: 0 };
+  }
   clearSyncQueue();
   return { pushedCount: response.processed ?? response.acceptedChanges?.length ?? changes.length };
 }

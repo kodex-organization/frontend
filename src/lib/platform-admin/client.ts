@@ -1,6 +1,7 @@
 import { env } from "@/config/env";
 import { ApiError } from "@/lib/api/client";
-import { platformAdminStorage } from "./session";
+import { platformAdminStorage, decodePlatformAdminAccessToken, PLATFORM_ADMIN_SESSION_CLEARED_EVENT, PLATFORM_ADMIN_SESSION_REPLACED_EVENT } from "./session";
+import { createSessionRefresh } from '@/lib/auth/session-refresh';
 
 interface Envelope<T> {
   success: boolean;
@@ -10,7 +11,6 @@ interface Envelope<T> {
 
 interface PlatformAdminTokens {
   accessToken: string;
-  refreshToken?: string;
   expiresIn: string;
 }
 
@@ -18,8 +18,6 @@ interface PlatformAdminRequestOptions extends RequestInit {
   skipAuthRetry?: boolean;
   skipPlatformAuth?: boolean;
 }
-
-let refreshInFlight: Promise<boolean> | null = null;
 
 function getApiBaseUrl() {
   if (typeof window === "undefined") return env.NEXT_PUBLIC_API_URL;
@@ -58,44 +56,37 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return body.data;
 }
 
-export async function refreshPlatformAdminAccessToken(): Promise<boolean> {
-  if (refreshInFlight) return refreshInFlight;
-
-  const request = (async () => {
-    try {
-      const storedRefreshToken = platformAdminStorage.getRefreshToken();
+export const refreshPlatformAdminAccessToken = createSessionRefresh(
+  {
+    lockName: 'cuecloud:platform-admin-refresh',
+    getVersion: () => platformAdminStorage.getSessionVersion(),
+    getToken: () => platformAdminStorage.getAccessToken(),
+    setToken: (token) => {
+      const admin = platformAdminStorage.getAdmin();
+      if (admin && decodePlatformAdminAccessToken(token)?.platformAdminId !== admin.id) {
+        throw new Error('Refreshed token does not belong to the current administrator');
+      }
+      platformAdminStorage.setAccessToken(token);
+    },
+    clear: () => platformAdminStorage.clear(),
+    changeEvents: [PLATFORM_ADMIN_SESSION_CLEARED_EVENT, PLATFORM_ADMIN_SESSION_REPLACED_EVENT],
+  },
+  async (signal) => {
       const response = await fetch(
         `${getApiBaseUrl()}/super-admin/auth/refresh`,
         {
+          signal,
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify(
-            storedRefreshToken ? { refreshToken: storedRefreshToken } : {},
-          ),
+          body: JSON.stringify({}),
         },
       );
-      if (!response.ok) return false;
+      if (!response.ok) return { unauthorized: response.status === 401 || response.status === 403 };
       const tokens = await parseResponse<PlatformAdminTokens>(response);
-      platformAdminStorage.setAccessToken(tokens.accessToken);
-      if (tokens.refreshToken) {
-        platformAdminStorage.setRefreshToken(tokens.refreshToken);
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  })();
-
-  refreshInFlight = request;
-  try {
-    const refreshed = await request;
-    if (!refreshed) platformAdminStorage.clear();
-    return refreshed;
-  } finally {
-    if (refreshInFlight === request) refreshInFlight = null;
-  }
-}
+      return { accessToken: tokens.accessToken };
+  },
+);
 
 export async function platformAdminFetch<T>(
   path: string,
@@ -106,10 +97,19 @@ export async function platformAdminFetch<T>(
     skipPlatformAuth,
     ...requestOptions
   } = options;
+  const version = platformAdminStorage.getSessionVersion();
+  const assertCurrentSession = () => {
+    if (!skipPlatformAuth && platformAdminStorage.getSessionVersion() !== version) {
+      throw new ApiError('Your session changed. Please try again.', 401, 'SESSION_CHANGED');
+    }
+  };
+  let sentToken: string | null = null;
   const doFetch = () => {
+    assertCurrentSession();
     const accessToken = skipPlatformAuth
       ? null
       : platformAdminStorage.getAccessToken();
+    sentToken = accessToken;
     return fetch(`${getApiBaseUrl()}${path}`, {
       ...requestOptions,
       credentials: "include",
@@ -134,13 +134,15 @@ export async function platformAdminFetch<T>(
     );
   }
 
+  assertCurrentSession();
   if (
     response.status === 401 &&
     platformAdminStorage.getAccessToken() &&
     !skipAuthRetry &&
     !skipPlatformAuth
   ) {
-    const refreshed = await refreshPlatformAdminAccessToken();
+    const refreshed = platformAdminStorage.getAccessToken() !== sentToken || await refreshPlatformAdminAccessToken();
+    assertCurrentSession();
     if (refreshed) {
       try {
         response = await doFetch();
@@ -151,9 +153,12 @@ export async function platformAdminFetch<T>(
           "NETWORK_ERROR",
         );
       }
-      if (response.status === 401) platformAdminStorage.clear();
+      assertCurrentSession();
+      if (response.status === 401 && platformAdminStorage.getAccessToken() === sentToken) platformAdminStorage.clear();
     }
   }
 
-  return parseResponse<T>(response);
+  const data = await parseResponse<T>(response);
+  assertCurrentSession();
+  return data;
 }

@@ -33,8 +33,8 @@ const platformAdminAccessContextSchema = z.object({
 });
 
 export const PLATFORM_ADMIN_STORAGE_KEYS = {
+  version: 'cuecloud_platform_admin_session_version',
   accessToken: "cuecloud_platform_admin_access_token",
-  refreshToken: "cuecloud_platform_admin_refresh_token",
   admin: "cuecloud_platform_admin_user",
 } as const;
 
@@ -70,6 +70,9 @@ export function decodePlatformAdminAccessToken(
 }
 
 export const platformAdminStorage = {
+  getSessionVersion(): string | null {
+    return typeof window === 'undefined' ? null : window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.version);
+  },
   getAccessToken(): string | null {
     if (typeof window === "undefined") return null;
     const token = window.localStorage.getItem(
@@ -85,19 +88,6 @@ export const platformAdminStorage = {
     window.localStorage.setItem(
       PLATFORM_ADMIN_STORAGE_KEYS.accessToken,
       accessToken,
-    );
-  },
-  getRefreshToken(): string | null {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem(
-      PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
-    );
-  },
-  setRefreshToken(refreshToken: string): void {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(
-      PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
-      refreshToken,
     );
   },
   getAdmin(): PlatformAdmin | null {
@@ -120,11 +110,7 @@ export const platformAdminStorage = {
       JSON.stringify(parsed),
     );
   },
-  replaceSession(
-    accessToken: string,
-    admin: PlatformAdmin,
-    refreshToken?: string,
-  ): void {
+  replaceSession(accessToken: string, admin: PlatformAdmin): void {
     if (typeof window === "undefined") return;
     const context = decodePlatformAdminAccessToken(accessToken);
     const parsedAdmin = platformAdminSchema.parse(admin);
@@ -135,12 +121,10 @@ export const platformAdminStorage = {
     const previousToken = window.localStorage.getItem(
       PLATFORM_ADMIN_STORAGE_KEYS.accessToken,
     );
-    const previousRefreshToken = window.localStorage.getItem(
-      PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
-    );
     const previousAdmin = window.localStorage.getItem(
       PLATFORM_ADMIN_STORAGE_KEYS.admin,
     );
+    const previousVersion = window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.version);
 
     try {
       window.localStorage.setItem(
@@ -151,13 +135,10 @@ export const platformAdminStorage = {
         PLATFORM_ADMIN_STORAGE_KEYS.accessToken,
         accessToken,
       );
-      if (refreshToken) {
-        window.localStorage.setItem(
-          PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
-          refreshToken,
-        );
-      }
+      window.localStorage.setItem(PLATFORM_ADMIN_STORAGE_KEYS.version, crypto.randomUUID());
     } catch (error) {
+      if (previousVersion === null) window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.version);
+      else window.localStorage.setItem(PLATFORM_ADMIN_STORAGE_KEYS.version, previousVersion);
       if (previousAdmin === null) {
         window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.admin);
       } else {
@@ -176,16 +157,6 @@ export const platformAdminStorage = {
           previousToken,
         );
       }
-      if (previousRefreshToken === null) {
-        window.localStorage.removeItem(
-          PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
-        );
-      } else {
-        window.localStorage.setItem(
-          PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
-          previousRefreshToken,
-        );
-      }
       throw error;
     }
 
@@ -193,14 +164,12 @@ export const platformAdminStorage = {
   },
   clear(): void {
     if (typeof window === "undefined") return;
+    window.localStorage.setItem(PLATFORM_ADMIN_STORAGE_KEYS.version, crypto.randomUUID());
     const hadSession =
       window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.accessToken) !==
         null ||
-      window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.refreshToken) !==
-        null ||
       window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.admin) !== null;
     window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.accessToken);
-    window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.refreshToken);
     window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.admin);
     if (hadSession) {
       window.dispatchEvent(new Event(PLATFORM_ADMIN_SESSION_CLEARED_EVENT));

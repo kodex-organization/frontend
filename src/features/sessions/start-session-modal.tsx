@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
-import { fetchBranches } from "@/lib/api/branch";
+import { useAuth } from "@/lib/auth/auth-context";
 import { toast } from "@/lib/toast";
-import { getActiveOfflineBranchId } from "@/lib/sync/offline-db";
 
 import { sessionApi } from "./session-api";
 import type { ActiveSession, Customer, TableOption } from "./types";
@@ -38,8 +37,8 @@ export function StartSessionModal({
   onStarted,
 }: StartSessionModalProps) {
   const isOnline = useOnlineStatus();
-  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const { user } = useAuth();
+  const selectedBranchId = user?.branchId ?? "";
   const [tables, setTables] = useState<TableOption[]>([]);
   const [query, setQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -48,25 +47,6 @@ export function StartSessionModal({
   const [walkIn, setWalkIn] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    if (!isOnline) {
-      setSelectedBranchId(getActiveOfflineBranchId() || "offline-branch");
-    }
-    void fetchBranches({ limit: 100 })
-      .then((result) => {
-        const list = result.branches.map((branch) => ({
-          id: branch.id,
-          name: branch.name || "Unnamed branch",
-        }));
-        setBranches(list);
-        if (list.length > 0) {
-          setSelectedBranchId((current) => current || list[0].id);
-        }
-      })
-      .catch(() => setBranches([]));
-  }, [open]);
 
   useEffect(() => {
     if (!open || !selectedBranchId) return;
@@ -172,28 +152,7 @@ export function StartSessionModal({
           </button>
         </div>
 
-        <label className="mt-5 block text-sm font-medium">
-          Branch
-          <select
-            className="mt-1 w-full rounded-lg border p-3"
-            value={selectedBranchId}
-            onChange={(event) => {
-              setSelectedBranchId(event.target.value);
-              setTableId("");
-            }}
-            disabled={busy}
-          >
-            {branches.length === 0 ? (
-              <option value="">No branches available</option>
-            ) : (
-              branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))
-            )}
-          </select>
-        </label>
+        <p className="mt-5 text-sm text-slate-500">This session will start in the active branch shown in the header.</p>
 
         <label className="mt-4 block text-sm font-medium">
           Table

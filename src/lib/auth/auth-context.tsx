@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { loginWithPassword, loginWithPin, logoutRequest, updateLanguage } from "@/features/auth";
 import {
   AUTH_SESSION_CLEARED_EVENT,
+  AUTH_SESSION_REPLACED_EVENT,
+  AUTH_STORAGE_KEYS,
   redirectPathForRoles,
   tokenStorage,
   type SessionUser,
@@ -36,27 +38,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const clearSession = () => {
       setUser(null);
       setIsLoading(false);
-      router.replace("/login");
     };
 
     const syncSessionFromStorage = () => {
       const storedUser = tokenStorage.getUser();
       const storedTokens = tokenStorage.get();
 
-      if (storedUser && storedTokens?.accessToken) {
+      const context = tokenStorage.getAccessContext();
+      if (storedUser && storedTokens?.accessToken &&
+        context?.userId === storedUser.id && context.branchId === storedUser.branchId) {
         setUser(storedUser);
         return;
       }
 
-      if (storedUser || storedTokens) {
-        tokenStorage.clear();
-      } else {
-        setUser(null);
+      // Reading another tab's session must never mutate shared storage.
+      setUser(null);
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea && event.storageArea !== window.localStorage) return;
+      // replaceSession/clear publish version last. Earlier per-field events
+      // can arrive while another tab is still writing the session.
+      if (event.key === null || event.key === AUTH_STORAGE_KEYS.version) {
+        syncSessionFromStorage();
+      } else if (event.key === AUTH_STORAGE_KEYS.user) {
+        // Language/profile updates do not replace the session version.
+        const storedUser = tokenStorage.getUser();
+        const context = tokenStorage.getAccessContext();
+        if (storedUser && context?.userId === storedUser.id &&
+          context.branchId === storedUser.branchId) setUser(storedUser);
       }
     };
 
     window.addEventListener(AUTH_SESSION_CLEARED_EVENT, clearSession);
-    window.addEventListener("storage", syncSessionFromStorage);
+    window.addEventListener(AUTH_SESSION_REPLACED_EVENT, syncSessionFromStorage);
+    window.addEventListener("storage", onStorage);
 
     // A user record without an access token is not an authenticated session.
     syncSessionFromStorage();
@@ -64,7 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       window.removeEventListener(AUTH_SESSION_CLEARED_EVENT, clearSession);
-      window.removeEventListener("storage", syncSessionFromStorage);
+      window.removeEventListener(AUTH_SESSION_REPLACED_EVENT, syncSessionFromStorage);
+      window.removeEventListener("storage", onStorage);
     };
   }, [router]);
 
@@ -106,11 +123,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
+    const version = tokenStorage.getSessionVersion();
     try {
       await logoutRequest();
     } catch {
       // Best-effort — clear local session regardless of server response.
     } finally {
+      if (tokenStorage.getSessionVersion() !== version && tokenStorage.get()?.accessToken) return;
       tokenStorage.clear();
       setUser(null);
       router.push("/login");

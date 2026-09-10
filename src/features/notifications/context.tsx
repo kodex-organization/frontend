@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { ApiError } from "@/lib/api/client";
 import { getActiveOfflineBranchId } from "@/lib/sync/offline-db";
+import { useAuth } from "@/lib/auth/auth-context";
 import { getNotificationPreferences, getNotifications, markAllNotificationsRead as apiMarkAllNotificationsRead, markNotificationRead, registerFcmToken, revokeFcmToken, saveNotificationPreferences, type NotificationPreference } from "./api";
 import { flushNotificationQueue, queueNotificationPreferences, queueNotificationRead, queueNotificationsReadAll } from "./offline";
 import { isUnread, type Notification } from "./types";
@@ -45,6 +46,9 @@ const defaultPreferences: NotificationPreference = {
 };
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const authScope = `${user?.id}:${user?.branchId}`;
+  const previousAuthScope = useRef(authScope);
   const online = useOnlineStatus();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,6 +120,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setPreferencesError(null);
     await Promise.all([refresh(), loadPreferences()]);
   }, [loadPreferences, refresh]);
+
+  useEffect(() => {
+    if (previousAuthScope.current === authScope) return;
+    previousAuthScope.current = authScope;
+    void resetForBranch();
+  }, [authScope, resetForBranch]);
 
   const savePreferences = useCallback(async (nextPreferences: NotificationPreference) => {
     setPreferencesSaving(true);

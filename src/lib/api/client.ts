@@ -1,5 +1,6 @@
 import { env } from "@/config/env";
-import { tokenStorage } from "@/lib/auth/session";
+import { tokenStorage, AUTH_SESSION_CLEARED_EVENT, AUTH_SESSION_REPLACED_EVENT } from "@/lib/auth/session";
+import { createSessionRefresh } from '@/lib/auth/session-refresh';
 
 export class ApiError extends Error {
   constructor(
@@ -18,8 +19,6 @@ interface Envelope<T> {
   data: T;
   error: { message: string; code?: string; details?: unknown } | string | null;
 }
-
-let refreshInFlight: Promise<boolean> | null = null;
 
 const getApiBaseUrl = () => {
   if (typeof window === "undefined") return env.NEXT_PUBLIC_API_URL;
@@ -42,30 +41,30 @@ const getApiBaseUrl = () => {
  * in, or it expired/was revoked), the backend just 401s and we clear
  * whatever stale access token we had.
  */
-async function refreshAccessToken(): Promise<boolean> {
-  if (refreshInFlight) return refreshInFlight;
-
-  const refreshRequest = (async () => {
-    try {
-      const storedTokens = tokenStorage.get();
+const refreshAccessToken = createSessionRefresh(
+  {
+    lockName: 'cuecloud:tenant-refresh',
+    getVersion: () => tokenStorage.getSessionVersion(),
+    getToken: () => tokenStorage.get()?.accessToken ?? null,
+    setToken: (accessToken) => tokenStorage.setRefreshedToken(accessToken),
+    clear: () => tokenStorage.clear(),
+    changeEvents: [AUTH_SESSION_CLEARED_EVENT, AUTH_SESSION_REPLACED_EVENT],
+  },
+  async (signal) => {
       const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
+        signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(
-          storedTokens?.refreshToken
-            ? { refreshToken: storedTokens.refreshToken }
-            : {},
-        ),
+        body: JSON.stringify({}),
       });
 
       if (!response.ok) {
-        return false;
+        return { unauthorized: response.status === 401 || response.status === 403 };
       }
 
       const body = (await response.json().catch(() => null)) as Envelope<{
         accessToken: string;
-        refreshToken?: string;
         expiresIn: string;
       }> | null;
 
@@ -74,39 +73,28 @@ async function refreshAccessToken(): Promise<boolean> {
         body.success === false ||
         !body.data?.accessToken
       ) {
-        return false;
+        return {};
       }
 
-      tokenStorage.set(body.data);
-      return true;
-    } catch {
-      return false;
-    }
-  })();
-
-  refreshInFlight = refreshRequest;
-
-  try {
-    const refreshed = await refreshRequest;
-
-    if (!refreshed) {
-      tokenStorage.clear();
-    }
-
-    return refreshed;
-  } finally {
-    if (refreshInFlight === refreshRequest) {
-      refreshInFlight = null;
-    }
-  }
-}
+      return { accessToken: body.data.accessToken };
+  },
+);
 
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit & { skipAuthRetry?: boolean },
 ): Promise<T> {
+  const version = tokenStorage.getSessionVersion();
+  const assertCurrentSession = () => {
+    if (!options?.skipAuthRetry && tokenStorage.getSessionVersion() !== version) {
+      throw new ApiError('Your session changed. Please try again.', 401, 'SESSION_CHANGED');
+    }
+  };
+  let sentToken: string | undefined;
   const doFetch = () => {
+    assertCurrentSession();
     const latestTokens = tokenStorage.get();
+    sentToken = latestTokens?.accessToken;
     const accessContext = tokenStorage.getAccessContext();
 
     return fetch(`${getApiBaseUrl()}${path}`, {
@@ -142,6 +130,14 @@ export async function apiFetch<T>(
     );
   }
 
+  assertCurrentSession();
+  // An open page can retain its user after the stored token disappears.
+  // End that stale session so AuthProvider returns to login instead of
+  // leaving dashboard and branch requests stuck on "Missing bearer token".
+  if (response.status === 401 && !options?.skipAuthRetry && !tokenStorage.get()?.accessToken) {
+    tokenStorage.clear({ notifyIfEmpty: true });
+    throw new ApiError('Your session has ended. Please log in again.', 401, 'UNAUTHORIZED');
+  }
   // No client-held refresh token to gate on anymore — if there's a valid
   // refresh cookie, /auth/refresh will succeed; if not, it 401s harmlessly
   // and we fall through to the original response's error below.
@@ -150,7 +146,8 @@ export async function apiFetch<T>(
     tokenStorage.get()?.accessToken &&
     !options?.skipAuthRetry
   ) {
-    const refreshed = await refreshAccessToken();
+    const refreshed = tokenStorage.get()?.accessToken !== sentToken || await refreshAccessToken();
+    assertCurrentSession();
 
     if (refreshed) {
       try {
@@ -163,13 +160,21 @@ export async function apiFetch<T>(
         );
       }
 
-      if (response.status === 401) {
+      assertCurrentSession();
+      if (response.status === 401 && tokenStorage.get()?.accessToken === sentToken) {
         tokenStorage.clear();
       }
     }
   }
 
+  // DELETE endpoints return 204 with no JSON envelope after a successful write.
+  if (response.status === 204) {
+    assertCurrentSession();
+    return undefined as T;
+  }
+
   const body = (await response.json().catch(() => null)) as Envelope<T> | null;
+  assertCurrentSession();
 
   if (!response.ok || !body || body.success === false) {
     const errorMessage =
@@ -212,8 +217,17 @@ function fileNameFromDisposition(value: string | null) {
 }
 
 export async function apiDownload(path: string): Promise<ApiDownloadResult> {
+  const version = tokenStorage.getSessionVersion();
+  const assertCurrentSession = () => {
+    if (tokenStorage.getSessionVersion() !== version) {
+      throw new ApiError('Your session changed. Please try again.', 401, 'SESSION_CHANGED');
+    }
+  };
+  let sentToken: string | undefined;
   const doFetch = () => {
+    assertCurrentSession();
     const tokens = tokenStorage.get();
+    sentToken = tokens?.accessToken;
     const context = tokenStorage.getAccessContext();
     return fetch(`${getApiBaseUrl()}${path}`, {
       method: "GET",
@@ -239,8 +253,10 @@ export async function apiDownload(path: string): Promise<ApiDownloadResult> {
     );
   }
 
+  assertCurrentSession();
   if (response.status === 401 && tokenStorage.get()?.accessToken) {
-    const refreshed = await refreshAccessToken();
+    const refreshed = tokenStorage.get()?.accessToken !== sentToken || await refreshAccessToken();
+    assertCurrentSession();
     if (refreshed) {
       try {
         response = await doFetch();
@@ -251,7 +267,8 @@ export async function apiDownload(path: string): Promise<ApiDownloadResult> {
           "NETWORK_ERROR",
         );
       }
-      if (response.status === 401) tokenStorage.clear();
+      assertCurrentSession();
+      if (response.status === 401 && tokenStorage.get()?.accessToken === sentToken) tokenStorage.clear();
     }
   }
 

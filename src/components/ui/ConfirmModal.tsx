@@ -12,6 +12,7 @@ export interface ConfirmModalProps {
   cancelText?: string;
   variant?: "danger" | "warning" | "primary" | "info";
   isLoading?: boolean;
+  confirmDisabled?: boolean;
   children?: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
@@ -25,6 +26,7 @@ export function ConfirmModal({
   cancelText = "Cancel",
   variant = "primary",
   isLoading = false,
+  confirmDisabled = false,
   children,
   onConfirm,
   onCancel,
@@ -107,6 +109,7 @@ export function ConfirmModal({
             size="sm"
             onClick={onConfirm}
             isLoading={isLoading}
+            disabled={confirmDisabled || isLoading}
           >
             {confirmText}
           </Button>

@@ -49,7 +49,7 @@ import {
 import { AUTHENTICATED_HEARTBEAT_EVENT } from "@/components/sync/authenticated-heartbeat";
 import { SYNC_STATUS_EVENT } from "@/lib/sync/sync-manager";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
-import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { useConnectionStatus, connectionLabel, checkServerConnection } from "@/lib/connectivity/online-status";
 import { useAuth } from "@/lib/auth/auth-context";
 import { tokenStorage } from "@/lib/auth/session";
 import { getQueueCount, triggerSyncPush } from "@/lib/offline-sync";
@@ -67,12 +67,12 @@ function formatDateTime(value: string | null) {
   }).format(date);
 }
 
-function relativeTime(value: string | null) {
+function relativeTime(value: string | null, now = Date.now()) {
   if (!value) return "Never";
   const time = new Date(value).getTime();
   if (Number.isNaN(time)) return "Never";
 
-  const seconds = Math.round((time - Date.now()) / 1000);
+  const seconds = Math.round((time - now) / 1000);
   const ranges: Array<[number, Intl.RelativeTimeFormatUnit]> = [
     [60, "second"],
     [60, "minute"],
@@ -161,7 +161,13 @@ function itemDescription(item: PendingSyncItem) {
 
 export default function SyncStatusPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  const isOnline = useOnlineStatus();
+  const connectionStatus = useConnectionStatus();
+  const isOnline = connectionStatus === 'online';
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, []);
   const accessContext = tokenStorage.getAccessContext();
   const syncDeviceId = isAuthenticated ? accessContext?.deviceId : null;
   const syncBranchId = isAuthenticated ? user?.branchId : null;
@@ -191,6 +197,9 @@ export default function SyncStatusPage() {
     setError("");
 
     try {
+      if (await checkServerConnection() !== 'online') {
+        throw new Error('The sync server is unreachable. Pending changes remain on this device.');
+      }
       const time = await getServerTime();
       setServerTime(time.serverTime);
 
@@ -213,7 +222,7 @@ export default function SyncStatusPage() {
     setNotice("");
 
     try {
-      if (!navigator.onLine) throw new Error("You are currently offline. Operations remain stored locally.");
+      if (await checkServerConnection() !== 'online') throw new Error('The sync server is unreachable. Operations remain stored locally.');
       if (!syncDeviceId) throw new Error("This device is not configured for synchronization.");
 
       if (getQueueCount() > 0) {
@@ -292,7 +301,7 @@ export default function SyncStatusPage() {
     setNotice("");
 
     try {
-      if (!navigator.onLine) throw new Error("Reconnect to retrieve latest server changes.");
+      if (await checkServerConnection() !== 'online') throw new Error('Reconnect to retrieve latest server changes.');
       if (!syncDeviceId) throw new Error("This device is not configured for synchronization.");
 
       const response = await pullSyncChanges(syncDeviceId, lastSynced ?? undefined);
@@ -407,7 +416,7 @@ export default function SyncStatusPage() {
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
-              {isOnline ? "Network available" : "Offline mode"}
+              {connectionLabel(connectionStatus)}
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-500">
@@ -474,7 +483,7 @@ export default function SyncStatusPage() {
               <Check size={16} />
             </span>
           </div>
-          <p className="text-sm font-bold text-slate-900 mt-2">{relativeTime(lastSynced)}</p>
+          <p className="text-sm font-bold text-slate-900 mt-2">{relativeTime(lastSynced, now)}</p>
           <p className="text-[11px] text-slate-500 mt-1">{formatDateTime(lastSynced)}</p>
         </div>
 
@@ -485,7 +494,7 @@ export default function SyncStatusPage() {
               <Wifi size={16} />
             </span>
           </div>
-          <p className="text-sm font-bold text-slate-900 mt-2">{relativeTime(lastHeartbeat)}</p>
+          <p className="text-sm font-bold text-slate-900 mt-2">{isOnline ? relativeTime(lastHeartbeat, now) : connectionLabel(connectionStatus)}</p>
           <p className="text-[11px] text-slate-500 mt-1">{formatDateTime(lastHeartbeat)}</p>
         </div>
       </div>
@@ -513,11 +522,11 @@ export default function SyncStatusPage() {
           <button
             type="button"
             onClick={() => void checkConnection(true)}
-            disabled={isBusy || !isOnline}
+            disabled={isBusy}
             className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
           >
             <Wifi size={14} />
-            <span>Ping Heartbeat</span>
+            <span>Check Connection</span>
           </button>
 
           {syncedCount > 0 && (

@@ -11,6 +11,7 @@ import {
   getServerTime,
 } from "@/services/sync.service";
 import { tokenStorage } from "@/lib/auth/session";
+import { getConnectionStatus } from '@/lib/connectivity/online-status';
 import { triggerSyncPush } from "@/lib/offline-sync";
 
 export const SYNC_STATUS_EVENT = "cuecloud:sync-status-changed";
@@ -24,15 +25,22 @@ export async function performAutoSync(): Promise<{
   errors: number;
 }> {
   if (isSyncing) return { pushed: 0, pulled: 0, errors: 0 };
-  if (typeof window === "undefined" || !navigator.onLine) {
+  if (typeof window === "undefined" || !navigator.onLine || getConnectionStatus() === 'offline') {
     return { pushed: 0, pulled: 0, errors: 0 };
   }
 
   const accessContext = tokenStorage.getAccessContext();
   const branchId = getActiveOfflineBranchId();
   const deviceId = accessContext?.deviceId;
+  const version = tokenStorage.getSessionVersion();
+  const sessionIsCurrent = () => {
+    const current = tokenStorage.getAccessContext();
+    return getConnectionStatus() !== 'offline' && tokenStorage.getSessionVersion() === version && Boolean(current) &&
+      current?.userId === accessContext?.userId && current?.tenantId === accessContext?.tenantId &&
+      current?.branchId === branchId && current?.deviceId === deviceId;
+  };
 
-  if (!deviceId || !branchId) {
+  if (!deviceId || !branchId || !sessionIsCurrent()) {
     return { pushed: 0, pulled: 0, errors: 0 };
   }
 
@@ -40,6 +48,7 @@ export async function performAutoSync(): Promise<{
   let pushedCount = 0;
   let pulledCount = 0;
   let errorCount = 0;
+  const result = () => ({ pushed: pushedCount, pulled: pulledCount, errors: errorCount });
 
   try {
     try {
@@ -50,6 +59,7 @@ export async function performAutoSync(): Promise<{
     }
 
     // 1. Send Heartbeat
+    if (!sessionIsCurrent()) return result();
     try {
       await sendHeartbeat(deviceId, branchId);
     } catch {
@@ -57,7 +67,9 @@ export async function performAutoSync(): Promise<{
     }
 
     // 2. Push Pending Offline Operations
+    if (!sessionIsCurrent()) return result();
     const pendingItems = await getPendingSyncItems();
+    if (!sessionIsCurrent()) return result();
     const itemsToPush = pendingItems.filter(
       (item) => item.status === "pending" || item.status === "failed",
     );
@@ -81,6 +93,7 @@ export async function performAutoSync(): Promise<{
             .map((change) => change.idempotencyKey)
             .filter(Boolean),
         );
+        if (!sessionIsCurrent()) return result();
         const rejectedByKey = new Map(
           response.rejectedChanges.map((change) => [
             change.idempotencyKey,
@@ -94,12 +107,14 @@ export async function performAutoSync(): Promise<{
           .filter((id): id is number => typeof id === "number");
 
         await markItemsAsSynced(acceptedIds);
+        if (!sessionIsCurrent()) return result();
         pushedCount = acceptedIds.length;
 
         for (const item of itemsToPush.filter(
           (entry) => !acceptedKeys.has(entry.idempotencyKey),
         )) {
           if (typeof item.id === "number") {
+            if (!sessionIsCurrent()) return result();
             const rejection = rejectedByKey.get(item.idempotencyKey);
             await markItemAsFailed(
               item.id,
@@ -115,14 +130,17 @@ export async function performAutoSync(): Promise<{
     }
 
     // 3. Pull Recent Changes
+    if (!sessionIsCurrent()) return result();
     try {
       const pullResponse = await pullSyncChanges(deviceId);
+      if (!sessionIsCurrent()) return result();
       pulledCount = pullResponse.changeCount;
     } catch {
       // Pull best effort
     }
 
     // Dispatch global event for status listeners
+    if (!sessionIsCurrent()) return result();
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent(SYNC_STATUS_EVENT, {
@@ -147,11 +165,12 @@ export function initSyncManager() {
   window.addEventListener("online", handleOnline);
 
   if (syncInterval) clearInterval(syncInterval);
-  syncInterval = setInterval(() => {
+  const interval = setInterval(() => {
     if (navigator.onLine) {
       void performAutoSync();
     }
   }, 45_000); // Check and sync every 45s if online
+  syncInterval = interval;
 
   // Trigger immediate sync on init if online
   if (navigator.onLine) {
@@ -160,6 +179,7 @@ export function initSyncManager() {
 
   return () => {
     window.removeEventListener("online", handleOnline);
-    if (syncInterval) clearInterval(syncInterval);
+    clearInterval(interval);
+    if (syncInterval === interval) syncInterval = null;
   };
 }

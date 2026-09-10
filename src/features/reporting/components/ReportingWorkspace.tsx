@@ -208,7 +208,7 @@ const uuidPattern =
 export default function ReportingWorkspace() {
   const { user } = useAuth();
   const [tab, setTab] = useState<ReportTab>("z-report");
-  const [branchId, setBranchId] = useState(user?.branchId ?? "");
+  const branchId = user?.branchId ?? "";
   const [date, setDate] = useState(today);
 
   const [fromDate, setFromDate] = useState(() => getPresetRange("30d").from);
@@ -263,10 +263,6 @@ export default function ReportingWorkspace() {
   }, [user?.roles]);
 
   const selected = useMemo(() => tabs.find((item) => item.id === tab)!, [tab]);
-
-  useEffect(() => {
-    if (user?.branchId) setBranchId((current) => current || user.branchId);
-  }, [user?.branchId]);
 
   useEffect(() => {
     const stillVisible = visibleTabs.some((item) => item.id === tab);
@@ -628,12 +624,11 @@ export default function ReportingWorkspace() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 items-end">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                Branch ID
+                Branch scope
               </label>
               <input
-                value={branchId}
-                onChange={(event) => setBranchId(event.target.value)}
-                placeholder="Enter branch UUID"
+                value="Active branch (header)"
+                readOnly
                 className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-sm font-mono text-slate-800 transition outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
               />
             </div>

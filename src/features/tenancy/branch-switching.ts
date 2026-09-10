@@ -1,11 +1,5 @@
-import { apiFetch } from "@/lib/api/client";
-import {
-  redirectPathForRoles,
-  tokenStorage,
-  type SessionTokens,
-  type SessionUser,
-  type UserRole,
-} from "@/lib/auth/session";
+import { ApiError, apiFetch } from "@/lib/api/client";
+import { tokenStorage, redirectPathForRoles, type SessionTokens, type SessionUser, type UserRole } from "@/lib/auth/session";
 
 export const ASSIGNED_BRANCHES_CHANGED_EVENT =
   "cuecloud:assigned-branches-changed";
@@ -36,12 +30,9 @@ export function notifyAssignedBranchesChanged() {
 }
 
 export function requestBranchSwitch(branchId: string) {
-  const refreshToken = tokenStorage.get()?.refreshToken;
   return apiFetch<BranchSwitchSession>("/auth/switch-branch", {
     method: "POST",
-    body: JSON.stringify(
-      refreshToken ? { branchId, refreshToken } : { branchId },
-    ),
+    body: JSON.stringify({ branchId }),
   });
 }
 
@@ -66,20 +57,28 @@ export async function completeBranchSwitch(
   branchId: string,
   dependencies: BranchSwitchDependencies,
 ): Promise<BranchSwitchCompletion> {
+  const originalVersion = tokenStorage.getSessionVersion();
   const session = await (dependencies.requestSwitch ?? requestBranchSwitch)(
     branchId,
   );
 
+  if (tokenStorage.getSessionVersion() !== originalVersion) {
+    throw new ApiError("Your session changed. Please try again.", 401, "SESSION_CHANGED");
+  }
+
   // This is intentionally synchronous: subsequent API calls must observe the
   // switched server-issued token and its matching public user together.
   dependencies.replaceSession(session.user, session);
+  const switchedVersion = tokenStorage.getSessionVersion();
 
   const maintenance = await Promise.allSettled([
     dependencies.reScopeOfflineData(currentUser.branchId, session.user.branchId),
     dependencies.refreshBranchState(),
   ]);
 
-  dependencies.navigate(redirectPathForRoles(session.user.roles));
+  if (tokenStorage.getSessionVersion() === switchedVersion) {
+    dependencies.navigate(redirectPathForRoles(session.user.roles));
+  }
 
   return {
     session,
