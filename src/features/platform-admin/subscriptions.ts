@@ -23,6 +23,7 @@ export interface SubscriptionPlan {
   price: number | string;
   billingCycle: BillingCycle;
   maxBranches: number;
+  tenantsCount?: number;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -133,13 +134,15 @@ export function setTenantSubscription(
 
 export function suspendTenantSubscription(
   tenantId: string,
-  gracePeriodEndsAt: string | null,
+  gracePeriodEndsAt?: string | null,
 ) {
   return platformAdminFetch<TenantSubscription>(
     `/super-admin/subscriptions/tenants/${tenantId}/suspend`,
     {
       method: "POST",
-      body: JSON.stringify({ gracePeriodEndsAt }),
+      body: JSON.stringify(
+        gracePeriodEndsAt !== undefined ? { gracePeriodEndsAt } : {},
+      ),
     },
   );
 }
@@ -157,3 +160,49 @@ export function cancelTenantSubscription(tenantId: string) {
     { method: "POST", body: JSON.stringify({}) },
   );
 }
+
+export interface SubscriptionMetrics {
+  expiringInNext7Days: number;
+  inGracePeriod: number;
+  recentFailedPayments: number;
+}
+
+export function getSubscriptionMetrics() {
+  return platformAdminFetch<SubscriptionMetrics>(
+    "/super-admin/subscriptions/metrics",
+  );
+}
+
+export function extendTenantTrial(tenantId: string, days: number = 14) {
+  return platformAdminFetch<TenantSubscription>(
+    `/super-admin/subscriptions/tenants/${tenantId}/extend-trial`,
+    {
+      method: "POST",
+      body: JSON.stringify({ days }),
+    },
+  );
+}
+
+export function updateTenantPaymentStatus(
+  tenantId: string,
+  paymentStatus: PaymentStatus,
+) {
+  return platformAdminFetch<TenantSubscription>(
+    `/super-admin/subscriptions/tenants/${tenantId}/payment-status`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ paymentStatus }),
+    },
+  );
+}
+
+export function moveTenantToGracePeriod(tenantId: string, days: number = 7) {
+  return platformAdminFetch<TenantSubscription>(
+    `/super-admin/subscriptions/tenants/${tenantId}/grace-period`,
+    {
+      method: "POST",
+      body: JSON.stringify({ days }),
+    },
+  );
+}
+

@@ -3,6 +3,7 @@
 import {
   CalendarClock,
   CheckCircle2,
+  Clock,
   CreditCard,
   Edit3,
   PauseCircle,
@@ -26,16 +27,21 @@ import {
   cancelTenantSubscription,
   createSubscriptionPlan,
   deleteSubscriptionPlan,
+  extendTenantTrial,
   filterSubscriptionPlans,
+  getSubscriptionMetrics,
   getTenantSubscription,
   listSubscriptionPlans,
+  moveTenantToGracePeriod,
   resumeTenantSubscription,
   setTenantSubscription,
   suspendTenantSubscription,
   updateSubscriptionPlan,
+  updateTenantPaymentStatus,
   validateTenantId,
   type BillingCycle,
   type PaymentStatus,
+  type SubscriptionMetrics,
   type SubscriptionPlan,
   type SubscriptionPlanInput,
   type TenantSubscription,
@@ -132,6 +138,9 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
   const [planSaving, setPlanSaving] = useState(false);
   const [planFeedback, setPlanFeedback] = useState<string | null>(null);
 
+  const [metrics, setMetrics] = useState<SubscriptionMetrics | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantInput, setTenantInput] = useState(initialTenantId || "");
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(initialTenantId || null);
@@ -146,24 +155,28 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
     null,
   );
   const [pendingPlanDelete, setPendingPlanDelete] = useState<SubscriptionPlan | null>(null);
+  const [planDeleting, setPlanDeleting] = useState(false);
   const [pendingSubscriptionAction, setPendingSubscriptionAction] = useState<"suspend" | "resume" | "cancel" | null>(null);
 
   const loadPlans = useCallback(async () => {
     setPlansLoading(true);
     setPlansError(null);
     try {
-      const [plansData, tenantsData] = await Promise.all([
+      const [plansData, tenantsData, fetchedMetrics] = await Promise.all([
         listSubscriptionPlans(),
         TenancyApi.listTenants().catch(() => []),
+        getSubscriptionMetrics().catch(() => null),
       ]);
       setPlans(plansData);
       setTenants(tenantsData);
+      if (fetchedMetrics) setMetrics(fetchedMetrics);
     } catch (error) {
       setPlansError(errorMessage(error, "Could not load subscription plans."));
     } finally {
       setPlansLoading(false);
     }
   }, []);
+
 
   useEffect(() => {
     void loadPlans();
@@ -222,6 +235,26 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
 
   const removePlan = async (plan: SubscriptionPlan) => {
     setPendingPlanDelete(plan);
+  };
+
+  const handleConfirmDeletePlan = async () => {
+    if (!pendingPlanDelete) return;
+    setPlanDeleting(true);
+    setPlansError(null);
+    setPlanFeedback(null);
+    try {
+      await deleteSubscriptionPlan(pendingPlanDelete.id);
+      if (editingPlanId === pendingPlanDelete.id) {
+        resetPlanForm();
+      }
+      setPendingPlanDelete(null);
+      await loadPlans();
+    } catch (error) {
+      setPlansError(errorMessage(error, "Could not delete the plan."));
+      setPendingPlanDelete(null);
+    } finally {
+      setPlanDeleting(false);
+    }
   };
 
   const loadTenantSubscriptionById = async (targetId: string) => {
@@ -307,6 +340,63 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
     setPendingSubscriptionAction(action);
   };
 
+  const handleExtendTrial = async () => {
+    if (!selectedTenantId) return;
+    setActionLoading(true);
+    setSubscriptionError(null);
+    setSubscriptionFeedback(null);
+    try {
+      const updated = await extendTenantTrial(selectedTenantId, 14);
+      setSubscription(updated);
+      setSubscriptionForm(subscriptionFormFromCurrent(updated));
+      setSubscriptionFeedback("Trial extended by 14 days.");
+      const updatedMetrics = await getSubscriptionMetrics().catch(() => null);
+      if (updatedMetrics) setMetrics(updatedMetrics);
+    } catch (error) {
+      setSubscriptionError(errorMessage(error, "Could not extend trial."));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUpdatePaymentStatus = async (status: PaymentStatus) => {
+    if (!selectedTenantId) return;
+    setActionLoading(true);
+    setSubscriptionError(null);
+    setSubscriptionFeedback(null);
+    try {
+      const updated = await updateTenantPaymentStatus(selectedTenantId, status);
+      setSubscription(updated);
+      setSubscriptionForm(subscriptionFormFromCurrent(updated));
+      setSubscriptionFeedback(`Payment status marked as ${status}.`);
+      const updatedMetrics = await getSubscriptionMetrics().catch(() => null);
+      if (updatedMetrics) setMetrics(updatedMetrics);
+    } catch (error) {
+      setSubscriptionError(errorMessage(error, "Could not update payment status."));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleMoveToGracePeriod = async () => {
+    if (!selectedTenantId) return;
+    setActionLoading(true);
+    setSubscriptionError(null);
+    setSubscriptionFeedback(null);
+    try {
+      const updated = await moveTenantToGracePeriod(selectedTenantId, 7);
+      setSubscription(updated);
+      setSubscriptionForm(subscriptionFormFromCurrent(updated));
+      setSubscriptionFeedback("Subscription moved to 7-day grace period.");
+      const updatedMetrics = await getSubscriptionMetrics().catch(() => null);
+      if (updatedMetrics) setMetrics(updatedMetrics);
+    } catch (error) {
+      setSubscriptionError(errorMessage(error, "Could not move to grace period."));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-10">
       <header>
@@ -319,6 +409,40 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
           tenant.
         </p>
       </header>
+
+      {/* Live Billing Aggregates (§3.15, Feature C) */}
+      <section className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-slate-500">Expiring in 7 Days</span>
+            <CalendarClock className="h-4 w-4 text-amber-500" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-slate-900">
+            {metrics ? metrics.expiringInNext7Days : "—"}
+          </div>
+          <p className="mt-1 text-xs text-slate-400">Live count from DB</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-slate-500">In Grace Period</span>
+            <Clock className="h-4 w-4 text-rose-500" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-slate-900">
+            {metrics ? metrics.inGracePeriod : "—"}
+          </div>
+          <p className="mt-1 text-xs text-slate-400">Overdue tenants with active grace</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-slate-500">Recent Failed Payments</span>
+            <XCircle className="h-4 w-4 text-red-500" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-slate-900">
+            {metrics ? metrics.recentFailedPayments : "—"}
+          </div>
+          <p className="mt-1 text-xs text-slate-400">Status marked as failed</p>
+        </div>
+      </section>
 
       <section className="border-t border-slate-200 pt-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -384,6 +508,9 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
                       <p className="text-xs capitalize text-slate-500">
                         per {plan.billingCycle} | {plan.maxBranches} branches
                       </p>
+                      <div className="mt-2 inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                        <span>{plan.tenantsCount ?? 0}</span> active tenant{plan.tenantsCount === 1 ? "" : "s"}
+                      </div>
                     </div>
                     <div className="flex gap-1">
                       <Button
@@ -400,8 +527,12 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
                         type="button"
                         size="icon"
                         variant="ghost"
-                        aria-label={`Archive ${plan.name}`}
-                        title="Archive plan"
+                        aria-label={`Delete ${plan.name}`}
+                        title={
+                          (plan.tenantsCount ?? 0) > 0
+                            ? `Cannot delete: assigned to ${plan.tenantsCount} active tenant(s)`
+                            : `Delete ${plan.name}`
+                        }
                         onClick={() => void removePlan(plan)}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -638,18 +769,50 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
                 <Button type="submit" isLoading={subscriptionSaving}>
                   <CreditCard className="h-4 w-4" /> Save subscription
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={subscriptionSaving || actionLoading}
+                  onClick={() => void handleExtendTrial()}
+                >
+                  Extend Trial (+14d)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={subscriptionSaving || actionLoading}
+                  onClick={() => void handleUpdatePaymentStatus("paid")}
+                >
+                  Mark Paid
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={subscriptionSaving || actionLoading}
+                  onClick={() => void handleUpdatePaymentStatus("failed")}
+                >
+                  Mark Failed
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={subscriptionSaving || actionLoading}
+                  onClick={() => void handleMoveToGracePeriod()}
+                >
+                  Move to Grace Period
+                </Button>
                 {subscription && subscription.status !== "suspended" && subscription.status !== "cancelled" ? (
-                  <Button type="button" variant="outline" disabled={subscriptionSaving} onClick={() => void transitionSubscription("suspend")}>
+                  <Button type="button" variant="outline" disabled={subscriptionSaving || actionLoading} onClick={() => void transitionSubscription("suspend")}>
                     <PauseCircle className="h-4 w-4" /> Suspend
                   </Button>
                 ) : null}
                 {subscription?.status === "suspended" ? (
-                  <Button type="button" variant="outline" disabled={subscriptionSaving} onClick={() => void transitionSubscription("resume")}>
+                  <Button type="button" variant="outline" disabled={subscriptionSaving || actionLoading} onClick={() => void transitionSubscription("resume")}>
                     <PlayCircle className="h-4 w-4" /> Resume
                   </Button>
                 ) : null}
                 {subscription && subscription.status !== "cancelled" ? (
-                  <Button type="button" variant="ghost" disabled={subscriptionSaving} onClick={() => void transitionSubscription("cancel")}>
+                  <Button type="button" variant="ghost" disabled={subscriptionSaving || actionLoading} onClick={() => void transitionSubscription("cancel")}>
                     <XCircle className="h-4 w-4" /> Cancel subscription
                   </Button>
                 ) : null}
@@ -674,6 +837,105 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
           </div>
         ) : null}
       </section>
+
+      <ConfirmModal
+        isOpen={Boolean(pendingPlanDelete)}
+        title={
+          pendingPlanDelete && (pendingPlanDelete.tenantsCount ?? 0) > 0
+            ? "Cannot delete plan"
+            : "Delete plan"
+        }
+        description={
+          pendingPlanDelete
+            ? (pendingPlanDelete.tenantsCount ?? 0) > 0
+              ? `Plan "${pendingPlanDelete.name}" is currently assigned to ${pendingPlanDelete.tenantsCount} active tenant(s). You must reassign these tenants to another plan before deleting this plan.`
+              : `Are you sure you want to delete "${pendingPlanDelete.name}"? This will archive the plan so it cannot be assigned to new tenants.`
+            : ""
+        }
+        confirmText={
+          pendingPlanDelete && (pendingPlanDelete.tenantsCount ?? 0) > 0
+            ? "Understood"
+            : "Delete plan"
+        }
+        cancelText="Cancel"
+        variant={
+          pendingPlanDelete && (pendingPlanDelete.tenantsCount ?? 0) > 0
+            ? "warning"
+            : "danger"
+        }
+        isLoading={planDeleting}
+        onConfirm={() => {
+          if (pendingPlanDelete && (pendingPlanDelete.tenantsCount ?? 0) > 0) {
+            setPendingPlanDelete(null);
+          } else {
+            void handleConfirmDeletePlan();
+          }
+        }}
+        onCancel={() => setPendingPlanDelete(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(pendingSubscriptionAction)}
+        title={
+          pendingSubscriptionAction === "suspend"
+            ? "Suspend subscription"
+            : pendingSubscriptionAction === "resume"
+              ? "Resume subscription"
+              : "Cancel subscription"
+        }
+        description={
+          pendingSubscriptionAction === "cancel"
+            ? "Are you sure you want to cancel this tenant subscription? The tenant will lose access to subscription benefits."
+            : pendingSubscriptionAction === "suspend"
+              ? "Are you sure you want to suspend this tenant subscription? The tenant will be blocked from accessing services until resumed."
+              : "Resume this tenant subscription and restore active access?"
+        }
+        confirmText={
+          pendingSubscriptionAction === "cancel"
+            ? "Cancel subscription"
+            : pendingSubscriptionAction === "suspend"
+              ? "Suspend"
+              : "Resume"
+        }
+        cancelText="Close"
+        variant={pendingSubscriptionAction === "resume" ? "primary" : "danger"}
+        isLoading={actionLoading}
+        onConfirm={async () => {
+          if (!selectedTenantId || !pendingSubscriptionAction) return;
+          setActionLoading(true);
+          setSubscriptionError(null);
+          setSubscriptionFeedback(null);
+          try {
+            let updated: TenantSubscription;
+            if (pendingSubscriptionAction === "suspend") {
+              updated = await suspendTenantSubscription(
+                selectedTenantId,
+                subscriptionForm.gracePeriodEndsAt || null,
+              );
+            } else if (pendingSubscriptionAction === "resume") {
+              updated = await resumeTenantSubscription(selectedTenantId);
+            } else {
+              updated = await cancelTenantSubscription(selectedTenantId);
+            }
+            setSubscription(updated);
+            setSubscriptionForm(subscriptionFormFromCurrent(updated));
+            setSubscriptionFeedback(
+              `Subscription ${pendingSubscriptionAction === "suspend" ? "suspended" : pendingSubscriptionAction === "resume" ? "resumed" : "cancelled"} successfully.`,
+            );
+            const updatedMetrics = await getSubscriptionMetrics().catch(() => null);
+            if (updatedMetrics) setMetrics(updatedMetrics);
+            setPendingSubscriptionAction(null);
+          } catch (error) {
+            setSubscriptionError(
+              errorMessage(error, `Could not ${pendingSubscriptionAction} subscription.`),
+            );
+            setPendingSubscriptionAction(null);
+          } finally {
+            setActionLoading(false);
+          }
+        }}
+        onCancel={() => setPendingSubscriptionAction(null)}
+      />
     </div>
   );
 }

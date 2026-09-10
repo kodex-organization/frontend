@@ -7,6 +7,7 @@ import {
 export interface PlatformAdminLoginResult {
   admin: PlatformAdmin;
   accessToken: string;
+  refreshToken?: string;
   expiresIn: string;
 }
 
@@ -32,7 +33,11 @@ export function loginPlatformAdmin(email: string, password: string) {
 export function establishPlatformAdminSession(
   session: PlatformAdminLoginResult,
 ) {
-  platformAdminStorage.replaceSession(session.accessToken, session.admin);
+  platformAdminStorage.replaceSession(
+    session.accessToken,
+    session.admin,
+    session.refreshToken,
+  );
   return session.admin;
 }
 
@@ -49,9 +54,13 @@ export async function getCurrentPlatformAdmin(): Promise<PlatformAdmin> {
 }
 
 export function logoutPlatformAdminRequest() {
+  const refreshToken = platformAdminStorage.getRefreshToken();
   return platformAdminFetch<{ loggedOut: boolean }>(
     "/super-admin/auth/logout",
-    { method: "POST", body: JSON.stringify({}) },
+    {
+      method: "POST",
+      body: JSON.stringify(refreshToken ? { refreshToken } : {}),
+    },
   );
 }
 

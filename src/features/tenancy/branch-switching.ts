@@ -1,5 +1,11 @@
 import { apiFetch } from "@/lib/api/client";
-import { redirectPathForRoles, type SessionTokens, type SessionUser, type UserRole } from "@/lib/auth/session";
+import {
+  redirectPathForRoles,
+  tokenStorage,
+  type SessionTokens,
+  type SessionUser,
+  type UserRole,
+} from "@/lib/auth/session";
 
 export const ASSIGNED_BRANCHES_CHANGED_EVENT =
   "cuecloud:assigned-branches-changed";
@@ -30,9 +36,12 @@ export function notifyAssignedBranchesChanged() {
 }
 
 export function requestBranchSwitch(branchId: string) {
+  const refreshToken = tokenStorage.get()?.refreshToken;
   return apiFetch<BranchSwitchSession>("/auth/switch-branch", {
     method: "POST",
-    body: JSON.stringify({ branchId }),
+    body: JSON.stringify(
+      refreshToken ? { branchId, refreshToken } : { branchId },
+    ),
   });
 }
 

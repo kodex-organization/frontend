@@ -6,11 +6,13 @@ export type TenantReleaseChannel = ReleaseChannel | "pinned";
 
 export interface PlatformRelease {
   id: string;
+  platform?: "desktop" | "mobile";
   version: string;
   channel: ReleaseChannel;
   status: ReleaseStatus;
   releaseNotes: string | null;
   minimumSupportedVersion: string | null;
+  downloadUrl?: string | null;
   publishedAt: string | null;
   archivedAt: string | null;
   createdAt: string;
@@ -23,10 +25,12 @@ export interface PlatformRelease {
 }
 
 export interface ReleaseInput {
+  platform?: "desktop" | "mobile";
   version: string;
   channel: ReleaseChannel;
   releaseNotes: string | null;
   minimumSupportedVersion: string | null;
+  downloadUrl?: string | null;
 }
 
 export interface TenantReleaseAssignment {

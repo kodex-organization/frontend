@@ -41,6 +41,7 @@ export interface SessionTokens {
 
 export interface StoredTokens {
   accessToken: string;
+  refreshToken?: string;
 }
 
 const accessContextSchema = z.object({
@@ -54,6 +55,7 @@ const accessContextSchema = z.object({
 export type AccessContext = z.infer<typeof accessContextSchema>;
 
 const ACCESS_TOKEN_KEY = "cuecloud_access_token";
+const REFRESH_TOKEN_KEY = "cuecloud_refresh_token";
 const USER_KEY = "cuecloud_user";
 
 export const AUTH_SESSION_CLEARED_EVENT = "cuecloud:session-cleared";
@@ -79,29 +81,27 @@ function decodeAccessContext(accessToken: string): AccessContext | null {
 }
 
 /**
- * Fix (hardening): the refresh token is long-lived (default 7d) and used
- * to be persisted here in localStorage — readable by any injected/XSS
- * script for the full 7 days. It's no longer stored client-side at all;
- * the backend now also sets it as an httpOnly cookie (see
- * backend `modules/auth/lib/tokens.ts` → refreshCookieOptions()), which
- * this browser can never read from JS but which `fetch(..., { credentials:
- * "include" })` sends automatically to `/auth/refresh` and `/auth/logout`.
- * Only the short-lived (15m) access token is kept here, for the
- * Authorization header on API calls.
+ * The refresh token is set as an httpOnly cookie by the backend, but also
+ * stored in localStorage as an automatic fallback for cross-origin/proxy
+ * environments where cookies might not be attached to fetch calls.
  */
 export const tokenStorage = {
   get(): StoredTokens | null {
     if (typeof window === "undefined") return null;
     const accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
     if (!accessToken) return null;
-    return { accessToken };
+    const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY) ?? undefined;
+    return { accessToken, refreshToken };
   },
-  set(tokens: { accessToken: string }): void {
+  set(tokens: { accessToken: string; refreshToken?: string }): void {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+    if (tokens.refreshToken) {
+      window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+    }
   },
   replaceSession(
-    tokens: { accessToken: string },
+    tokens: { accessToken: string; refreshToken?: string },
     user: SessionUser,
   ): void {
     if (typeof window === "undefined") return;
@@ -116,6 +116,7 @@ export const tokenStorage = {
     }
 
     const previousAccessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
+    const previousRefreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY);
     const previousUser = window.localStorage.getItem(USER_KEY);
 
     try {
@@ -123,6 +124,9 @@ export const tokenStorage = {
       // half-updated session between these writes on this page.
       window.localStorage.setItem(USER_KEY, JSON.stringify(user));
       window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
+      if (tokens.refreshToken) {
+        window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+      }
     } catch (error) {
       if (previousUser === null) window.localStorage.removeItem(USER_KEY);
       else window.localStorage.setItem(USER_KEY, previousUser);
@@ -131,6 +135,12 @@ export const tokenStorage = {
         window.localStorage.removeItem(ACCESS_TOKEN_KEY);
       } else {
         window.localStorage.setItem(ACCESS_TOKEN_KEY, previousAccessToken);
+      }
+
+      if (previousRefreshToken === null) {
+        window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+      } else {
+        window.localStorage.setItem(REFRESH_TOKEN_KEY, previousRefreshToken);
       }
       throw error;
     }
@@ -145,8 +155,10 @@ export const tokenStorage = {
     if (typeof window === "undefined") return;
     const hadSession =
       window.localStorage.getItem(ACCESS_TOKEN_KEY) !== null ||
+      window.localStorage.getItem(REFRESH_TOKEN_KEY) !== null ||
       window.localStorage.getItem(USER_KEY) !== null;
     window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
     if (hadSession) {
       window.dispatchEvent(new Event(AUTH_SESSION_CLEARED_EVENT));

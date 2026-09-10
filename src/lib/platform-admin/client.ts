@@ -10,6 +10,7 @@ interface Envelope<T> {
 
 interface PlatformAdminTokens {
   accessToken: string;
+  refreshToken?: string;
   expiresIn: string;
 }
 
@@ -62,18 +63,24 @@ export async function refreshPlatformAdminAccessToken(): Promise<boolean> {
 
   const request = (async () => {
     try {
+      const storedRefreshToken = platformAdminStorage.getRefreshToken();
       const response = await fetch(
         `${getApiBaseUrl()}/super-admin/auth/refresh`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({}),
+          body: JSON.stringify(
+            storedRefreshToken ? { refreshToken: storedRefreshToken } : {},
+          ),
         },
       );
       if (!response.ok) return false;
       const tokens = await parseResponse<PlatformAdminTokens>(response);
       platformAdminStorage.setAccessToken(tokens.accessToken);
+      if (tokens.refreshToken) {
+        platformAdminStorage.setRefreshToken(tokens.refreshToken);
+      }
       return true;
     } catch {
       return false;

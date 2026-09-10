@@ -39,10 +39,12 @@ import {
 import { validateTenantId } from "../subscriptions";
 
 const emptyRelease: ReleaseInput = {
+  platform: "desktop",
   version: "",
   channel: "stable",
   releaseNotes: null,
   minimumSupportedVersion: null,
+  downloadUrl: null,
 };
 
 function errorMessage(error: unknown, fallback: string) {
@@ -101,7 +103,7 @@ export function ReleaseConsole() {
       setReleases(visibleReleases);
       setPublishedOptions(assignmentOptions);
     } catch (requestError) {
-      setError(errorMessage(requestError, "Could not load release metadata."));
+      setError(errorMessage(requestError, "Could not load platform releases."));
     } finally {
       setLoading(false);
     }
@@ -120,10 +122,12 @@ export function ReleaseConsole() {
   const editRelease = (release: PlatformRelease) => {
     setEditingId(release.id);
     setReleaseForm({
+      platform: release.platform ?? "desktop",
       version: release.version,
       channel: release.channel,
       releaseNotes: release.releaseNotes,
       minimumSupportedVersion: release.minimumSupportedVersion,
+      downloadUrl: release.downloadUrl ?? null,
     });
     setFeedback(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -132,11 +136,13 @@ export function ReleaseConsole() {
   const saveRelease = async (event: React.FormEvent) => {
     event.preventDefault();
     const normalized: ReleaseInput = {
+      platform: releaseForm.platform ?? "desktop",
       version: releaseForm.version.trim(),
       channel: releaseForm.channel,
       releaseNotes: releaseForm.releaseNotes?.trim() || null,
       minimumSupportedVersion:
         releaseForm.minimumSupportedVersion?.trim() || null,
+      downloadUrl: releaseForm.downloadUrl?.trim() || null,
     };
     const validationError = validateReleaseInput(normalized);
     if (validationError) {
@@ -249,6 +255,42 @@ export function ReleaseConsole() {
             ) : null}
           </div>
           {feedback ? <Alert variant="error">{feedback}</Alert> : null}
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Platform" htmlFor="release-platform">
+              <Select
+                id="release-platform"
+                value={releaseForm.platform ?? "desktop"}
+                onChange={(event) =>
+                  setReleaseForm((current) => ({
+                    ...current,
+                    platform: event.target.value as "desktop" | "mobile",
+                  }))
+                }
+              >
+                <option value="desktop">Desktop</option>
+                <option value="mobile">Mobile</option>
+              </Select>
+            </FormField>
+            <FormField label="Channel" htmlFor="release-channel">
+              <Select
+                id="release-channel"
+                value={releaseForm.channel}
+                onChange={(event) =>
+                  setReleaseForm((current) => ({
+                    ...current,
+                    channel: event.target.value as ReleaseChannel,
+                  }))
+                }
+                disabled={
+                  editingId !== null &&
+                  releases.find((release) => release.id === editingId)?.status === "published"
+                }
+              >
+                <option value="stable">Stable</option>
+                <option value="beta">Beta</option>
+              </Select>
+            </FormField>
+          </div>
           <FormField label="Version" htmlFor="release-version">
             <Input
               id="release-version"
@@ -263,24 +305,18 @@ export function ReleaseConsole() {
               }
             />
           </FormField>
-          <FormField label="Channel" htmlFor="release-channel">
-            <Select
-              id="release-channel"
-              value={releaseForm.channel}
+          <FormField label="Download URL" htmlFor="release-download-url">
+            <Input
+              id="release-download-url"
+              value={releaseForm.downloadUrl ?? ""}
               onChange={(event) =>
                 setReleaseForm((current) => ({
                   ...current,
-                  channel: event.target.value as ReleaseChannel,
+                  downloadUrl: event.target.value || null,
                 }))
               }
-              disabled={
-                editingId !== null &&
-                releases.find((release) => release.id === editingId)?.status === "published"
-              }
-            >
-              <option value="stable">Stable</option>
-              <option value="beta">Beta</option>
-            </Select>
+              placeholder="https://downloads.cuecloud.app/..."
+            />
           </FormField>
           <FormField label="Minimum supported version" htmlFor="release-minimum">
             <Input
@@ -298,7 +334,7 @@ export function ReleaseConsole() {
           <FormField label="Release notes" htmlFor="release-notes">
             <textarea
               id="release-notes"
-              rows={7}
+              rows={5}
               value={releaseForm.releaseNotes ?? ""}
               onChange={(event) =>
                 setReleaseForm((current) => ({
@@ -356,6 +392,9 @@ export function ReleaseConsole() {
                       <div className="flex flex-wrap items-center gap-2">
                         <Rocket className="h-4 w-4 text-slate-400" />
                         <h3 className="font-semibold text-slate-900">v{release.version}</h3>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium capitalize text-slate-700">
+                          {release.platform || "desktop"}
+                        </span>
                         <span className="rounded-full bg-sky-50 px-2 py-1 text-xs font-medium capitalize text-sky-700">{release.channel}</span>
                         <StatusBadge status={release.status} />
                       </div>
@@ -364,6 +403,9 @@ export function ReleaseConsole() {
                       </p>
                       <p className="mt-3 text-xs text-slate-500">
                         Minimum {release.minimumSupportedVersion ?? "not set"} | Published {formatDateTime(release.publishedAt)}
+                        {release.downloadUrl && (
+                          <> | <a href={release.downloadUrl} target="_blank" rel="noreferrer" className="text-brand-600 underline font-medium">Download Asset</a></>
+                        )}
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-1">
