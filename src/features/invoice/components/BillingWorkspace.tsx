@@ -201,6 +201,11 @@ export default function BillingWorkspace({
                   </option>
                 ))}
               </select>
+              <label className="sr-only" htmlFor="invoice-branch">Invoice branch</label>
+              <select id="invoice-branch" value={branchId} onChange={(event) => { setInvoicePage(1); setBranchId(event.target.value); }} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500">
+                <option value="">All Branches</option>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
+              </select>
               <label className="sr-only" htmlFor="invoice-date">
                 Invoice date
               </label>

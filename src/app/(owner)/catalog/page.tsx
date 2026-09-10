@@ -71,6 +71,7 @@ export default function CatalogPage() {
     setTableNumber("");
     setHourlyRate("");
     setTableStatus("available");
+    setSelectedBranchId(branchFilter);
     setFormError(null);
     setShowForm(true);
   }
@@ -220,6 +221,10 @@ export default function CatalogPage() {
             Manage snooker tables and their hourly rates.
           </p>
         </div>
+        <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+          <option value="">All Branches</option>
+          {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
+        </select>
         <button
           onClick={handleOpenAdd}
           className="rounded-md bg-green-700 px-4 py-2

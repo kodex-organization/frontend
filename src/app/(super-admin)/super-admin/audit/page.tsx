@@ -3,3 +3,4 @@ import { PlatformAuditConsole } from "@/features/platform-admin/components/platf
 export default function AuditPage() {
   return <PlatformAuditConsole />;
 }
+

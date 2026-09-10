@@ -39,6 +39,7 @@ function formatTableRate(table: TableOption) {
 export default function SessionsPage() {
   const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const isOnline = useOnlineStatus();
+  const isOwner = user?.roles?.includes("OWNER") ?? false;
   const [items, setItems] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

@@ -91,3 +91,4 @@ export function OvertimeAlert({ tables, onDismiss, onEndSession }: OvertimeAlert
     </div>
   );
 }
+
