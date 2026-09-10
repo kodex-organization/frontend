@@ -13,6 +13,37 @@ export interface PlatformHealth {
     branches: number;
     activeSessions: number;
   };
+  tenantsByStatus?: {
+    active: number;
+    trial: number;
+    suspended: number;
+    terminated: number;
+  };
+  revenue?: {
+    mrr: number;
+    arr: number;
+    activeSubscriptionsCount: number;
+  };
+  branchesDistribution?: Array<{
+    tenantId: string;
+    tenantName: string;
+    branchCount: number;
+  }>;
+  security?: {
+    staleSyncDevicesOlderThan24h: number;
+    failedLogins24h: number;
+    lockedAccountsCount: number;
+  };
+  recentHighRiskLogs?: Array<{
+    id: string;
+    actionType: string;
+    entityType: string;
+    entityId: string | null;
+    severity: string;
+    occurredAt: string;
+    tenant?: { id: string; name: string } | null;
+    actorUser?: { id: string; fullName: string | null; email: string | null } | null;
+  }>;
   sync: {
     heartbeat: {
       available: boolean;

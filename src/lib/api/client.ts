@@ -47,11 +47,16 @@ async function refreshAccessToken(): Promise<boolean> {
 
   const refreshRequest = (async () => {
     try {
+      const storedTokens = tokenStorage.get();
       const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({}),
+        body: JSON.stringify(
+          storedTokens?.refreshToken
+            ? { refreshToken: storedTokens.refreshToken }
+            : {},
+        ),
       });
 
       if (!response.ok) {
@@ -60,6 +65,7 @@ async function refreshAccessToken(): Promise<boolean> {
 
       const body = (await response.json().catch(() => null)) as Envelope<{
         accessToken: string;
+        refreshToken?: string;
         expiresIn: string;
       }> | null;
 

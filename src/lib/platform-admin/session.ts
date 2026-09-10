@@ -34,6 +34,7 @@ const platformAdminAccessContextSchema = z.object({
 
 export const PLATFORM_ADMIN_STORAGE_KEYS = {
   accessToken: "cuecloud_platform_admin_access_token",
+  refreshToken: "cuecloud_platform_admin_refresh_token",
   admin: "cuecloud_platform_admin_user",
 } as const;
 
@@ -86,6 +87,19 @@ export const platformAdminStorage = {
       accessToken,
     );
   },
+  getRefreshToken(): string | null {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(
+      PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
+    );
+  },
+  setRefreshToken(refreshToken: string): void {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
+      refreshToken,
+    );
+  },
   getAdmin(): PlatformAdmin | null {
     if (typeof window === "undefined") return null;
     const raw = window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.admin);
@@ -106,7 +120,11 @@ export const platformAdminStorage = {
       JSON.stringify(parsed),
     );
   },
-  replaceSession(accessToken: string, admin: PlatformAdmin): void {
+  replaceSession(
+    accessToken: string,
+    admin: PlatformAdmin,
+    refreshToken?: string,
+  ): void {
     if (typeof window === "undefined") return;
     const context = decodePlatformAdminAccessToken(accessToken);
     const parsedAdmin = platformAdminSchema.parse(admin);
@@ -116,6 +134,9 @@ export const platformAdminStorage = {
 
     const previousToken = window.localStorage.getItem(
       PLATFORM_ADMIN_STORAGE_KEYS.accessToken,
+    );
+    const previousRefreshToken = window.localStorage.getItem(
+      PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
     );
     const previousAdmin = window.localStorage.getItem(
       PLATFORM_ADMIN_STORAGE_KEYS.admin,
@@ -130,6 +151,12 @@ export const platformAdminStorage = {
         PLATFORM_ADMIN_STORAGE_KEYS.accessToken,
         accessToken,
       );
+      if (refreshToken) {
+        window.localStorage.setItem(
+          PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
+          refreshToken,
+        );
+      }
     } catch (error) {
       if (previousAdmin === null) {
         window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.admin);
@@ -149,6 +176,16 @@ export const platformAdminStorage = {
           previousToken,
         );
       }
+      if (previousRefreshToken === null) {
+        window.localStorage.removeItem(
+          PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
+        );
+      } else {
+        window.localStorage.setItem(
+          PLATFORM_ADMIN_STORAGE_KEYS.refreshToken,
+          previousRefreshToken,
+        );
+      }
       throw error;
     }
 
@@ -159,8 +196,11 @@ export const platformAdminStorage = {
     const hadSession =
       window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.accessToken) !==
         null ||
+      window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.refreshToken) !==
+        null ||
       window.localStorage.getItem(PLATFORM_ADMIN_STORAGE_KEYS.admin) !== null;
     window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.accessToken);
+    window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.refreshToken);
     window.localStorage.removeItem(PLATFORM_ADMIN_STORAGE_KEYS.admin);
     if (hadSession) {
       window.dispatchEvent(new Event(PLATFORM_ADMIN_SESSION_CLEARED_EVENT));
