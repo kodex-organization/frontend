@@ -32,6 +32,7 @@ import {
   Globe,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
+import { redirectPathForRoles } from "@/lib/auth/session";
 import { useConnectionStatus } from '@/lib/connectivity/online-status';
 import { NotificationBell } from "@/features/notifications/components/NotificationBell";
 import { useNotifications } from "@/features/notifications/context";
@@ -84,6 +85,9 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     (role) => role === "OWNER" || role === "MANAGER",
   );
   const canRequestCancellation = user?.roles.includes("CASHIER");
+  const isOwnerOrManager = user?.roles.some(
+    (role) => role === "OWNER" || role === "MANAGER",
+  );
   const hasCustomerAccess = user?.roles.some(
     (role) => role === "OWNER" || role === "MANAGER" || role === "CASHIER",
   );
@@ -205,7 +209,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     {
       title: t.management,
       items: [
-        ...(hasBackOfficeAccess
+        ...(isOwnerOrManager
           ? [{ href: "/dashboard", label: t.dashboard, icon: LayoutDashboard }]
           : []),
         ...(hasCustomerAccess
@@ -252,7 +256,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
               { href: "/settings/support-access", label: t.supportAccess, icon: LifeBuoy },
             ]
           : []),
-        ...(hasBackOfficeAccess
+        ...(isOwnerOrManager
           ? [{ href: "/settings/staff", label: t.settings, icon: Settings }]
           : []),
         { href: "/notifications", label: t.notifications, icon: Bell },
@@ -268,18 +272,18 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     .toUpperCase();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
+    <div className="flex h-screen overflow-hidden bg-slate-50 font-sans print:h-auto print:overflow-visible print:bg-white">
       {/* Mobile Drawer Overlay */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm lg:hidden transition-opacity"
+          className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm lg:hidden transition-opacity print:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar Navigation */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-slate-200/80 bg-white shadow-sm lg:static transition-all duration-300 ease-in-out ${
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-slate-200/80 bg-white shadow-sm lg:static transition-all duration-300 ease-in-out print:hidden ${
           isCollapsed ? "w-[78px] p-3" : "w-64 p-4"
         } ${
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
@@ -288,7 +292,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
         {/* Brand Logo Header */}
         <div className="mb-4 flex items-center justify-between pb-3 border-b border-slate-100">
           <Link
-            href="/dashboard"
+            href={isOwnerOrManager ? "/dashboard" : redirectPathForRoles(user?.roles || [])}
             className="flex items-center gap-2.5 group cursor-pointer focus:outline-none"
           >
             <div className="w-10 h-10 rounded-xl bg-brand-600 text-white flex items-center justify-center shadow-md shadow-brand-500/20 group-hover:scale-105 transition-transform shrink-0">
@@ -466,11 +470,13 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main Content Area */}
-      <main className="custom-scrollbar flex-1 flex flex-col min-w-0 overflow-y-auto">
-        <TenantAnnouncementCenter />
+      <main className="custom-scrollbar flex-1 flex flex-col min-w-0 overflow-y-auto print:overflow-visible print:h-auto print:bg-white">
+        <div className="print:hidden">
+          <TenantAnnouncementCenter />
+        </div>
 
         {/* Global Sticky Top Header */}
-        <header className="sticky top-0 z-20 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-2 shadow-sm backdrop-blur-md sm:px-6">
+        <header className="sticky top-0 z-20 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-2 shadow-sm backdrop-blur-md sm:px-6 print:hidden">
           <div className="flex shrink-0 items-center gap-3">
             <button
               type="button"
@@ -502,7 +508,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Body */}
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24" key={`${user?.id}:${user?.branchId}`}>
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24 print:p-0 print:pb-0 print:m-0 print:max-w-none" key={`${user?.id}:${user?.branchId}`}>
           {branchSwitching && <p role="status" className="mb-4 text-center text-slate-500">Switching active branch...</p>}
           <fieldset disabled={branchSwitching} className={`min-w-0 ${branchSwitching ? "pointer-events-none opacity-50" : ""}`}>
             {children}

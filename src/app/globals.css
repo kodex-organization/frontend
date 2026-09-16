@@ -103,3 +103,80 @@ h1, h2, h3, h4, h5, h6 {
 .focus-ring {
   @apply outline-none ring-2 ring-brand-500/20 ring-offset-1 border-brand-500;
 }
+
+/* Print Media Styles */
+@media print {
+  @page {
+    size: auto;
+    margin: 10mm 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  main,
+  div,
+  fieldset {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  /* Universal hide rules */
+  .no-print,
+  .print\:hidden,
+  aside,
+  header.sticky,
+  [data-sonner-toaster],
+  [data-radix-popper-content-wrapper] {
+    display: none !important;
+  }
+
+  /* Dedicated Statement Print View */
+  #printable-account-statement {
+    display: block !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    background: #ffffff !important;
+  }
+
+  #printable-account-statement table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+
+  #printable-account-statement tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  #printable-account-statement thead {
+    display: table-header-group;
+  }
+
+  #printable-account-statement th,
+  #printable-account-statement td {
+    padding: 6pt 4pt !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+  }
+
+  #printable-account-statement th {
+    border-bottom: 2px solid #0f172a !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+  }
+}
+

@@ -112,8 +112,18 @@ export interface UpdateStaffInput {
   isActive?: boolean;
 }
 
+export interface CreateStaffResult {
+  id?: string;
+  fullName?: string;
+  email?: string;
+  roles?: string[];
+  requiresApproval?: boolean;
+  requestId?: string;
+  message?: string;
+}
+
 export async function createStaff(input: CreateStaffInput) {
-  return apiFetch<{ id: string; fullName: string; email: string; roles: string[] }>(
+  return apiFetch<CreateStaffResult>(
     "/auth/staff",
     { method: "POST", body: JSON.stringify(input) },
   );
