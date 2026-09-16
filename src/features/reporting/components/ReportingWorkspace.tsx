@@ -155,6 +155,7 @@ const rangeTabs: ReportTab[] = [
   "top-customers",
   "top-items",
   "peak-hours",
+  "sealed-reports",
 ];
 
 type DatePreset = "today" | "7d" | "30d" | "thisMonth" | "custom";
@@ -190,6 +191,7 @@ const DEFAULT_PRESET_BY_TAB: Partial<
   "staff-performance": "30d",
   "top-customers": "30d",
   "top-items": "30d",
+  "sealed-reports": "30d",
 };
 
 const PRESET_OPTIONS: { id: Exclude<DatePreset, "custom">; label: string }[] = [
@@ -221,6 +223,8 @@ export default function ReportingWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [sealing, setSealing] = useState(false);
   const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
+  const [exportingReportId, setExportingReportId] = useState<string | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [correctingId, setCorrectingId] = useState<string | null>(null);
   const [correctionReason, setCorrectionReason] = useState("");
   const [correctionAmount, setCorrectionAmount] = useState("");
@@ -351,14 +355,11 @@ export default function ReportingWorkspace() {
         }
       }
       if (tab === "sealed-reports") {
-        const from = new Date(
-          new Date(date).getFullYear(),
-          new Date(date).getMonth(),
-          1,
-        )
-          .toISOString()
-          .slice(0, 10);
-        result = await fetchSealedReports(branchId || undefined, from, date);
+        result = await fetchSealedReports(
+          branchId || undefined,
+          fromDate,
+          toDate,
+        );
       }
       setData(result as ReportData);
     } catch (cause) {
@@ -487,7 +488,49 @@ export default function ReportingWorkspace() {
     "sealed-reports": "sealed-report",
   };
 
+  const downloadSingleReport = async (
+    report: SealedReport,
+    format: "pdf" | "excel",
+  ) => {
+    const reportKey = `${report.id}-${format}`;
+    setExportingReportId(reportKey);
+    setError(null);
+    try {
+      const reportDateStr = report.reportDate
+        ? new Date(report.reportDate).toISOString().slice(0, 10)
+        : "";
+      const blob = await downloadReport("sealed-report", format, {
+        reportId: report.id,
+        branchId: report.branchId,
+        date: reportDateStr,
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `sealed-report-${reportDateStr || report.id}.${format === "pdf" ? "pdf" : "xlsx"}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : "Unable to export this report.",
+      );
+    } finally {
+      setExportingReportId(null);
+    }
+  };
+
   const download = async (format: "pdf" | "excel") => {
+    if (tab === "sealed-reports") {
+      if (!selectedSealedReport) {
+        setError("No sealed report is available to export.");
+        return;
+      }
+      await downloadSingleReport(selectedSealedReport, format);
+      return;
+    }
+
     setExporting(format);
     setError(null);
     try {
@@ -589,6 +632,15 @@ export default function ReportingWorkspace() {
     Array.isArray(data) && tab === "sealed-reports"
       ? (data as SealedReport[])
       : [];
+
+  const selectedSealedReport = useMemo(() => {
+    if (tab !== "sealed-reports" || sealedReports.length === 0) return null;
+    return (
+      sealedReports.find((r) => r.id === selectedReportId) ??
+      sealedReports[0] ??
+      null
+    );
+  }, [tab, sealedReports, selectedReportId]);
   const shiftReportRows =
     tab === "shift-report" && Array.isArray(data)
       ? (data as ShiftReportRow[])
@@ -790,12 +842,17 @@ export default function ReportingWorkspace() {
                 <h2 className="mt-0.5 text-2xl font-bold text-slate-900">
                   {selected.label}
                 </h2>
+                {tab === "sealed-reports" && selectedSealedReport && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Active archive: <strong className="text-slate-700">{new Date(selectedSealedReport.reportDate).toLocaleDateString()}</strong> · Reconciled: <span className="font-semibold text-slate-800">{money(selectedSealedReport.reconciledCash)}</span>
+                  </p>
+                )}
               </div>
               {tab !== "schedules" && (
                 <div className="flex gap-2">
                   <button
                     onClick={() => void download("pdf")}
-                    disabled={exporting !== null}
+                    disabled={exporting !== null || exportingReportId !== null}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
                   >
                     <Download size={14} />{" "}
@@ -803,7 +860,7 @@ export default function ReportingWorkspace() {
                   </button>
                   <button
                     onClick={() => void download("excel")}
-                    disabled={exporting !== null}
+                    disabled={exporting !== null || exportingReportId !== null}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
                   >
                     <FileText size={14} />{" "}
@@ -1210,30 +1267,76 @@ export default function ReportingWorkspace() {
             {!loading && !error && tab === "sealed-reports" && (
               sealedReports.length > 0 ? (
                 <div className="space-y-4">
-                  {sealedReports.map((report) => (
-                    <article
-                      key={report.id}
-                      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <h3 className="font-bold text-slate-900">
-                            {new Date(report.reportDate).toLocaleDateString()}
-                            <span className="ml-2 font-mono text-xs font-normal text-slate-400">
-                              {report.branchId}
+                  {sealedReports.map((report) => {
+                    const isSelected = selectedSealedReport?.id === report.id;
+                    const isDownloadingPdf = exportingReportId === `${report.id}-pdf`;
+                    const isDownloadingExcel = exportingReportId === `${report.id}-excel`;
+                    const reportDateFormatted = new Date(report.reportDate).toLocaleDateString();
+
+                    return (
+                      <article
+                        key={report.id}
+                        onClick={() => setSelectedReportId(report.id)}
+                        className={`rounded-xl border p-5 shadow-sm transition cursor-pointer ${
+                          isSelected
+                            ? "border-indigo-500 bg-indigo-50/25 ring-2 ring-indigo-500/20"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-md"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-bold text-slate-900">
+                                {reportDateFormatted}
+                              </h3>
+                              <span className="font-mono text-xs font-normal text-slate-400">
+                                {report.branchId}
+                              </span>
+                              {isSelected && (
+                                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
+                                  Selected
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Reconciled: {money(report.reconciledCash)} · Sealed:{" "}
+                              {report.sealedAt ? new Date(report.sealedAt).toLocaleString() : "-"}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void downloadSingleReport(report, "pdf");
+                              }}
+                              disabled={exporting !== null || exportingReportId !== null}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 hover:text-indigo-600 disabled:opacity-50"
+                              title={`Download PDF for ${reportDateFormatted}`}
+                            >
+                              <Download size={13} /> {isDownloadingPdf ? "Exporting..." : "PDF"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void downloadSingleReport(report, "excel");
+                              }}
+                              disabled={exporting !== null || exportingReportId !== null}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 hover:text-indigo-600 disabled:opacity-50"
+                              title={`Download Excel for ${reportDateFormatted}`}
+                            >
+                              <FileText size={13} /> {isDownloadingExcel ? "Exporting..." : "Excel"}
+                            </button>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
+                              <ShieldCheck size={14} /> Approved
                             </span>
-                          </h3>
-                          <p className="mt-1 text-xs text-slate-500">
-                            Reconciled: {money(report.reconciledCash)} · Sealed:{" "}
-                            {report.sealedAt ? new Date(report.sealedAt).toLocaleString() : "-"}
-                          </p>
+                          </div>
                         </div>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
-                          <ShieldCheck size={14} /> Approved
-                        </span>
-                      </div>
-                    </article>
-                  ))}
+                      </article>
+                    );
+                  })}
                 </div>
               ) : (
                 <EmptyState message="No sealed reports found for this branch." />

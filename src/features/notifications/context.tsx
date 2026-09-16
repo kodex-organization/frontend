@@ -47,6 +47,7 @@ const defaultPreferences: NotificationPreference = {
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const isOwner = Boolean(user?.roles?.includes("OWNER"));
   const authScope = `${user?.id}:${user?.branchId}`;
   const previousAuthScope = useRef(authScope);
   const online = useOnlineStatus();
@@ -97,7 +98,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     try {
       const nextPreferences = await getNotificationPreferences();
       if (scopeVersion === branchScopeVersion.current) {
-        setPreferences(nextPreferences);
+        setPreferences(isOwner ? nextPreferences : { ...nextPreferences, pushEnabled: false });
         setPreferencesError(null);
       }
     } catch (err) {
@@ -107,7 +108,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     } finally {
       if (scopeVersion === branchScopeVersion.current) setPreferencesLoading(false);
     }
-  }, [online]);
+  }, [isOwner, online]);
 
   useEffect(() => { void loadPreferences(); }, [loadPreferences]);
 
@@ -128,23 +129,25 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [authScope, resetForBranch]);
 
   const savePreferences = useCallback(async (nextPreferences: NotificationPreference) => {
+    const preferencesToSave = isOwner ? nextPreferences : { ...nextPreferences, pushEnabled: false };
     setPreferencesSaving(true);
     if (!online) {
-      setPreferences(nextPreferences);
-      await queueNotificationPreferences(nextPreferences);
+      setPreferences(preferencesToSave);
+      await queueNotificationPreferences(preferencesToSave);
       setPreferencesError(null);
       setPreferencesSaving(false);
       return true;
     }
     try {
-      setPreferences(await saveNotificationPreferences(nextPreferences));
+      const saved = await saveNotificationPreferences(preferencesToSave);
+      setPreferences(isOwner ? saved : { ...saved, pushEnabled: false });
       setPreferencesError(null);
       return true;
     } catch (err) {
       setPreferencesError(err instanceof ApiError ? err.message : "Could not save notification preferences.");
       return false;
     } finally { setPreferencesSaving(false); }
-  }, []);
+  }, [isOwner, online]);
   useEffect(() => {
     if (!online) return;
     void flushNotificationQueue().then(() => refresh());
@@ -153,6 +156,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [online, refresh]);
 
   const enablePush = useCallback(async () => {
+    if (!isOwner) return;
     setPushState("generating");
     setPushMessage("Generating a secure browser push token…");
     const result = await requestPushPermission();
@@ -175,9 +179,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setPushMessage(error instanceof ApiError ? error.message : "The browser token could not be registered.");
       toast.error("Push registration failed.");
     }
-  }, []);
+  }, [isOwner]);
 
   const disablePush = useCallback(async () => {
+    if (!isOwner) return;
     if (!pushToken) {
       setPushState("disabled");
       return;
@@ -196,10 +201,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setPushMessage(error instanceof ApiError ? error.message : "The push token could not be revoked.");
       toast.error("Could not disable push notifications.");
     }
-  }, [pushToken]);
+  }, [isOwner, pushToken]);
 
   useEffect(() => {
-    if (pushState !== "registered") return;
+    if (!isOwner || pushState !== "registered") return;
     let active = true;
     let unsubscribe: (() => void) | undefined;
     void listenForForegroundMessages((payload) => {
@@ -213,7 +218,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (active) setPushMessage(listenerError instanceof Error ? listenerError.message : "Foreground push listener failed.");
     });
     return () => { active = false; unsubscribe?.(); };
-  }, [pushState, refresh]);
+  }, [isOwner, pushState, refresh]);
 
   const markAsRead = useCallback(async (id: string) => {
     const branchId = getActiveOfflineBranchId();

@@ -19,19 +19,24 @@ export default function OwnerLayout({
     pathname.startsWith("/reports/") ||
     pathname === "/settings/branches" ||
     pathname === "/settings/peak-hours" ||
+    pathname === "/settings/security" ||
     pathname === "/settings/support-access" ||
     pathname === "/settings/data-export";
 
-  // Branch management configuration (Owner and Branch Managers)
-  const isBranchManagementRoute =
-    pathname === "/branches" || pathname.startsWith("/branches/");
+  // Owner and Manager routes (Dashboard, Staff management, Branch controls)
+  const isOwnerOrManagerRoute =
+    pathname === "/dashboard" ||
+    pathname.startsWith("/dashboard/") ||
+    pathname === "/settings/staff" ||
+    pathname.startsWith("/settings/staff/") ||
+    pathname === "/branches" ||
+    pathname.startsWith("/branches/");
 
   // Resolve allowed roles:
-  // All core operational routes (Dashboard, Sessions, Floor View, Billing, Customers, Udhaar, Sync)
-  // are accessible to Cashiers, Accountants, Managers, and Owners.
+  // Operational routes accessible to Cashiers and Accountants: Sessions, Floor View, Billing, Customers, Udhaar, Sync, Reporting, Audit
   const allowedRoles: UserRole[] = isOwnerOnlyRoute
     ? ["OWNER"]
-    : isBranchManagementRoute
+    : isOwnerOrManagerRoute
     ? ["OWNER", "MANAGER"]
     : ["OWNER", "MANAGER", "CASHIER", "ACCOUNTANT"];
 

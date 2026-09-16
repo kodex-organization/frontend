@@ -59,9 +59,9 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [branches, setBranches] = useState<BranchItem[]>([]);
 
-  // Only an Owner or Manager should ever reach this form — the route itself
-  // is also gated, this is a defence-in-depth UI check.
   const canManageStaff = user?.roles.some((r) => r === "OWNER" || r === "MANAGER");
+  const isOwner = Boolean(user?.roles.includes("OWNER"));
+  const isCrossBranch = !isOwner && Boolean(form.branchId) && form.branchId !== user?.branchId;
   const roleOptions = assignableRoles(user?.roles);
   const canAssignAnyBranch = user?.roles.some((role) => role === "OWNER" || role === "MANAGER");
 
@@ -118,7 +118,11 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         password: parsed.data.password,
         pin: parsed.data.pin || undefined,
       });
-      setSuccessMessage(`${staff.fullName} was added as ${staff.roles.join(", ")}.`);
+      if (staff.requiresApproval) {
+        setSuccessMessage(staff.message || "Staff creation request submitted for Owner approval.");
+      } else {
+        setSuccessMessage(`${staff.fullName ?? "Staff member"} was added as ${staff.roles?.join(", ") ?? "staff"}.`);
+      }
       setForm({ ...initialForm, branchId: user?.branchId ?? "" });
       onSuccess?.();
     } catch (err) {
@@ -227,8 +231,18 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         </FormField>
       )}
 
+      {isCrossBranch && (
+        <Alert variant="info">
+          Creating a staff account for another branch requires explicit Owner approval. Your request will be submitted to the owner for review.
+        </Alert>
+      )}
+
       <Button type="submit" isLoading={isSubmitting}>
-        {isSubmitting ? "Adding staff…" : "Add staff member"}
+        {isSubmitting
+          ? "Processing…"
+          : isCrossBranch
+          ? "Submit for Owner Approval"
+          : "Add staff member"}
       </Button>
     </form>
   );

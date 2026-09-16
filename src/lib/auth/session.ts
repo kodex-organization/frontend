@@ -203,8 +203,15 @@ export const tokenStorage = {
 
 /** Where to send each role after a successful login (task.pdf, Dev 1 scope). */
 export function redirectPathForRoles(roles: UserRole[]): string {
-  if (roles.includes("CASHIER") && !roles.includes("OWNER") && !roles.includes("MANAGER")) {
+  if (roles.includes("OWNER") || roles.includes("MANAGER")) {
+    return "/dashboard";
+  }
+  if (roles.includes("ACCOUNTANT")) {
+    return "/reporting";
+  }
+  if (roles.includes("CASHIER")) {
     return "/floor-view";
   }
-  return "/dashboard";
+  return "/billing";
 }
+

@@ -20,6 +20,7 @@ import { sessionApi } from "@/features/sessions/session-api";
 import type { ActiveSession } from "@/features/sessions/types";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { OwnerApprovalsTable } from "@/features/governance/OwnerApprovalsTable";
 
 function formatRate(value: number | string) {
   const rate = Number(value);
@@ -31,6 +32,7 @@ function formatRate(value: number | string) {
 function GovernanceContent() {
   const { user } = useAuth();
   const isOnline = useOnlineStatus();
+  const isOwner = Boolean(user?.roles.includes("OWNER"));
   const canManage = Boolean(
     user?.roles.some((role) => role === "OWNER" || role === "MANAGER"),
   );
@@ -170,6 +172,12 @@ function GovernanceContent() {
           Governance changes are unavailable while this device is offline.
           Reconnect before reviewing, overriding, handing over, or taking over
           a session.
+        </div>
+      )}
+
+      {isOwner && (
+        <div className="mb-8">
+          <OwnerApprovalsTable />
         </div>
       )}
 

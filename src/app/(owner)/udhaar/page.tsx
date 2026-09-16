@@ -276,6 +276,43 @@ export default function UdhaarPage() {
     URL.revokeObjectURL(url);
   };
 
+  const selectedCustomer = useMemo(
+    () => filteredCustomers.find((c) => c.id === selectedCustomerId),
+    [filteredCustomers, selectedCustomerId]
+  );
+
+  const statementSummary = useMemo(() => {
+    if (!statement) return { totalDebits: 0, totalCredits: 0, netMovement: 0, count: 0 };
+    let totalDebits = 0;
+    let totalCredits = 0;
+    for (const entry of statement.entries) {
+      const type = String(entry.entryType ?? "").toLowerCase();
+      const isCredit = type === "credit";
+      if (isCredit) {
+        totalCredits += entry.amount;
+      } else {
+        totalDebits += entry.amount;
+      }
+    }
+    return {
+      totalDebits,
+      totalCredits,
+      netMovement: totalDebits - totalCredits,
+      count: statement.entries.length,
+    };
+  }, [statement]);
+
+  const handlePrintStatement = () => {
+    const cleanup = () => {
+      document.body.classList.remove("printing-statement");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    document.body.classList.add("printing-statement");
+    window.print();
+    setTimeout(cleanup, 1500);
+  };
+
   if (loading) {
     return (
       <section className="space-y-6 p-6 max-w-7xl mx-auto">
@@ -306,10 +343,11 @@ export default function UdhaarPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50/60 pb-16 text-slate-900">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6">
-        {/* Page Header */}
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
+    <main className="min-h-screen bg-slate-50/60 pb-16 text-slate-900 print:min-h-0 print:bg-white print:p-0 print:pb-0">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6 print:p-0 print:m-0 print:max-w-none">
+        <div className="udhaar-non-printable space-y-6 print:hidden">
+          {/* Page Header */}
+          <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
           <div>
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-indigo-600" />
@@ -571,15 +609,26 @@ export default function UdhaarPage() {
             </div>
           )}
         </section>
+        </div>
 
         {/* Customer Statement Inspection Drawer */}
         {selectedCustomerId && (
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
+          <section
+            id="printable-account-statement"
+            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 print:border-none print:shadow-none print:p-0 print:m-0"
+          >
+            {/* Screen Controls Header (Hidden in Print) */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 print:hidden">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">Account Statement</h2>
                 <p className="text-xs text-slate-500">
-                  Inspect itemized ledger transactions across date ranges.
+                  {selectedCustomer ? (
+                    <>
+                      Inspecting ledger for <strong className="text-slate-700">{selectedCustomer.fullName}</strong> ({selectedCustomer.phone || "No phone"})
+                    </>
+                  ) : (
+                    "Inspect itemized ledger transactions across date ranges."
+                  )}
                 </p>
               </div>
 
@@ -610,13 +659,13 @@ export default function UdhaarPage() {
                 {statement && (
                   <>
                     <button
-                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                      onClick={() => window.print()}
+                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      onClick={handlePrintStatement}
                     >
                       <Printer size={13} /> Print
                     </button>
                     <button
-                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
                       onClick={exportStatement}
                     >
                       <Download size={13} /> CSV
@@ -626,44 +675,136 @@ export default function UdhaarPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+            {/* Print-Only Formal Statement Header */}
+            <div className="hidden print:block mb-6 pb-4 border-b-2 border-slate-800">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h1 className="text-xl font-black tracking-tight text-slate-950 uppercase">
+                    CueCloud POS
+                  </h1>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Customer Account Statement
+                  </p>
+                </div>
+                <div className="text-right text-xs text-slate-600 space-y-0.5">
+                  <p className="font-mono font-medium">
+                    Statement ID: {statement?.customerId.slice(0, 8).toUpperCase()}
+                  </p>
+                  <p>
+                    Generated: {new Date().toLocaleDateString("en-PK", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-4 rounded-lg bg-slate-50 p-3 text-xs border border-slate-200">
+                <div className="space-y-1">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Customer Details</div>
+                  <p className="font-bold text-slate-900 text-sm">{selectedCustomer?.fullName ?? "Customer"}</p>
+                  <p className="text-slate-600">Phone: {selectedCustomer?.phone || "—"}</p>
+                  {selectedCustomer?.cnic && <p className="text-slate-600">CNIC: {selectedCustomer.cnic}</p>}
+                  <p className="text-slate-600">
+                    Status: <span className="font-semibold uppercase text-slate-800">{selectedCustomer?.status ?? "—"}</span>
+                  </p>
+                </div>
+
+                <div className="space-y-1 text-right">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Statement Overview</div>
+                  <p className="text-slate-700">
+                    Period: <strong className="text-slate-900">{statementRange.from || "Start"} to {statementRange.to || "Present"}</strong>
+                  </p>
+                  <p className="text-slate-700">
+                    Transactions: <strong className="text-slate-900">{statement?.entries.length ?? 0} entries</strong>
+                  </p>
+                  <p className="text-sm font-bold text-slate-900 pt-1">
+                    Current Balance: {formatCurrency(selectedCustomer?.outstandingBalance ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 print:border-none print:bg-white print:p-0">
               {statement ? (
                 statement.entries.length === 0 ? (
                   <p className="text-center py-6 text-xs text-slate-500">
                     No ledger entries recorded for this date range.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto print:overflow-visible">
                     <table className="w-full text-left text-xs">
                       <thead>
-                        <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
+                        <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold print:text-slate-900 print:border-b-2 print:border-slate-800">
                           <th className="pb-2">Date</th>
                           <th className="pb-2">Type</th>
                           <th className="pb-2">Description</th>
                           <th className="pb-2 text-right">Amount</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {statement.entries.map((entry) => (
-                          <tr key={entry.id} className="text-slate-800">
-                            <td className="py-2.5 text-slate-500">
-                              {new Date(entry.createdAt).toLocaleDateString()}
-                            </td>
-                            <td className="py-2.5">
-                              <span className="font-semibold text-[10px] tracking-wider text-slate-600 bg-slate-200/80 px-1.5 py-0.5 rounded">
-                                {entry.entryType ?? "ADJUSTMENT"}
-                              </span>
-                            </td>
-                            <td className="py-2.5 font-medium">
-                              {entry.reason ?? "No description recorded"}
-                            </td>
-                            <td className="py-2.5 text-right font-mono font-bold text-slate-900">
-                              {formatCurrency(entry.amount)}
-                            </td>
-                          </tr>
-                        ))}
+                      <tbody className="divide-y divide-slate-100 print:divide-slate-200">
+                        {statement.entries.map((entry) => {
+                          const type = String(entry.entryType ?? "").toLowerCase();
+                          const isCredit = type === "credit";
+                          return (
+                            <tr key={entry.id} className="text-slate-800">
+                              <td className="py-2.5 text-slate-500 print:text-slate-700">
+                                {new Date(entry.createdAt).toLocaleDateString()}
+                              </td>
+                              <td className="py-2.5">
+                                <span
+                                  className={`font-semibold text-[10px] tracking-wider px-1.5 py-0.5 rounded ${
+                                    isCredit
+                                      ? "text-emerald-700 bg-emerald-100 print:bg-transparent print:border print:border-emerald-700"
+                                      : "text-slate-600 bg-slate-200/80 print:bg-transparent print:border print:border-slate-600"
+                                  }`}
+                                >
+                                  {entry.entryType ?? "ADJUSTMENT"}
+                                </span>
+                              </td>
+                              <td className="py-2.5 font-medium">
+                                {entry.reason ?? "No description recorded"}
+                              </td>
+                              <td className={`py-2.5 text-right font-mono font-bold ${
+                                isCredit ? "text-emerald-700" : "text-slate-900"
+                              }`}>
+                                {isCredit ? `- ${formatCurrency(entry.amount)}` : formatCurrency(entry.amount)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
+                      <tfoot className="border-t-2 border-slate-300 print:border-slate-800">
+                        <tr className="font-semibold text-slate-700">
+                          <td colSpan={3} className="pt-3 text-right">Period Total Debits:</td>
+                          <td className="pt-3 text-right font-mono font-bold text-slate-900">{formatCurrency(statementSummary.totalDebits)}</td>
+                        </tr>
+                        <tr className="font-semibold text-slate-700">
+                          <td colSpan={3} className="py-1 text-right">Period Total Credits / Payments:</td>
+                          <td className="py-1 text-right font-mono font-bold text-emerald-700">- {formatCurrency(statementSummary.totalCredits)}</td>
+                        </tr>
+                        <tr className="font-bold text-slate-900 border-t border-slate-200 print:border-slate-400">
+                          <td colSpan={3} className="py-2 text-right">Net Period Movement:</td>
+                          <td className="py-2 text-right font-mono font-bold text-slate-950">
+                            {formatCurrency(statementSummary.netMovement)}
+                          </td>
+                        </tr>
+                      </tfoot>
                     </table>
+
+                    {/* Print-Only Signature & Acknowledgement Footer */}
+                    <div className="hidden print:block mt-10 pt-6 border-t border-slate-300 text-xs">
+                      <div className="flex justify-between items-end pb-8">
+                        <div className="text-center">
+                          <div className="w-48 border-b border-slate-400 mb-1" />
+                          <p className="text-[10px] uppercase font-bold text-slate-500">Prepared By (Staff)</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="w-48 border-b border-slate-400 mb-1" />
+                          <p className="text-[10px] uppercase font-bold text-slate-500">Customer Signature</p>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-center text-slate-400">
+                        This is an official computer-generated statement from CueCloud POS. In case of any discrepancies, please present this statement to the club manager within 7 days.
+                      </p>
+                    </div>
                   </div>
                 )
               ) : (
@@ -678,7 +819,7 @@ export default function UdhaarPage() {
         {/* Manual Adjustment Modal (No Darkened Background) */}
         {showAdjustment && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto print:hidden"
             onClick={(e) => {
               if (e.target === e.currentTarget) closeModal();
             }}
@@ -832,7 +973,7 @@ export default function UdhaarPage() {
         {/* Record Settlement Modal (No Darkened Background) */}
         {showSettlement && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto print:hidden"
             onClick={(e) => {
               if (e.target === e.currentTarget) setShowSettlement(false);
             }}
@@ -960,7 +1101,7 @@ export default function UdhaarPage() {
         {/* Credit Thresholds Modal (No Darkened Background) */}
         {showThresholds && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto print:hidden"
             onClick={(e) => {
               if (e.target === e.currentTarget) setShowThresholds(false);
             }}
