@@ -1,27 +1,59 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { CanteenApi, Category, MenuItem, Order } from "../canteen.api";
-import { Loader2, AlertCircle, ShoppingCart, Search, Plus, Minus, Trash, FileText } from "lucide-react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { CanteenApi, Category, MenuItem } from "../canteen.api";
+import {
+  Loader2,
+  AlertCircle,
+  ShoppingCart,
+  Search,
+  Plus,
+  Minus,
+  Trash2,
+  FileText,
+  ScanBarcode,
+  RotateCcw,
+  CheckCircle2,
+  X,
+  Armchair,
+  User,
+  Coffee,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "react-toastify";
+import { sessionApi } from "@/features/sessions/session-api";
+import type { ActiveSession } from "@/features/sessions/types";
+import { useAuth } from "@/lib/auth/auth-context";
 
 interface CartItem extends MenuItem {
   cartQuantity: number;
   cartNotes?: string;
 }
 
-export function PosScreen({ sessionId }: { sessionId?: string }) {
+export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) {
+  const { user } = useAuth();
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Barcode scanner logic
+
+  // Destination selection (Session vs Walk-in)
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [destinationMode, setDestinationMode] = useState<"walkin" | "session">(
+    propSessionId ? "session" : "walkin"
+  );
+  const [selectedSessionId, setSelectedSessionId] = useState<string>(
+    propSessionId || ""
+  );
+
+  // Barcode scanner buffer
   const [barcodeBuffer, setBarcodeBuffer] = useState("");
 
   const loadData = async () => {
@@ -32,8 +64,8 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
         CanteenApi.getCategories(),
         CanteenApi.getMenuItems(undefined, true),
       ]);
-      setCategories(cats.filter(c => c.isActive));
-      setItems(itms.filter(i => i.isActive && i.isAvailable));
+      setCategories(cats.filter((c) => c.isActive));
+      setItems(itms.filter((i) => i.isActive && i.isAvailable));
     } catch (err: any) {
       setError(err.message || "Failed to load POS data");
     } finally {
@@ -41,15 +73,39 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
     }
   };
 
+  const loadActiveSessions = async () => {
+    try {
+      setIsLoadingSessions(true);
+      const sessions = await sessionApi.active(user?.branchId);
+      setActiveSessions(sessions);
+      if (sessions.length > 0 && !selectedSessionId && !propSessionId) {
+        // Default to first active session if user switches to session mode
+        setSelectedSessionId(sessions[0].id);
+      }
+    } catch (err) {
+      console.error("Failed to load active sessions for canteen POS:", err);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
-  }, []);
+    if (!propSessionId) {
+      loadActiveSessions();
+    }
+  }, [user?.branchId]);
 
   // HID Barcode Scanner Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if user is typing in an input field
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
 
       if (e.key === "Enter") {
         if (barcodeBuffer.length > 0) {
@@ -65,36 +121,62 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [barcodeBuffer, items]);
 
-  const handleBarcodeScanned = useCallback((scannedBarcode: string) => {
-    const matchedItem = items.find((i) => i.barcode === scannedBarcode);
-    if (matchedItem) {
-      addToCart(matchedItem);
-      toast.success(`Scanned: ${matchedItem.name}`);
-    } else {
-      toast.error(`Barcode not found: ${scannedBarcode}`);
-    }
-  }, [items]);
+  const handleBarcodeScanned = useCallback(
+    (scannedBarcode: string) => {
+      const trimmed = scannedBarcode.trim();
+      const matchedItem = items.find(
+        (i) => i.barcode && i.barcode.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (matchedItem) {
+        addToCart(matchedItem);
+        toast.success(`Scanned: ${matchedItem.name}`);
+      } else {
+        toast.error(`Barcode not found: ${trimmed}`);
+      }
+    },
+    [items]
+  );
 
   const addToCart = (item: MenuItem) => {
     setCart((prev) => {
       const existing = prev.find((i) => i.id === item.id);
       if (existing) {
-        return prev.map((i) => i.id === item.id ? { ...i, cartQuantity: i.cartQuantity + 1 } : i);
+        return prev.map((i) =>
+          i.id === item.id ? { ...i, cartQuantity: i.cartQuantity + 1 } : i
+        );
       }
       return [...prev, { ...item, cartQuantity: 1, cartNotes: "" }];
     });
   };
 
   const updateCartItem = (id: string, updates: Partial<CartItem>) => {
-    setCart((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
+    setCart((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
   };
 
   const removeFromCart = (id: string) => {
     setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const clearCart = () => {
+    setCart([]);
+  };
+
+  const targetSession = useMemo(() => {
+    const sId = propSessionId || (destinationMode === "session" ? selectedSessionId : null);
+    if (!sId) return null;
+    return activeSessions.find((s) => s.id === sId) || null;
+  }, [propSessionId, destinationMode, selectedSessionId, activeSessions]);
+
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+
+    if (destinationMode === "session" && !selectedSessionId && !propSessionId) {
+      toast.error("Please select an active table session");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const payload = cart.map((c) => ({
@@ -103,12 +185,17 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
         notes: c.cartNotes || undefined,
       }));
 
-      if (sessionId) {
-        await CanteenApi.addItemsToSession(sessionId, payload);
-        toast.success("Items added to table session successfully!");
+      const finalSessionId = propSessionId || (destinationMode === "session" ? selectedSessionId : null);
+
+      if (finalSessionId) {
+        await CanteenApi.addItemsToSession(finalSessionId, payload);
+        const sessionLabel = targetSession
+          ? `Table ${targetSession.table.tableNumber}`
+          : "session";
+        toast.success(`Items successfully added to ${sessionLabel}!`);
       } else {
         await CanteenApi.createStandaloneOrder(payload);
-        toast.success("Standalone order processed successfully!");
+        toast.success("Direct walk-in order completed successfully!");
       }
       setCart([]);
     } catch (err: any) {
@@ -122,7 +209,7 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
     return (
       <div className="flex h-64 items-center justify-center flex-col gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-muted-foreground">Loading POS...</p>
+        <p className="text-muted-foreground">Loading Canteen POS...</p>
       </div>
     );
   }
@@ -131,124 +218,351 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
     return (
       <div className="flex h-64 items-center justify-center flex-col gap-4 text-destructive">
         <AlertCircle className="h-10 w-10" />
-        <p className="text-lg font-semibold">Error Loading Data</p>
-        <p>{error}</p>
-        <Button onClick={loadData} variant="secondary" className="w-auto">Try Again</Button>
+        <p className="text-lg font-semibold">Error Loading POS Data</p>
+        <p className="text-sm text-muted-foreground">{error}</p>
+        <Button onClick={loadData} variant="secondary" className="w-auto">
+          Try Again
+        </Button>
       </div>
     );
   }
 
-  const filteredItems = activeCategory ? items.filter(i => i.categoryId === activeCategory) : items;
-  const cartTotal = cart.reduce((sum, item) => sum + (Number(item.currentPrice) * item.cartQuantity), 0);
+  // Filtered items
+  const filteredItems = items.filter((item) => {
+    const matchesCategory =
+      activeCategory === null || item.categoryId === activeCategory;
+    const matchesSearch =
+      !searchQuery.trim() ||
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.barcode &&
+        item.barcode.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (item.description &&
+        item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesCategory && matchesSearch;
+  });
+
+  const cartTotal = cart.reduce(
+    (sum, item) => sum + Number(item.currentPrice) * item.cartQuantity,
+    0
+  );
+  const totalQuantity = cart.reduce((sum, item) => sum + item.cartQuantity, 0);
 
   return (
-    <div className="flex flex-col lg:flex-row h-full min-h-[80vh] gap-6">
-      {/* LEFT: Menu Selection */}
+    <div className="flex flex-col lg:flex-row h-full min-h-[78vh] gap-6">
+      {/* LEFT SECTION: Search, Category Filters & Products Grid */}
       <div className="flex-1 flex flex-col gap-4">
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          <Button 
-            variant={activeCategory === null ? "primary" : "secondary"} 
-            className="w-auto"
-            onClick={() => setActiveCategory(null)}
-          >
-            All
-          </Button>
-          {categories.map((c) => (
-            <Button 
-              key={c.id} 
-              variant={activeCategory === c.id ? "primary" : "secondary"}
-              className="w-auto"
-              onClick={() => setActiveCategory(c.id)}
-            >
-              {c.name}
-            </Button>
-          ))}
+        {/* Search Bar & Scanner Status */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search products by name or barcode..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-11 text-sm bg-white dark:bg-slate-900 rounded-xl"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-2.5 rounded-xl border bg-white dark:bg-slate-900 text-xs font-medium text-slate-600 dark:text-slate-400">
+            <ScanBarcode className="w-4 h-4 text-primary" />
+            <span>Scanner Ready</span>
+          </div>
         </div>
 
+        {/* Category Pills */}
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setActiveCategory(null)}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition shrink-0 ${
+              activeCategory === null
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-white dark:bg-slate-900 border text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+            }`}
+          >
+            All Items ({items.length})
+          </button>
+          {categories.map((c) => {
+            const count = items.filter((i) => i.categoryId === c.id).length;
+            const isSelected = activeCategory === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setActiveCategory(c.id)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition shrink-0 flex items-center gap-1.5 ${
+                  isSelected
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-white dark:bg-slate-900 border text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                }`}
+              >
+                <span>{c.name}</span>
+                <span className="text-xs opacity-70 font-mono">({count})</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Products Grid */}
         {filteredItems.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground bg-secondary/20 rounded-lg border border-dashed">
-            No items found in this category.
+          <div className="flex-1 min-h-[300px] flex flex-col items-center justify-center text-muted-foreground bg-slate-50/50 dark:bg-slate-900/50 rounded-2xl border border-dashed p-8 text-center">
+            <Coffee className="w-12 h-12 mb-2 opacity-30 text-primary" />
+            <p className="font-semibold text-slate-800 dark:text-slate-200">
+              No available canteen products found
+            </p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+              {searchQuery
+                ? `No products matching "${searchQuery}". Check spelling or try a different term.`
+                : "No active products are available in this category."}
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto">
-            {filteredItems.map((item) => (
-              <div 
-                key={item.id} 
-                onClick={() => addToCart(item)}
-                className="border rounded-xl p-4 cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors flex flex-col justify-between aspect-square bg-card"
-              >
-                <div>
-                  <h4 className="font-semibold line-clamp-2">{item.name}</h4>
-                  <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{item.description}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3.5 overflow-y-auto">
+            {filteredItems.map((item) => {
+              const inCartItem = cart.find((c) => c.id === item.id);
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => addToCart(item)}
+                  className={`relative border rounded-2xl p-4 cursor-pointer transition-all duration-150 flex flex-col justify-between bg-white dark:bg-slate-900 hover:shadow-md hover:border-primary/50 group select-none ${
+                    inCartItem
+                      ? "ring-2 ring-primary border-primary bg-primary/5 dark:bg-primary/10"
+                      : ""
+                  }`}
+                >
+                  {inCartItem && (
+                    <span className="absolute top-2.5 right-2.5 bg-primary text-primary-foreground text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center shadow-xs">
+                      {inCartItem.cartQuantity}
+                    </span>
+                  )}
+
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-primary transition-colors">
+                      {item.name}
+                    </h4>
+                    {item.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                        {item.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <span className="font-extrabold text-base text-primary font-mono">
+                      Rs. {Number(item.currentPrice).toFixed(2)}
+                    </span>
+                    <span className="text-[11px] font-semibold text-slate-400 group-hover:text-primary transition-colors flex items-center gap-0.5">
+                      <Plus className="w-3.5 h-3.5" /> Add
+                    </span>
+                  </div>
                 </div>
-                <div className="font-bold text-lg text-primary mt-2">
-                  ${Number(item.currentPrice).toFixed(2)}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* RIGHT: Cart / Order Panel */}
-      <div className="w-full lg:w-96 flex flex-col border rounded-xl bg-card overflow-hidden">
-        <div className="p-4 border-b bg-muted/50 flex items-center justify-between">
+      {/* RIGHT SECTION: Cart / Order Checkout Panel */}
+      <div className="w-full lg:w-96 shrink-0 flex flex-col border rounded-2xl bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+        {/* Panel Header */}
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5 text-primary" />
-            <h3 className="font-bold text-lg">
-              {sessionId ? "Add to Session" : "New Order"}
-            </h3>
+            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+              <ShoppingCart className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                Canteen Order
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {cart.length > 0
+                  ? `${totalQuantity} item${totalQuantity > 1 ? "s" : ""} selected`
+                  : "Ready for items"}
+              </p>
+            </div>
           </div>
-          <span className="text-xs font-mono bg-background px-2 py-1 rounded border text-muted-foreground">
-            SCAN READY
-          </span>
+          {cart.length > 0 && (
+            <button
+              type="button"
+              onClick={clearCart}
+              className="text-xs font-semibold text-slate-400 hover:text-rose-600 transition"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+        {/* Order Destination Selector (Session vs Walk-in) */}
+        {!propSessionId && (
+          <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20 space-y-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+              Order Destination
+            </label>
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setDestinationMode("walkin")}
+                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                  destinationMode === "walkin"
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                <User className="w-3.5 h-3.5" /> Walk-in Sale
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDestinationMode("session");
+                  if (activeSessions.length === 0) {
+                    loadActiveSessions();
+                  }
+                }}
+                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                  destinationMode === "session"
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                <Armchair className="w-3.5 h-3.5" /> Table Session
+              </button>
+            </div>
+
+            {destinationMode === "session" && (
+              <div className="pt-1">
+                {isLoadingSessions ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                    <span>Loading active tables...</span>
+                  </div>
+                ) : activeSessions.length === 0 ? (
+                  <div className="p-2.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs">
+                    No active table sessions on this branch right now.
+                  </div>
+                ) : (
+                  <select
+                    value={selectedSessionId}
+                    onChange={(e) => setSelectedSessionId(e.target.value)}
+                    className="h-9 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs text-slate-800 dark:text-slate-100 outline-none font-medium"
+                  >
+                    {activeSessions.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        Table {s.table.tableNumber} -{" "}
+                        {s.customer?.fullName || "Walk-in Guest"}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* If locked to a specific sessionId prop */}
+        {propSessionId && targetSession && (
+          <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-primary/5 text-xs text-primary font-medium flex items-center gap-2">
+            <Armchair className="w-4 h-4" />
+            <span>
+              Issuing to Table {targetSession.table.tableNumber} (
+              {targetSession.customer?.fullName || "Walk-in"})
+            </span>
+          </div>
+        )}
+
+        {/* Cart Item List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[220px]">
           {cart.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground text-center">
-              <ShoppingCart className="w-12 h-12 mb-2 opacity-20" />
-              <p>Cart is empty</p>
-              <p className="text-xs mt-2 opacity-50">Scan a barcode or tap an item</p>
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-center py-8">
+              <div className="w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3 text-slate-400">
+                <ShoppingCart className="w-7 h-7" />
+              </div>
+              <p className="font-semibold text-sm text-slate-700 dark:text-slate-300">
+                Cart is Empty
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
+                Click on menu products or scan a barcode to add to order
+              </p>
             </div>
           ) : (
             cart.map((c) => (
-              <div key={c.id} className="flex flex-col gap-2 p-3 border rounded-lg bg-background shadow-sm">
+              <div
+                key={c.id}
+                className="flex flex-col gap-2 p-3 border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-800/30 shadow-2xs"
+              >
                 <div className="flex justify-between items-start">
-                  <div className="font-medium">{c.name}</div>
-                  <div className="font-semibold">${(Number(c.currentPrice) * c.cartQuantity).toFixed(2)}</div>
+                  <span className="font-bold text-sm text-slate-900 dark:text-white leading-tight">
+                    {c.name}
+                  </span>
+                  <span className="font-extrabold text-sm text-slate-900 dark:text-white font-mono">
+                    Rs. {(Number(c.currentPrice) * c.cartQuantity).toFixed(2)}
+                  </span>
                 </div>
-                
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1">
-                    <Button 
-                      variant="secondary" 
-                      className="h-7 w-7 p-0" 
-                      onClick={() => c.cartQuantity > 1 ? updateCartItem(c.id, { cartQuantity: c.cartQuantity - 1 }) : removeFromCart(c.id)}
+
+                <div className="flex items-center justify-between mt-1">
+                  <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      className="h-6 w-6 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                      onClick={() =>
+                        c.cartQuantity > 1
+                          ? updateCartItem(c.id, {
+                              cartQuantity: c.cartQuantity - 1,
+                            })
+                          : removeFromCart(c.id)
+                      }
                     >
                       <Minus className="w-3 h-3" />
-                    </Button>
-                    <span className="w-8 text-center font-medium">{c.cartQuantity}</span>
-                    <Button 
-                      variant="secondary" 
-                      className="h-7 w-7 p-0"
-                      onClick={() => updateCartItem(c.id, { cartQuantity: c.cartQuantity + 1 })}
+                    </button>
+                    <span className="w-7 text-center font-bold text-xs font-mono">
+                      {c.cartQuantity}
+                    </span>
+                    <button
+                      type="button"
+                      className="h-6 w-6 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                      onClick={() =>
+                        updateCartItem(c.id, {
+                          cartQuantity: c.cartQuantity + 1,
+                        })
+                      }
                     >
                       <Plus className="w-3 h-3" />
-                    </Button>
+                    </button>
                   </div>
-                  <Button variant="ghost" className="h-7 w-7 p-0 text-destructive animate-fade-in" onClick={() => removeFromCart(c.id)}>
-                    <Trash className="w-3 h-3" />
-                  </Button>
+
+                  <span className="text-xs text-muted-foreground font-mono">
+                    Rs. {Number(c.currentPrice).toFixed(2)} each
+                  </span>
+
+                  <button
+                    type="button"
+                    className="p-1 rounded text-slate-400 hover:text-destructive hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
+                    onClick={() => removeFromCart(c.id)}
+                    title="Remove item"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                
+
+                {/* Notes input */}
                 <div className="relative mt-1">
-                  <FileText className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
-                  <Input 
-                    placeholder="Add note (e.g. no sugar)" 
-                    className="h-7 text-xs pl-7" 
-                    value={c.cartNotes}
-                    onChange={(e) => updateCartItem(c.id, { cartNotes: e.target.value })}
+                  <FileText className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Notes (e.g. cold, extra spicy, sauce)"
+                    className="h-7 w-full text-xs pl-7 pr-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none"
+                    value={c.cartNotes || ""}
+                    onChange={(e) =>
+                      updateCartItem(c.id, { cartNotes: e.target.value })
+                    }
                   />
                 </div>
               </div>
@@ -256,18 +570,46 @@ export function PosScreen({ sessionId }: { sessionId?: string }) {
           )}
         </div>
 
-        <div className="p-4 border-t bg-muted/50 space-y-4">
-          <div className="flex justify-between items-center font-bold text-xl">
-            <span>Total:</span>
-            <span>${cartTotal.toFixed(2)}</span>
+        {/* Panel Footer / Checkout */}
+        <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3">
+          <div className="space-y-1">
+            <div className="flex justify-between items-center text-xs text-muted-foreground">
+              <span>Items Subtotal:</span>
+              <span className="font-mono">Rs. {cartTotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between items-center font-black text-lg text-slate-900 dark:text-white pt-1">
+              <span>Grand Total:</span>
+              <span className="text-primary font-mono">
+                Rs. {cartTotal.toFixed(2)}
+              </span>
+            </div>
           </div>
-          <Button 
-            className="w-full h-12 text-lg" 
-            disabled={cart.length === 0 || isSubmitting}
+
+          <Button
+            className="w-full h-12 text-sm font-bold gap-2"
+            disabled={
+              cart.length === 0 ||
+              isSubmitting ||
+              (destinationMode === "session" &&
+                !selectedSessionId &&
+                !propSessionId)
+            }
             onClick={handleCheckout}
           >
-            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
-            {sessionId ? "Send to Table" : "Complete Order"}
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Processing...
+              </>
+            ) : destinationMode === "session" || propSessionId ? (
+              <>
+                <Armchair className="w-4 h-4" /> Issue to Table (
+                {targetSession ? targetSession.table.tableNumber : "Session"})
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4" /> Complete Direct Order
+              </>
+            )}
           </Button>
         </div>
       </div>

@@ -49,9 +49,9 @@ export default function AuditPage() {
   const [resolutionNotes, setResolutionNotes] = useState("");
   const [isSubmittingResolution, setIsSubmittingResolution] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isSilent = false) => {
     try {
-      setIsLoading(true);
+      if (!isSilent) setIsLoading(true);
       const [kpiRes, logRes, alertRes] = await Promise.all([
         fetchAuditKPIs().catch(() => null),
         fetchAuditLogs({
@@ -82,7 +82,7 @@ export default function AuditPage() {
       }
       if (alertRes) setAlerts(alertRes.alerts || []);
     } catch (err) {
-      toast.error("Failed to load audit data.");
+      if (!isSilent) toast.error("Failed to load audit data.");
     } finally {
       setIsLoading(false);
     }
@@ -90,6 +90,35 @@ export default function AuditPage() {
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // Dynamic Revalidation & Invalidation Listeners
+  useEffect(() => {
+    const handleRevalidate = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void loadData(true);
+      }
+    };
+
+    window.addEventListener("focus", handleRevalidate);
+    document.addEventListener("visibilitychange", handleRevalidate);
+    window.addEventListener("cuecloud:anomaly-invalidated", handleRevalidate);
+    window.addEventListener("cuecloud:audit-invalidated", handleRevalidate);
+    window.addEventListener("cuecloud:invoice-voided", handleRevalidate);
+    window.addEventListener("cuecloud:authenticated-heartbeat", handleRevalidate);
+
+    // Dynamic polling interval (every 8s) to react to background changes
+    const timer = setInterval(handleRevalidate, 8000);
+
+    return () => {
+      window.removeEventListener("focus", handleRevalidate);
+      document.removeEventListener("visibilitychange", handleRevalidate);
+      window.removeEventListener("cuecloud:anomaly-invalidated", handleRevalidate);
+      window.removeEventListener("cuecloud:audit-invalidated", handleRevalidate);
+      window.removeEventListener("cuecloud:invoice-voided", handleRevalidate);
+      window.removeEventListener("cuecloud:authenticated-heartbeat", handleRevalidate);
+      clearInterval(timer);
+    };
   }, [loadData]);
 
   // Handle Clock Verification
@@ -227,7 +256,7 @@ export default function AuditPage() {
           </button>
 
           <button
-            onClick={loadData}
+            onClick={() => void loadData(false)}
             disabled={isLoading}
             className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-2xs transition-colors disabled:opacity-50"
           >

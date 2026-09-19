@@ -133,6 +133,7 @@ export const correctSealedReport = (
   values: {
     correctionType: "revenue" | "udhaar";
     revenueAdjustment?: number;
+    correctedOpeningCash?: number;
     udhaarAdjustment?: number;
     reason: string;
   },
@@ -141,6 +142,11 @@ export const correctSealedReport = (
     method: "POST",
     body: JSON.stringify({ reportId, ...values }),
   });
+
+export const fetchReportCorrections = (reportId: string) =>
+  apiFetch<SealedReport>(
+    `/reporting/z-report/corrections?reportId=${encodeURIComponent(reportId)}`,
+  );
 
 //Scheduled Email Delivery
 export const fetchSchedules = () =>

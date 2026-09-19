@@ -10,6 +10,8 @@ import {
   FileText,
   RefreshCw,
   ShieldCheck,
+  Edit3,
+  X,
 } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -45,6 +47,7 @@ type ShiftReportRow = {
   totalSales?: number;
   totalDiscounts?: number;
   voidCount?: number;
+  voidAmount?: number;
 };
 
 function rowsFromReport(data: ReportData): Record<string, unknown>[] {
@@ -568,6 +571,7 @@ export default function ReportingWorkspace() {
     udhaarReceived?: number;
     tenderBreakdown?: Record<string, number>;
     isSealed?: boolean;
+    sealedReportId?: string | null;
     note?: string | null;
   } | null;
 
@@ -985,6 +989,20 @@ export default function ReportingWorkspace() {
                         {sealing ? "Sealing..." : "Seal Daily Report"}
                       </button>
                     )}
+                    {zReport?.isSealed && isManagement && zReport?.sealedReportId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCorrectingId(zReport.sealedReportId || null);
+                          setCorrectionType("revenue");
+                          setCorrectionAmount("");
+                          setCorrectionReason("");
+                        }}
+                        className="mt-4 w-full flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800 shadow-sm transition hover:bg-amber-100"
+                      >
+                        <Edit3 size={15} /> Add Report Correction
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1085,7 +1103,10 @@ export default function ReportingWorkspace() {
                             <td className="px-5 py-3.5 text-slate-600">
                               {money(row.totalDiscounts)}
                             </td>
-                            <td className="px-5 py-3.5 text-slate-600">{row.voidCount}</td>
+                            <td className="px-5 py-3.5 text-slate-600">
+                              {row.voidCount}
+                              {row.voidAmount ? ` (${money(row.voidAmount)})` : ""}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1101,7 +1122,12 @@ export default function ReportingWorkspace() {
                     ["Invoices", ownShiftReport?.invoiceCount ?? 0],
                     ["Total Sales", money(ownShiftReport?.totalSales)],
                     ["Discounts", money(ownShiftReport?.totalDiscounts)],
-                    ["Voids", ownShiftReport?.voidCount ?? 0],
+                    [
+                      "Voids",
+                      ownShiftReport?.voidCount
+                        ? `${ownShiftReport.voidCount}${ownShiftReport.voidAmount ? ` (${money(ownShiftReport.voidAmount)})` : ""}`
+                        : (ownShiftReport?.voidCount ?? 0),
+                    ],
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
@@ -1332,8 +1358,46 @@ export default function ReportingWorkspace() {
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
                               <ShieldCheck size={14} /> Approved
                             </span>
+                            {isManagement && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCorrectingId(report.id);
+                                  setCorrectionType("revenue");
+                                  setCorrectionAmount("");
+                                  setCorrectionReason("");
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 shadow-xs transition hover:bg-amber-100 hover:border-amber-400"
+                                title="Add a subsequent correction to this report"
+                              >
+                                <Edit3 size={13} /> Add Correction
+                              </button>
+                            )}
                           </div>
                         </div>
+                        {report.items && report.items.filter((item) => item.label?.startsWith("CORRECTION")).length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 flex items-center gap-1">
+                              <AlertTriangle size={12} /> Applied Corrections:
+                            </span>
+                            <div className="space-y-1">
+                              {report.items
+                                .filter((item) => item.label?.startsWith("CORRECTION"))
+                                .map((item) => (
+                                  <div
+                                    key={item.id}
+                                    className="flex items-center justify-between text-xs bg-amber-50/70 border border-amber-200/60 rounded px-2.5 py-1 text-slate-700"
+                                  >
+                                    <span className="font-medium text-slate-800">{item.label}</span>
+                                    <span className={`font-mono font-bold ${(item.amount ?? 0) >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                                      {(item.amount ?? 0) >= 0 ? `+${money(item.amount)}` : money(item.amount)}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
                       </article>
                     );
                   })}
@@ -1558,6 +1622,122 @@ export default function ReportingWorkspace() {
           </section>
         </div>
       </div>
+
+      {/* Correction Modal */}
+      {correctingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
+                  <Edit3 size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Add Report Correction
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Audit adjustment for sealed closure
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCorrectingId(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="rounded-lg bg-amber-50/70 border border-amber-200/60 p-3 text-xs text-amber-800 space-y-1">
+              <p className="font-semibold flex items-center gap-1">
+                <AlertTriangle size={14} /> Immutable Sealed Report
+              </p>
+              <p>
+                Once sealed, the base report figures remain locked. Corrections are appended as separate audited entries and reflected in reconciliations.
+              </p>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submitCorrection(correctingId);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Adjustment Type
+                </label>
+                <select
+                  value={correctionType}
+                  onChange={(e) => setCorrectionType(e.target.value as "revenue" | "udhaar")}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="revenue">Revenue Adjustment (Cash / Sales)</option>
+                  <option value="udhaar">Udhaar Adjustment (Credit balance)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Adjustment Amount
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  required
+                  placeholder="e.g. 500 or -250"
+                  value={correctionAmount}
+                  onChange={(e) => setCorrectionAmount(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 font-mono"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Use positive numbers to add revenue/credit, or negative numbers to deduct.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Reason & Audit Justification
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Explain why this correction is required for the audit trail..."
+                  value={correctionReason}
+                  onChange={(e) => setCorrectionReason(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setCorrectingId(null)}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingCorrection || !correctionReason.trim() || !correctionAmount}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 transition flex items-center gap-1.5"
+                >
+                  {submittingCorrection ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" /> Submitting...
+                    </>
+                  ) : (
+                    "Apply Correction"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

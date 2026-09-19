@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, ApiError } from "@/lib/api/client";
 import {
   offlineDB,
   queueCustomerChange,
@@ -92,6 +92,21 @@ export const customerApi = {
     const newId = crypto.randomUUID();
     const cleanPhone = body.phone.replace(/[\s()-]/g, "");
 
+    // Check offline cache for duplicate phone first
+    if (cleanPhone) {
+      const cached = await offlineDB.cachedCustomers.toArray();
+      const existingOffline = cached.find((item) => {
+        const c = item.data as Customer;
+        return c.phone && c.phone.replace(/[\s()-]/g, "") === cleanPhone;
+      });
+      if (existingOffline) {
+        const existingCust = existingOffline.data as Customer;
+        throw new Error(
+          `A customer with this phone number already exists (${existingCust.fullName || "Existing customer"})`,
+        );
+      }
+    }
+
     const newCustomer: Customer = {
       id: newId,
       branchId: body.branchId ?? null,
@@ -149,7 +164,20 @@ export const customerApi = {
 
       return created;
     } catch (onlineError) {
-      // Network failure fallback
+      // If the error is an API response (validation 400, conflict 409, forbidden 403, etc.),
+      // rethrow immediately so the UI form displays the validation error to the user!
+      if (
+        onlineError instanceof ApiError ||
+        (onlineError &&
+          typeof onlineError === "object" &&
+          "status" in onlineError &&
+          typeof (onlineError as any).status === "number" &&
+          (onlineError as any).status > 0)
+      ) {
+        throw onlineError;
+      }
+
+      // Only true network connection failures fall back to offline queue
       await offlineDB.cachedCustomers.put({
         id: newId,
         branchId,
@@ -177,6 +205,21 @@ export const customerApi = {
   update: async (id: string, body: CustomerUpdateInput): Promise<Customer> => {
     const branchId = getActiveOfflineBranchId() || "default";
     const cleanPhone = body.phone ? body.phone.replace(/[\s()-]/g, "") : undefined;
+
+    // If updating phone, check offline cache for duplicate phone on a different customer
+    if (cleanPhone) {
+      const cached = await offlineDB.cachedCustomers.toArray();
+      const existingOffline = cached.find((item) => {
+        const c = item.data as Customer;
+        return c.id !== id && c.phone && c.phone.replace(/[\s()-]/g, "") === cleanPhone;
+      });
+      if (existingOffline) {
+        const existingCust = existingOffline.data as Customer;
+        throw new Error(
+          `A customer with this phone number already exists (${existingCust.fullName || "Existing customer"})`,
+        );
+      }
+    }
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       const existing = await offlineDB.cachedCustomers.get(id);
@@ -230,7 +273,20 @@ export const customerApi = {
       });
 
       return updated;
-    } catch {
+    } catch (onlineError) {
+      // If the error is an API response (validation 400, conflict 409, forbidden 403, etc.),
+      // rethrow immediately so the UI form displays the validation error to the user!
+      if (
+        onlineError instanceof ApiError ||
+        (onlineError &&
+          typeof onlineError === "object" &&
+          "status" in onlineError &&
+          typeof (onlineError as any).status === "number" &&
+          (onlineError as any).status > 0)
+      ) {
+        throw onlineError;
+      }
+
       const existing = await offlineDB.cachedCustomers.get(id);
       const updatedData: Customer = {
         ...(existing?.data || { id, branchId: null, createdAt: new Date().toISOString(), tagAssignments: [] }),

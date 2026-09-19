@@ -48,8 +48,8 @@ export const invoiceService = {
     );
   },
 
-  voidInvoice(invoiceId: string, reason: string) {
-    return apiFetch<Invoice>(
+  async voidInvoice(invoiceId: string, reason: string) {
+    const res = await apiFetch<Invoice>(
       `/billing/invoices/${encodeURIComponent(invoiceId)}/void`,
       {
         method: "POST", // <-- Changed from "PATCH" to "POST"
@@ -59,6 +59,14 @@ export const invoiceService = {
         body: JSON.stringify({ reason }),
       },
     );
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("cuecloud:invoice-voided", { detail: { invoiceId, reason } }));
+      window.dispatchEvent(new CustomEvent("cuecloud:anomaly-invalidated"));
+      window.dispatchEvent(new CustomEvent("cuecloud:audit-invalidated"));
+    }
+
+    return res;
   },
 
   addPayment(invoiceId: string, input: RecordPaymentInput) {
@@ -69,7 +77,17 @@ export const invoiceService = {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          ...input,
+          tenders: [
+            {
+              tenderType: input.tenderType,
+              amount: input.amount,
+              payerLabel: input.payerLabel,
+              paymentReference: input.paymentReference,
+            },
+          ],
+        }),
       },
     );
   },

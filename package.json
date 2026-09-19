@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start --port 3001",
     "lint": "next lint",
-    "test": "node --env-file=.env.local --import tsx --test tests/unit/branch-switching.test.tsx tests/unit/dev4-phase2.test.tsx tests/unit/platform-admin-auth.test.ts tests/unit/dev4-phase4.test.ts tests/unit/dev4-phase5.test.tsx tests/unit/session-races.test.ts tests/unit/connection-store.test.ts tests/unit/owner-approval-workflow.test.ts tests/unit/statement-print.test.ts tests/unit/sealed-reports-download.test.ts tests/unit/accountant-navigation-restrictions.test.ts tests/unit/push-notification-restrictions.test.ts",
+    "test": "node --env-file=.env.local --import tsx --test tests/unit/branch-switching.test.tsx tests/unit/dev4-phase2.test.tsx tests/unit/platform-admin-auth.test.ts tests/unit/dev4-phase4.test.ts tests/unit/dev4-phase5.test.tsx tests/unit/session-races.test.ts tests/unit/connection-store.test.ts tests/unit/owner-approval-workflow.test.ts tests/unit/statement-print.test.ts tests/unit/sealed-reports-download.test.ts tests/unit/accountant-navigation-restrictions.test.ts tests/unit/push-notification-restrictions.test.ts tests/unit/report-corrections.test.ts tests/unit/canteen-module.test.ts tests/unit/anomaly-reactivity.test.ts tests/unit/customer-duplicate-phone.test.ts tests/unit/payment-record-modal.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

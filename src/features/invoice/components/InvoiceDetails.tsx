@@ -238,7 +238,19 @@ export default function InvoiceDetails({
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="font-semibold text-slate-950">Customer context</h2>
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            <Detail label="Customer" value={invoice.customer?.fullName ?? "Walk-in customer"} />
+            <Detail
+              label="Customer"
+              value={
+                <span className="flex items-center gap-2">
+                  <span>{invoice.customer?.fullName ?? "Walk-in customer"}</span>
+                  {invoice.customer?.isBlocked && (
+                    <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-700 border border-rose-200">
+                      Blocked
+                    </span>
+                  )}
+                </span>
+              }
+            />
             <Detail label="Phone" value={invoice.customer?.phone ?? "Not recorded"} />
           </dl>
         </article>
@@ -267,6 +279,8 @@ export default function InvoiceDetails({
             standardTotal={standardTotal}
             cardTotal={cardTotal}
             onSuccess={() => void refresh()}
+            isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
+            customerName={invoice.customer?.fullName ?? null}
           />
         ) : (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
@@ -281,11 +295,17 @@ export default function InvoiceDetails({
         <RecordPaymentModal
           invoiceId={invoice.id}
           remainingAmount={remainingAmount}
+          standardTotal={standardTotal}
+          cardTotal={cardTotal}
           currency={currency}
+          isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
           onClose={() => setShowPaymentModal(false)}
           onSuccess={(result) => {
-            setInvoice(result.invoice);
+            if (result?.invoice) {
+              setInvoice(result.invoice);
+            }
             setShowPaymentModal(false);
+            void refresh();
             toast.success("Payment recorded successfully.");
           }}
         />
@@ -507,11 +527,11 @@ function Summary({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</dt>
-      <dd className="mt-1 break-words font-medium text-slate-800" title={value}>{value}</dd>
+      <dd className="mt-1 break-words font-medium text-slate-800">{value}</dd>
     </div>
   );
 }

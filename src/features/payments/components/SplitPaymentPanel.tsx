@@ -8,11 +8,15 @@ export default function SplitPaymentPanel({
   standardTotal,
   cardTotal,
   onSuccess,
+  isCustomerBlocked = false,
+  customerName = null,
 }: {
   invoiceId: string;
   standardTotal: number;
   cardTotal: number;
   onSuccess: () => void;
+  isCustomerBlocked?: boolean;
+  customerName?: string | null;
 }) {
   const [cash, setCash] = useState<string>("0");
   const [card, setCard] = useState<string>("0");
@@ -23,7 +27,7 @@ export default function SplitPaymentPanel({
   const cashVal = parseFloat(cash) || 0;
   const cardVal = parseFloat(card) || 0;
   const walletVal = parseFloat(wallet) || 0;
-  const udhaarVal = parseFloat(udhaar) || 0;
+  const udhaarVal = isCustomerBlocked ? 0 : (parseFloat(udhaar) || 0);
 
   // --- DYNAMIC TAX CONCESSION TARGET ---
   // If 100% of the entered money is on Card (and all other tenders are 0), target is cardTotal (5% tax)
@@ -36,6 +40,11 @@ export default function SplitPaymentPanel({
 
   const handleSubmit = async () => {
     if (!isValid) return;
+
+    if (udhaarVal > 0 && isCustomerBlocked) {
+      toast.error("Blocked customers cannot receive credit (udhaar).");
+      return;
+    }
 
     const tenders = [];
     if (cashVal > 0) tenders.push({ tenderType: "cash", amount: cashVal });
@@ -74,7 +83,7 @@ export default function SplitPaymentPanel({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || "Failed to settle invoice.");
+        throw new Error(errData.error?.message || errData.message || "Failed to settle invoice.");
       }
 
       toast.success("Payment settled successfully!");
@@ -138,14 +147,33 @@ export default function SplitPaymentPanel({
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-slate-700">Udhaar</label>
+          <label className="block text-xs font-semibold text-slate-700 flex items-center justify-between">
+            <span>Udhaar</span>
+            {isCustomerBlocked && (
+              <span className="text-[11px] text-rose-600 font-bold">Blocked - Credit Restricted</span>
+            )}
+          </label>
           <input
             type="number"
             step="any"
-            value={udhaar}
-            onChange={(e) => setUdhaar(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+            disabled={isCustomerBlocked}
+            value={isCustomerBlocked ? "0" : udhaar}
+            onChange={(e) => {
+              if (isCustomerBlocked) return;
+              setUdhaar(e.target.value);
+            }}
+            placeholder={isCustomerBlocked ? "Blocked from credit" : "0"}
+            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none ${
+              isCustomerBlocked
+                ? "bg-rose-50/60 border-rose-200 text-rose-400 cursor-not-allowed"
+                : "border-slate-300 focus:border-emerald-600"
+            }`}
           />
+          {isCustomerBlocked && (
+            <p className="mt-1 text-[11px] text-rose-600 font-medium">
+              This customer is marked as blocked and cannot receive credit.
+            </p>
+          )}
         </div>
       </div>
 

@@ -25,38 +25,68 @@ const tenderOptions: Array<{
 export default function RecordPaymentModal({
   invoiceId,
   remainingAmount,
+  standardTotal,
+  cardTotal,
   currency,
+  isCustomerBlocked = false,
   onClose,
   onSuccess,
 }: {
   invoiceId: string;
   remainingAmount: number;
+  standardTotal?: number;
+  cardTotal?: number;
   currency: string | null;
+  isCustomerBlocked?: boolean;
   onClose: () => void;
   onSuccess: (result: PaymentResult) => void;
 }) {
   const isOnline = useOnlineStatus();
-  const [amount, setAmount] = useState(
-    remainingAmount.toFixed(2),
-  );
-  const [tenderType, setTenderType] =
-    useState<TenderType>("cash");
+  const [tenderType, setTenderType] = useState<TenderType>("cash");
+
+  const effectiveRemaining =
+    tenderType === "card" && cardTotal !== undefined
+      ? cardTotal
+      : remainingAmount;
+
+  const [amount, setAmount] = useState(effectiveRemaining.toFixed(2));
   const [payerLabel, setPayerLabel] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  function handleTenderTypeChange(newType: TenderType) {
+    setTenderType(newType);
+    setError("");
+
+    // Auto-adjust default amount to respective total
+    if (newType === "card" && cardTotal !== undefined) {
+      setAmount(cardTotal.toFixed(2));
+    } else if (tenderType === "card") {
+      setAmount(remainingAmount.toFixed(2));
+    }
+  }
+
   async function submitPayment() {
     const numericAmount = Number(amount);
+    const maxAllowed =
+      tenderType === "card" && cardTotal !== undefined
+        ? cardTotal
+        : remainingAmount;
 
     if (
       !Number.isFinite(numericAmount) ||
       numericAmount <= 0 ||
-      numericAmount > remainingAmount
+      numericAmount > Number((maxAllowed + 0.05).toFixed(2))
     ) {
       setError(
-        `Enter an amount greater than zero and no more than ${remainingAmount.toFixed(2)}.`,
+        `Enter an amount greater than zero and no more than ${formatCurrency(maxAllowed, currency)}.`,
       );
+      return;
+    }
+
+    if (tenderType === "udhaar" && isCustomerBlocked) {
+      setError("Customer is marked as blocked and cannot receive credit (udhaar).");
       return;
     }
 
@@ -98,43 +128,61 @@ export default function RecordPaymentModal({
       aria-modal="true"
       aria-labelledby="record-payment-title"
     >
-      <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-xl">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <h2
-            id="record-payment-title"
-            className="text-lg font-semibold text-slate-950"
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div>
+            <h2
+              id="record-payment-title"
+              className="font-semibold text-slate-900"
+            >
+              Record payment
+            </h2>
+            <p className="text-xs text-slate-500">
+              Remaining balance: {formatCurrency(effectiveRemaining, currency)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Close dialog"
           >
-            Record payment
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Remaining balance:{" "}
-            {formatCurrency(remainingAmount, currency)}
-          </p>
+            ✕
+          </button>
         </div>
 
-        <div className="space-y-4 px-6 py-5">
-          {!isOnline && (
-            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Payments cannot be recorded while this device is offline.
-            </p>
-          )}
+        {error && (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+            {error}
+          </div>
+        )}
 
-          {error && (
-            <p
-              className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-              role="alert"
-            >
-              {error}
+        {tenderType === "card" && cardTotal !== undefined && standardTotal !== undefined && standardTotal > cardTotal && (
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+            <div className="flex items-center gap-1.5 font-bold">
+              <span>💡 PRA 5% Card Tax Concession Applied</span>
+            </div>
+            <p className="mt-1 text-emerald-800">
+              Card payments receive a reduced 5% sales tax rate (saving {formatCurrency(standardTotal - cardTotal, currency)}). Total due is {formatCurrency(cardTotal, currency)}.
             </p>
-          )}
+          </div>
+        )}
 
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitPayment();
+          }}
+          className="mt-4 space-y-4"
+        >
           <label className="block text-sm font-medium text-slate-700">
             Amount
             <input
               type="number"
+              required
               min="0.01"
               step="0.01"
-              max={remainingAmount}
+              max={effectiveRemaining}
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
               className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
@@ -146,16 +194,28 @@ export default function RecordPaymentModal({
             <select
               value={tenderType}
               onChange={(event) =>
-                setTenderType(event.target.value as TenderType)
+                handleTenderTypeChange(event.target.value as TenderType)
               }
               className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
             >
               {tenderOptions.map((option) => (
-                <option key={option.value} value={option.value}>
+                <option
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.value === "udhaar" && isCustomerBlocked}
+                >
                   {option.label}
+                  {option.value === "udhaar" && isCustomerBlocked
+                    ? " (Blocked - Restricted)"
+                    : ""}
                 </option>
               ))}
             </select>
+            {tenderType === "udhaar" && isCustomerBlocked && (
+              <p className="mt-1 text-xs text-rose-600 font-medium">
+                Customer is marked as blocked and cannot receive credit.
+              </p>
+            )}
           </label>
 
           <label className="block text-sm font-medium text-slate-700">
@@ -190,26 +250,25 @@ export default function RecordPaymentModal({
               will be requested only after this cash payment commits.
             </p>
           )}
-        </div>
 
-        <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => void submitPayment()}
-            disabled={submitting || !isOnline}
-            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting ? "Recording…" : "Record payment"}
-          </button>
-        </div>
+          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !isOnline}
+              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? "Recording…" : "Record payment"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

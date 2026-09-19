@@ -33,6 +33,7 @@ export default function CustomersPage() {
   const isManagerOrOwner = user?.roles.some((role) =>
     ["OWNER", "MANAGER"].includes(role.toUpperCase()),
   );
+  const isCashier = user?.roles.some((role) => role.toUpperCase() === "CASHIER") && !isManagerOrOwner;
 
   const [items, setItems] = useState<Customer[]>([]);
   const [q, setQ] = useState("");
@@ -50,6 +51,7 @@ export default function CustomersPage() {
   const [mergeLoading, setMergeLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const deleteInFlight = useRef(false);
   const deletedCustomerIds = useRef(new Set<string>());
 
@@ -116,24 +118,34 @@ export default function CustomersPage() {
       tag: "",
       branchId: user?.branchId ?? "",
     });
+    setFormError(null);
     setEditingCustomer(null);
     setCustomerModalOpen(false);
   };
 
   const openCreateModal = () => {
     resetForm();
+    setFormError(null);
+    if (isCashier && user?.branchId) {
+      setForm((prev) => ({ ...prev, branchId: user.branchId }));
+    }
     setCustomerModalOpen(true);
   };
 
   const openEditModal = (customer: Customer) => {
+    if (isCashier && customer.branchId && customer.branchId !== user?.branchId) {
+      toast.error("You can only modify customers from your assigned branch.");
+      return;
+    }
     const currentTag = customer.tagAssignments[0]?.tag.name ?? "";
     setEditingCustomer(customer);
+    setFormError(null);
     setForm({
       fullName: customer.fullName ?? "",
       phone: customer.phone ?? "",
       cnic: customer.cnic ?? "",
       tag: currentTag,
-      branchId: customer.branchId ?? "",
+      branchId: isCashier ? (user?.branchId ?? customer.branchId ?? "") : (customer.branchId ?? ""),
     });
     setCustomerModalOpen(true);
   };
@@ -141,17 +153,22 @@ export default function CustomersPage() {
   const handleSubmitCustomer = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setFormError(null);
     try {
       const fullName = form.fullName.trim();
       const phone = form.phone.trim();
       const cnic = form.cnic.trim();
+
+      const targetBranchId = isCashier
+        ? (user?.branchId || form.branchId || null)
+        : (form.branchId || null);
 
       if (editingCustomer) {
         await customerApi.update(editingCustomer.id, {
           fullName,
           phone,
           cnic: cnic || null,
-          branchId: form.branchId || null,
+          branchId: targetBranchId,
         });
 
         // Tag management
@@ -180,7 +197,7 @@ export default function CustomersPage() {
           fullName,
           phone,
           cnic: cnic || null,
-          branchId: form.branchId || null,
+          branchId: targetBranchId,
         });
 
         if (form.tag) {
@@ -198,7 +215,9 @@ export default function CustomersPage() {
       resetForm();
       await loadCustomers();
     } catch (e: any) {
-      toast.error(e?.message || "Operation failed.");
+      const message = e?.message || "Operation failed.";
+      setFormError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -243,6 +262,10 @@ export default function CustomersPage() {
   };
 
   const handleQuickTagToggle = async (customer: Customer, nextTagName: string) => {
+    if (isCashier && customer.branchId && customer.branchId !== user?.branchId) {
+      toast.error("You can only modify customers from your assigned branch.");
+      return;
+    }
     try {
       for (const a of customer.tagAssignments) {
         await customerApi.removeTag(customer.id, a.tag.id);
@@ -523,14 +546,16 @@ export default function CustomersPage() {
                             <ArrowRight className="w-4 h-4" />
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(customer)}
-                            title="Edit Profile"
-                            className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
+                          {(!isCashier || !customer.branchId || customer.branchId === user?.branchId) && (
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(customer)}
+                              title="Edit Profile"
+                              className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
 
                           {isManagerOrOwner && (
                             <button
@@ -546,14 +571,16 @@ export default function CustomersPage() {
                             </button>
                           )}
 
-                          <button
-                            type="button"
-                            onClick={() => setPendingDelete(customer)}
-                            title="Delete Customer"
-                            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {(!isCashier || !customer.branchId || customer.branchId === user?.branchId) && (
+                            <button
+                              type="button"
+                              onClick={() => setPendingDelete(customer)}
+                              title="Delete Customer"
+                              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -590,6 +617,16 @@ export default function CustomersPage() {
             </div>
 
             <form onSubmit={handleSubmitCustomer} className="space-y-4">
+              {formError && (
+                <div
+                  role="alert"
+                  className="rounded-xl bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800 flex items-start gap-2.5 animate-in fade-in"
+                >
+                  <ShieldAlert className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                  <div className="flex-1 font-medium leading-relaxed">{formError}</div>
+                </div>
+              )}
+
               <FormField label="Full Name" htmlFor="cust-name">
                 <Input
                   id="cust-name"
@@ -620,19 +657,30 @@ export default function CustomersPage() {
               </FormField>
 
               <FormField label="Branch Access" htmlFor="cust-branch">
-                <select
-                  id="cust-branch"
-                  value={form.branchId}
-                  onChange={(e) => setForm({ ...form, branchId: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                >
-                  <option value="">All Branches</option>
-                  {branches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
+                {isCashier ? (
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    <span className="font-medium">
+                      {branches.find((b) => b.id === (user?.branchId || form.branchId))?.name || "Assigned Branch"}
+                    </span>
+                    <span className="rounded bg-slate-200/80 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                      Locked to your branch
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    id="cust-branch"
+                    value={form.branchId}
+                    onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    <option value="">All Branches</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </FormField>
 
               <FormField label="Customer Tier / Tag" htmlFor="cust-tag">

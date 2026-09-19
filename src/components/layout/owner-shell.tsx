@@ -30,6 +30,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Globe,
+  UtensilsCrossed,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { redirectPathForRoles } from "@/lib/auth/session";
@@ -103,6 +104,9 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
   const canManageCatalog = user?.roles.some(
     (role) => role === "OWNER" || role === "MANAGER",
   );
+  const canOperateCanteen = user?.roles.some(
+    (role) => role === "OWNER" || role === "MANAGER" || role === "CASHIER",
+  );
 
   const [language, setLanguage] = useState<"en" | "ur">(user?.language ?? "en");
 
@@ -138,6 +142,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       tables: "Catalog & Tables",
       branchSetup: "Branch Setup",
       billing: "Billing & POS",
+      canteen: "Canteen POS",
       udhaar: "Udhaar Ledger",
       operationalReports: "Operational Reports",
       crossBranchReports: "Cross-Branch Analytics",
@@ -167,6 +172,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       tables: "کیٹلاگ اور میزیں",
       branchSetup: "برانچز",
       billing: "بلنگ اور پی او ایس",
+      canteen: "کینٹین",
       udhaar: "ادھار لیجر",
       operationalReports: "آپریشنل رپورٹس",
       crossBranchReports: "کراس برانچ تجزیات",
@@ -201,6 +207,9 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
             ]
           : []),
         { href: "/billing", label: t.billing, icon: Receipt },
+        ...(canOperateCanteen
+          ? [{ href: "/canteen", label: t.canteen, icon: UtensilsCrossed }]
+          : []),
         ...(canManageCatalog
           ? [{ href: "/catalog", label: t.tables, icon: Armchair }]
           : []),
