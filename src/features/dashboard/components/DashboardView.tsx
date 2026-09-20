@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { fetchBranches } from "@/lib/api/branch";
 import { DashboardApi, LiveTableSession, RevenueKPIs, OutstandingUdhaar, SyncDeviceStatus, RevenueTrend, TableHeatmap, AnomalyItem, TransactionItem } from "../dashboard.api";
@@ -12,6 +13,7 @@ import { toast } from "@/lib/toast";
 
 export function DashboardView() {
   const { user } = useAuth();
+  const router = useRouter();
 
   // States
   const [loading, setLoading] = useState(true);
@@ -513,7 +515,7 @@ export function DashboardView() {
                         <td className="px-6 py-4 font-semibold text-red-600">Rs. {item.balance.toLocaleString()}</td>
                         <td className="px-6 py-4 text-right">
                           <button
-                            onClick={() => handleDrilldown("udhaar_issued")}
+                            onClick={() => router.push(`/customers/${item.customerId}?tab=udhaar`)}
                             className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"
                           >
                             View ledger <ChevronRight className="h-3 w-3" />

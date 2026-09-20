@@ -167,18 +167,18 @@ export interface SubscriptionMetrics {
   recentFailedPayments: number;
 }
 
-export function getSubscriptionMetrics() {
+export function getSubscriptionMetrics(expiringDays: number = 7) {
   return platformAdminFetch<SubscriptionMetrics>(
-    "/super-admin/subscriptions/metrics",
+    `/super-admin/subscriptions/metrics?expiringDays=${expiringDays}`,
   );
 }
 
-export function extendTenantTrial(tenantId: string, days: number = 14) {
+export function extendTenantTrial(tenantId: string, trialEndsAt: string) {
   return platformAdminFetch<TenantSubscription>(
     `/super-admin/subscriptions/tenants/${tenantId}/extend-trial`,
     {
       method: "POST",
-      body: JSON.stringify({ days }),
+      body: JSON.stringify({ trialEndsAt }),
     },
   );
 }
@@ -190,19 +190,19 @@ export function updateTenantPaymentStatus(
   return platformAdminFetch<TenantSubscription>(
     `/super-admin/subscriptions/tenants/${tenantId}/payment-status`,
     {
-      method: "PATCH",
+      method: "POST",
       body: JSON.stringify({ paymentStatus }),
     },
   );
 }
 
 export function moveTenantToGracePeriod(tenantId: string, days: number = 7) {
+  const gracePeriodEndsAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
   return platformAdminFetch<TenantSubscription>(
     `/super-admin/subscriptions/tenants/${tenantId}/grace-period`,
     {
       method: "POST",
-      body: JSON.stringify({ days }),
+      body: JSON.stringify({ gracePeriodEndsAt }),
     },
   );
 }
-

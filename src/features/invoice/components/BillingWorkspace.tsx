@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
+import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { useInvoices } from "../hooks/useInvoices";
 import { useTransactions } from "../hooks/useTransactions";
@@ -42,6 +43,7 @@ export default function BillingWorkspace({
   detailBasePath?: string;
 }) {
   const isOnline = useOnlineStatus();
+  const { user } = useAuth();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | InvoiceStatus>("");
@@ -51,6 +53,7 @@ export default function BillingWorkspace({
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [branchId, setBranchId] = useState("");
   useEffect(() => { void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches)); }, []);
+  useEffect(() => { setBranchId(""); setInvoicePage(1); }, [user?.branchId]);
   const range = useMemo(() => dateRange(date), [date]);
 
   const {
@@ -206,7 +209,8 @@ export default function BillingWorkspace({
               </select>
               <label className="sr-only" htmlFor="invoice-branch">Invoice branch</label>
               <select id="invoice-branch" value={branchId} onChange={(event) => { setInvoicePage(1); setBranchId(event.target.value); }} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500">
-                <option value="">All Branches</option>
+                <option value="">Active branch</option>
+                <option value="all">All branches</option>
                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
               </select>
               <label className="sr-only" htmlFor="invoice-date">

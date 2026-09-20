@@ -7,6 +7,7 @@ import {
   SubscriptionPlan,
   DataExportJob,
   SupportNote,
+  TenantLifecycleEvent,
 } from "../tenancy.api";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
@@ -25,6 +26,7 @@ import {
   Building,
   Eye,
   MessageSquare,
+  History,
 } from "lucide-react";
 
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
@@ -33,6 +35,25 @@ import { toast } from "@/lib/toast";
 interface TenantManagerProps {
   onSelectTenantForSubscription?: (tenantId: string) => void;
 }
+
+const lifecycleLabel = (event: TenantLifecycleEvent) => {
+  switch (event.actionType) {
+    case "tenant_terminated":
+      return "Terminated";
+    case "tenant_restored":
+      return "Restored";
+    case "tenant_reactivated":
+      return "Reactivated";
+    case "tenant_status_updated":
+      return event.newStatus ? `Status changed to ${event.newStatus}` : "Status changed";
+    case "tenant_termination_override":
+      return "Termination override";
+    case "tenant_suspension_override":
+      return "Suspension override";
+    default:
+      return event.actionType;
+  }
+};
 
 export function TenantManager({ onSelectTenantForSubscription }: TenantManagerProps) {
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -60,6 +81,14 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
   // Termination Confirm Modal
   const [tenantToTerminate, setTenantToTerminate] = useState<Tenant | null>(null);
   const [terminateLoading, setTerminateLoading] = useState(false);
+
+  // Restore Confirm Modal (undo termination)
+  const [tenantToRestore, setTenantToRestore] = useState<Tenant | null>(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+
+  // Tracks which tenant's export/download is currently in progress, so the
+  // row's Download button can show a busy state.
+  const [exportingTenantId, setExportingTenantId] = useState<string | null>(null);
 
   // Force Override Modal State
   const [overrideModal, setOverrideModal] = useState<{
@@ -182,6 +211,21 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
     }
   };
 
+  const handleConfirmRestore = async () => {
+    if (!tenantToRestore) return;
+    try {
+      setRestoreLoading(true);
+      await TenancyApi.restoreTenant(tenantToRestore.id);
+      toast.success(`"${tenantToRestore.name}" has been restored and set to Suspended`);
+      setTenantToRestore(null);
+      await loadTenants();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to restore tenant");
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
   const handleConfirmOverride = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forceReason.trim()) {
@@ -217,13 +261,52 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
     }
   };
 
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const triggerBrowserDownload = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleTriggerExport = async (id: string, tenantName: string) => {
+    setExportingTenantId(id);
     try {
       toast.info(`Requesting full data export for ${tenantName}...`);
       const job = await TenancyApi.requestTenantExport(id);
-      toast.success(`Export queued (Job: ${job.id.slice(0, 8)}). Ready shortly.`);
+
+      // The export is built by a background worker, so poll for it to
+      // finish instead of only showing a "queued" toast and stopping there.
+      let finished = job;
+      const maxAttempts = 60;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (finished.status === "completed" || finished.status === "failed" || finished.status === "expired") {
+          break;
+        }
+        await sleep(3000);
+        const page = await TenancyApi.listTenantExports(id);
+        finished = page.items.find((item) => item.id === job.id) ?? finished;
+      }
+
+      if (finished.status === "completed") {
+        const artifact = await TenancyApi.downloadTenantExport(id, finished.id);
+        triggerBrowserDownload(artifact.blob, artifact.fileName);
+        toast.success(`Downloaded export for ${tenantName}.`);
+      } else if (finished.status === "failed") {
+        toast.error(finished.failureReason || `Export for ${tenantName} failed to generate.`);
+      } else {
+        toast.info(`Export for ${tenantName} is still processing. Check back shortly.`);
+      }
     } catch (err: any) {
       toast.error(err.message || "Failed to trigger tenant data export");
+    } finally {
+      setExportingTenantId(null);
     }
   };
 
@@ -352,8 +435,11 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
           >
             <option value="all">All Statuses</option>
             <option value="active">Active</option>
+            <option value="trial">Trial</option>
             <option value="suspended">Suspended</option>
             <option value="cancelled">Cancelled</option>
+            <option value="pending">Pending</option>
+            <option value="terminated">Terminated</option>
           </Select>
         </div>
       </div>
@@ -392,6 +478,9 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
               <tr>
                 <th className="px-6 py-4">Club Name</th>
                 <th className="px-6 py-4">Status</th>
+                {statusFilter === "terminated" && (
+                  <th className="px-6 py-4">Termination Reason</th>
+                )}
                 <th className="px-6 py-4">Subscription Plan</th>
                 <th className="px-6 py-4">Owner</th>
                 <th className="px-6 py-4">Branches</th>
@@ -402,7 +491,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
             <tbody className="divide-y divide-slate-200">
               {tenants.map((t) => {
                 const planName = t.currentSubscription?.plan?.name || t.subscriptionPlan?.name || "No Plan";
-                const isCancelled = t.status === "cancelled" || t.deletedAt;
+                const isTerminated = Boolean(t.deletedAt);
                 return (
                   <tr key={t.id} className="hover:bg-slate-50/75 transition-colors">
                     <td className="px-6 py-4 font-semibold text-slate-900">
@@ -426,9 +515,29 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                         ) : (
                           <XCircle className="h-3 w-3" />
                         )}
-                        {t.status}
+                        {isTerminated ? "terminated" : t.status}
                       </span>
                     </td>
+                    {statusFilter === "terminated" && (
+                      <td className="px-6 py-4 max-w-[240px]">
+                        {t.terminationInfo ? (
+                          <div className="space-y-0.5">
+                            <div
+                              className="truncate text-xs text-slate-700"
+                              title={t.terminationInfo.reason ?? undefined}
+                            >
+                              {t.terminationInfo.reason || "No reason recorded"}
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              {new Date(t.terminationInfo.terminatedAt).toLocaleDateString()}
+                              {t.terminationInfo.forced ? " · Force override" : ""}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center gap-1.5 font-medium text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md text-xs">
                         <CreditCard className="h-3.5 w-3.5 text-brand-600" />
@@ -477,10 +586,12 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                           variant="secondary"
                           className="w-auto px-2.5 py-1 text-xs"
                           title="Export All Tenant Data"
+                          isLoading={exportingTenantId === t.id}
+                          disabled={exportingTenantId !== null && exportingTenantId !== t.id}
                         >
                           <Download className="h-3.5 w-3.5" />
                         </Button>
-                        {!isCancelled && (
+                        {!isTerminated && (
                           <Button
                             onClick={() => handleToggleStatus(t.id, t.status, t.name)}
                             variant="secondary"
@@ -493,7 +604,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                             {t.status === "active" ? "Suspend" : "Activate"}
                           </Button>
                         )}
-                        {!isCancelled && (
+                        {!isTerminated && (
                           <Button
                             onClick={() => setTenantToTerminate(t)}
                             variant="secondary"
@@ -501,6 +612,16 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                             title="Terminate Club"
                           >
                             Terminate
+                          </Button>
+                        )}
+                        {isTerminated && (
+                          <Button
+                            onClick={() => setTenantToRestore(t)}
+                            variant="secondary"
+                            className="w-auto px-2.5 py-1 text-xs hover:bg-emerald-50 text-emerald-700"
+                            title="Restore Terminated Club"
+                          >
+                            Restore
                           </Button>
                         )}
                       </div>
@@ -535,7 +656,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                 <div className="p-3 bg-slate-50 rounded-lg">
                   <div className="text-xs text-slate-400 uppercase font-semibold">Status</div>
                   <div className="text-sm font-bold text-slate-800 capitalize mt-0.5">
-                    {selectedTenantDetail.status}
+                    {selectedTenantDetail.deletedAt ? "terminated" : selectedTenantDetail.status}
                   </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-lg">
@@ -582,6 +703,55 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4">
+                <h4 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-1.5">
+                  <History className="h-4 w-4 text-slate-500" />
+                  Lifecycle History
+                </h4>
+                {(selectedTenantDetail.lifecycleEvents ?? []).length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">No lifecycle events recorded.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(selectedTenantDetail.lifecycleEvents ?? []).map((event) => (
+                      <div
+                        key={event.id}
+                        className="p-3 rounded-lg border border-slate-200 bg-white text-xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-800">
+                            {lifecycleLabel(event)}
+                            {event.forced && (
+                              <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                                Force override
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-slate-400">
+                            {new Date(event.occurredAt).toLocaleString()}
+                          </span>
+                        </div>
+                        {event.reason && (
+                          <p className="mt-1.5 whitespace-pre-wrap text-slate-700">
+                            <span className="font-medium text-slate-500">Reason: </span>
+                            {event.reason}
+                          </p>
+                        )}
+                        {event.forced &&
+                          (event.openSessionsCount !== null || event.udhaarCustomerCount !== null) && (
+                            <p className="mt-1 text-slate-500">
+                              Open at the time: {event.openSessionsCount ?? 0} session(s),{" "}
+                              {event.udhaarCustomerCount ?? 0} customer(s) with outstanding balance
+                            </p>
+                          )}
+                        <p className="mt-1 text-slate-400">
+                          By {event.performedBy?.fullName || event.performedBy?.email || "Platform Admin"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Support Notes Section (§3.15) */}
@@ -824,6 +994,19 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
         isLoading={terminateLoading}
         onConfirm={handleConfirmTerminate}
         onCancel={() => setTenantToTerminate(null)}
+      />
+
+      {/* Restore Confirmation Modal (undo termination) */}
+      <ConfirmModal
+        isOpen={Boolean(tenantToRestore)}
+        title="Restore Terminated Club"
+        description={`Restore "${tenantToRestore?.name}"? The account and all its historical data will become accessible again, set to Suspended status. You will need to reactivate it separately once billing is sorted out.`}
+        confirmText="Restore Club"
+        cancelText="Cancel"
+        variant="primary"
+        isLoading={restoreLoading}
+        onConfirm={handleConfirmRestore}
+        onCancel={() => setTenantToRestore(null)}
       />
 
       {/* Force Override Modal (§3.15) */}
