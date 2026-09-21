@@ -66,6 +66,7 @@ export interface RankedRow {
   discountTotal?: number;
   discountCount?: number;
   voidCount?: number;
+  voidAmount?: number;
   flaggedForReview?: boolean;
   staffId?: string;
   staffName?: string;
@@ -119,6 +120,7 @@ export type ShiftReport = {
   totalSales: number;
   totalDiscounts: number;
   voidCount: number;
+  voidAmount?: number;
 };
 
 export type ScheduledReport = {

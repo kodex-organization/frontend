@@ -39,15 +39,15 @@ export function DashboardView() {
   // Check roles
   const isCashier = user?.roles.includes("CASHIER");
 
-  const fetchData = async (branchId?: string) => {
-    setLoading(true);
+  const fetchData = async (branchId?: string, isSilent = false) => {
+    if (!isSilent) setLoading(true);
     setError(null);
     try {
       const tablesData = await DashboardApi.getLiveTables(branchId);
       setLiveTables(tablesData.sessions);
 
       if (isCashier) {
-        setLoading(false);
+        if (!isSilent) setLoading(false);
         return;
       }
 
@@ -77,14 +77,32 @@ export function DashboardView() {
       setAnomalies(anomaliesData);
       setStaffPerf(staffData.sessionsHandledByUser);
     } catch (err: any) {
-      setError(err.message || "Failed to load dashboard metrics.");
+      if (!isSilent) setError(err.message || "Failed to load dashboard metrics.");
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData(selectedBranch || undefined);
+
+    const handleRevalidate = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void fetchData(selectedBranch || undefined, true);
+      }
+    };
+
+    window.addEventListener("focus", handleRevalidate);
+    document.addEventListener("visibilitychange", handleRevalidate);
+    window.addEventListener("cuecloud:anomaly-invalidated", handleRevalidate);
+    window.addEventListener("cuecloud:invoice-voided", handleRevalidate);
+
+    return () => {
+      window.removeEventListener("focus", handleRevalidate);
+      document.removeEventListener("visibilitychange", handleRevalidate);
+      window.removeEventListener("cuecloud:anomaly-invalidated", handleRevalidate);
+      window.removeEventListener("cuecloud:invoice-voided", handleRevalidate);
+    };
   }, [selectedBranch]);
 
   const handleDrilldown = async (category: string) => {

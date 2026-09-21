@@ -45,6 +45,7 @@ export interface InvoiceDetails {
     phone: string | null;
     cnic: string | null;
     outstandingBalance?: number;
+    isBlocked?: boolean;
   } | null;
   items: InvoiceItem[];
   subtotal: number;
@@ -98,8 +99,16 @@ export interface VoidInvoicePayload {
 }
 
 export async function voidInvoice(invoiceId: string, payload: VoidInvoicePayload) {
-  return apiFetch<{ success: boolean; data: InvoiceDetails }>(`/invoices/${invoiceId}/void`, {
+  const res = await apiFetch<{ success: boolean; data: InvoiceDetails }>(`/invoices/${invoiceId}/void`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("cuecloud:invoice-voided", { detail: { invoiceId, reason: payload.reason } }));
+    window.dispatchEvent(new CustomEvent("cuecloud:anomaly-invalidated"));
+    window.dispatchEvent(new CustomEvent("cuecloud:audit-invalidated"));
+  }
+
+  return res;
 }

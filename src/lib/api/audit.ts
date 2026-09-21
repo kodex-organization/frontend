@@ -37,10 +37,13 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     ...(options.body ? { "Content-Type": "application/json" } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(deviceId ? { "x-device-id": deviceId } : {}),
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Pragma: "no-cache",
     ...((options.headers as Record<string, string>) || {}),
   };
 
   const response = await fetch(`${API_BASE}${endpoint}`, {
+    cache: "no-store",
     ...options,
     headers,
     credentials: "include",

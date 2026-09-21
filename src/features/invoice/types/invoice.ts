@@ -58,6 +58,7 @@ export interface Invoice {
     id: string;
     fullName: string | null;
     phone: string | null;
+    isBlocked?: boolean;
   } | null;
   subtotal: number;
   discountAmount: number;
