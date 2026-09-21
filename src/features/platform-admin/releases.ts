@@ -40,6 +40,10 @@ export interface TenantReleaseAssignment {
   pinnedReleaseId: string | null;
   pinnedRelease: PlatformRelease | null;
   resolvedRelease: PlatformRelease | null;
+  resolvedReleases?: {
+    desktop: PlatformRelease | null;
+    mobile: PlatformRelease | null;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -63,9 +67,11 @@ export function validateReleaseInput(input: ReleaseInput) {
 export function listPlatformReleases(filters: {
   channel?: ReleaseChannel;
   status?: ReleaseStatus;
+  platform?: "desktop" | "mobile";
 }) {
   const query = new URLSearchParams();
   if (filters.channel) query.set("channel", filters.channel);
+  if (filters.platform) query.set("platform", filters.platform);
   if (filters.status) query.set("status", filters.status);
   const suffix = query.size ? `?${query.toString()}` : "";
   return platformAdminFetch<PlatformRelease[]>(
@@ -97,10 +103,24 @@ export function publishPlatformRelease(releaseId: string) {
   );
 }
 
+export function unpublishPlatformRelease(releaseId: string) {
+  return platformAdminFetch<PlatformRelease>(
+    `/super-admin/releases/${releaseId}/unpublish`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
 export function archivePlatformRelease(releaseId: string) {
   return platformAdminFetch<PlatformRelease>(
     `/super-admin/releases/${releaseId}`,
     { method: "DELETE" },
+  );
+}
+
+export function restorePlatformRelease(releaseId: string) {
+  return platformAdminFetch<PlatformRelease>(
+    `/super-admin/releases/${releaseId}/restore`,
+    { method: "POST", body: JSON.stringify({}) },
   );
 }
 

@@ -327,6 +327,9 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
       setSubscription(updated);
       setSubscriptionForm(subscriptionFormFromCurrent(updated));
       setSubscriptionFeedback("Tenant subscription updated.");
+      // Refresh the tenants list so the dropdown's "(status)" label updates
+      // immediately instead of only after a manual page refresh/navigation.
+      await loadPlans();
     } catch (error) {
       setSubscriptionError(errorMessage(error, "Could not update the subscription."));
     } finally {
@@ -346,7 +349,17 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
     setSubscriptionError(null);
     setSubscriptionFeedback(null);
     try {
-      const updated = await extendTenantTrial(selectedTenantId, 14);
+      // Extend from the tenant's existing trial end date, not from today —
+      // otherwise every click recomputes "today + 14 days" and repeated
+      // clicks (or a trial end already further out than 14 days from today)
+      // never actually move the date forward correctly.
+      const baseDate = subscription?.trialEndsAt
+        ? new Date(subscription.trialEndsAt)
+        : new Date();
+      const newTrialEndsAt = new Date(
+        baseDate.getTime() + 14 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const updated = await extendTenantTrial(selectedTenantId, newTrialEndsAt);
       setSubscription(updated);
       setSubscriptionForm(subscriptionFormFromCurrent(updated));
       setSubscriptionFeedback("Trial extended by 14 days.");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   User,
@@ -29,6 +29,7 @@ import type {
 export default function CustomerDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const id = String(params.id);
 
   const [customer, setCustomer] = useState<CustomerProfile | null>(null);
@@ -36,7 +37,13 @@ export default function CustomerDetailsPage() {
   const [udhaar, setUdhaar] = useState<CustomerUdhaarHistory | null>(null);
   const [udhaarAllowed, setUdhaarAllowed] = useState<boolean | null>(null);
   const [udhaarLoading, setUdhaarLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"visits" | "invoices" | "udhaar">("visits");
+  // Allows deep-linking straight to a tab, e.g. from the dashboard's
+  // "View ledger" action (`?tab=udhaar`), instead of always opening on
+  // "visits".
+  const initialTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<"visits" | "invoices" | "udhaar">(
+    initialTab === "udhaar" || initialTab === "invoices" ? initialTab : "visits",
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -111,6 +118,9 @@ export default function CustomerDetailsPage() {
   const isVip = tagName === "vip";
   const isBlocked = tagName === "blocked";
   const balance = Number(udhaar?.outstandingBalance ?? 0);
+  // Reached via the dashboard's "View ledger" link (?tab=udhaar) rather than
+  // browsing the customer directory, so "back" should return there instead.
+  const cameFromDashboard = initialTab === "udhaar";
 
   return (
     <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
@@ -118,11 +128,11 @@ export default function CustomerDetailsPage() {
       <div className="flex items-center justify-between gap-4">
         <button
           type="button"
-          onClick={() => router.push("/customers")}
+          onClick={() => router.push(cameFromDashboard ? "/dashboard" : "/customers")}
           className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Directory</span>
+          <span>{cameFromDashboard ? "Back to Dashboard" : "Back to Directory"}</span>
         </button>
 
         {balance > 0 && (
@@ -401,7 +411,10 @@ export default function CustomerDetailsPage() {
             <div className="space-y-4">
               <div className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border border-slate-200">
                 <div>
-                  <span className="text-xs text-slate-500 font-medium">Net Outstanding Balance</span>
+                  <span className="text-xs text-slate-500 font-medium">
+                    Net Outstanding Balance
+                    {customer?.branch?.name ? ` · ${customer.branch.name}` : ""}
+                  </span>
                   <p className="text-2xl font-bold text-slate-950 mt-0.5">
                     Rs. {balance.toLocaleString()}
                   </p>

@@ -2,7 +2,9 @@
 
 import {
   Archive,
+  ArchiveRestore,
   Edit3,
+  EyeOff,
   Pin,
   Plus,
   RefreshCw,
@@ -27,6 +29,8 @@ import {
   getTenantReleaseAssignment,
   listPlatformReleases,
   publishPlatformRelease,
+  restorePlatformRelease,
+  unpublishPlatformRelease,
   updatePlatformRelease,
   validateReleaseInput,
   type PlatformRelease,
@@ -69,6 +73,7 @@ export function ReleaseConsole() {
   const [releases, setReleases] = useState<PlatformRelease[]>([]);
   const [publishedOptions, setPublishedOptions] = useState<PlatformRelease[]>([]);
   const [channelFilter, setChannelFilter] = useState<ReleaseChannel | "all">("all");
+  const [platformFilter, setPlatformFilter] = useState<"desktop" | "mobile" | "all">("all");
   const [statusFilter, setStatusFilter] = useState<ReleaseStatus | "all">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +93,8 @@ export function ReleaseConsole() {
   const [assignmentFeedback, setAssignmentFeedback] = useState<string | null>(null);
   const [publishTarget, setPublishTarget] = useState<PlatformRelease | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<PlatformRelease | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<PlatformRelease | null>(null);
+  const [unpublishTarget, setUnpublishTarget] = useState<PlatformRelease | null>(null);
 
   const loadReleases = useCallback(async () => {
     setLoading(true);
@@ -96,6 +103,7 @@ export function ReleaseConsole() {
       const [visibleReleases, assignmentOptions] = await Promise.all([
         listPlatformReleases({
           channel: channelFilter === "all" ? undefined : channelFilter,
+          platform: platformFilter === "all" ? undefined : platformFilter,
           status: statusFilter === "all" ? undefined : statusFilter,
         }),
         listPlatformReleases({ status: "published" }),
@@ -107,7 +115,7 @@ export function ReleaseConsole() {
     } finally {
       setLoading(false);
     }
-  }, [channelFilter, statusFilter]);
+  }, [channelFilter, platformFilter, statusFilter]);
 
   useEffect(() => {
     void loadReleases();
@@ -266,6 +274,10 @@ export function ReleaseConsole() {
                     platform: event.target.value as "desktop" | "mobile",
                   }))
                 }
+                disabled={
+                  editingId !== null &&
+                  releases.find((release) => release.id === editingId)?.status === "published"
+                }
               >
                 <option value="desktop">Desktop</option>
                 <option value="mobile">Mobile</option>
@@ -363,6 +375,11 @@ export function ReleaseConsole() {
                 <option value="stable">Stable</option>
                 <option value="beta">Beta</option>
               </Select>
+              <Select aria-label="Filter release platform" value={platformFilter} onChange={(event) => setPlatformFilter(event.target.value as "desktop" | "mobile" | "all")} className="w-32">
+                <option value="all">All platforms</option>
+                <option value="desktop">Desktop</option>
+                <option value="mobile">Mobile</option>
+              </Select>
               <Select aria-label="Filter release status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as ReleaseStatus | "all")} className="w-32">
                 <option value="all">All status</option>
                 <option value="draft">Draft</option>
@@ -419,9 +436,19 @@ export function ReleaseConsole() {
                           <Send className="h-4 w-4" />
                         </Button>
                       ) : null}
+                      {release.status === "published" ? (
+                        <Button type="button" size="icon" variant="ghost" title="Move back to draft" aria-label={`Move release ${release.version} back to draft`} onClick={() => setUnpublishTarget(release)}>
+                          <EyeOff className="h-4 w-4" />
+                        </Button>
+                      ) : null}
                       {release.status !== "archived" ? (
                         <Button type="button" size="icon" variant="ghost" title="Archive release" aria-label={`Archive release ${release.version}`} onClick={() => void archiveRelease(release)}>
                           <Archive className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                      {release.status === "archived" ? (
+                        <Button type="button" size="icon" variant="ghost" title="Restore release" aria-label={`Restore release ${release.version}`} onClick={() => setRestoreTarget(release)}>
+                          <ArchiveRestore className="h-4 w-4" />
                         </Button>
                       ) : null}
                     </div>
@@ -461,7 +488,7 @@ export function ReleaseConsole() {
               <Select id="tenant-pinned-release" value={pinnedReleaseId} disabled={assignmentChannel !== "pinned"} onChange={(event) => setPinnedReleaseId(event.target.value)}>
                 <option value="">Select published release</option>
                 {publishedOptions.map((release) => (
-                  <option key={release.id} value={release.id}>v{release.version} ({release.channel})</option>
+                  <option key={release.id} value={release.id}>v{release.version} ({release.platform ?? "desktop"} · {release.channel})</option>
                 ))}
               </Select>
             </FormField>
@@ -478,7 +505,16 @@ export function ReleaseConsole() {
             </div>
             <div className="text-right">
               <p className="font-medium text-slate-900">
-                {assignment.resolvedRelease ? `Resolved v${assignment.resolvedRelease.version}` : "No published release resolved"}
+                Desktop:{" "}
+                {(assignment.resolvedReleases?.desktop ?? assignment.resolvedRelease)
+                  ? `v${(assignment.resolvedReleases?.desktop ?? assignment.resolvedRelease)!.version}`
+                  : "no published release"}
+              </p>
+              <p className="font-medium text-slate-900">
+                Mobile:{" "}
+                {assignment.resolvedReleases?.mobile
+                  ? `v${assignment.resolvedReleases.mobile.version}`
+                  : "no published release"}
               </p>
               <p className="mt-1 text-xs text-slate-500">Metadata assignment only</p>
             </div>
@@ -525,6 +561,48 @@ export function ReleaseConsole() {
           }
         }}
         onCancel={() => setArchiveTarget(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(unpublishTarget)}
+        title="Move release back to draft"
+        description={unpublishTarget ? `Move release ${unpublishTarget.version} back to Draft? It will stop being offered to update checks until it is published again.` : ""}
+        confirmText="Move to draft"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={async () => {
+          if (!unpublishTarget) return;
+          try {
+            await unpublishPlatformRelease(unpublishTarget.id);
+            setUnpublishTarget(null);
+            await loadReleases();
+          } catch (requestError) {
+            setUnpublishTarget(null);
+            setError(errorMessage(requestError, "Could not move the release back to draft."));
+          }
+        }}
+        onCancel={() => setUnpublishTarget(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(restoreTarget)}
+        title="Restore release"
+        description={restoreTarget ? `Restore release ${restoreTarget.version}? It returns to ${restoreTarget.publishedAt ? "Published" : "Draft"} status.` : ""}
+        confirmText="Restore"
+        cancelText="Cancel"
+        variant="primary"
+        onConfirm={async () => {
+          if (!restoreTarget) return;
+          try {
+            await restorePlatformRelease(restoreTarget.id);
+            setRestoreTarget(null);
+            await loadReleases();
+          } catch (requestError) {
+            setRestoreTarget(null);
+            setError(errorMessage(requestError, "Could not restore the release."));
+          }
+        }}
+        onCancel={() => setRestoreTarget(null)}
       />
     </div>
   );

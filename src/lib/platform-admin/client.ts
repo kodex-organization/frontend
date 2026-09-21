@@ -1,5 +1,5 @@
 import { env } from "@/config/env";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, type ApiDownloadResult } from "@/lib/api/client";
 import { platformAdminStorage, decodePlatformAdminAccessToken, PLATFORM_ADMIN_SESSION_CLEARED_EVENT, PLATFORM_ADMIN_SESSION_REPLACED_EVENT } from "./session";
 import { createSessionRefresh } from '@/lib/auth/session-refresh';
 
@@ -161,4 +161,98 @@ export async function platformAdminFetch<T>(
   const data = await parseResponse<T>(response);
   assertCurrentSession();
   return data;
+}
+
+function fileNameFromDisposition(value: string | null) {
+  const match = value?.match(/filename=\"?([^\";]+)\"?/i);
+  return match?.[1] ?? "cuecloud-export.json";
+}
+
+// Downloads a file (e.g. a tenant data export) using the platform admin
+// session. platformAdminFetch can't be used here since it always parses the
+// response as the {success,data,error} envelope, while a download response
+// body is the raw file content.
+export async function platformAdminDownload(
+  path: string,
+): Promise<ApiDownloadResult> {
+  const version = platformAdminStorage.getSessionVersion();
+  const assertCurrentSession = () => {
+    if (platformAdminStorage.getSessionVersion() !== version) {
+      throw new ApiError('Your session changed. Please try again.', 401, 'SESSION_CHANGED');
+    }
+  };
+  let sentToken: string | null = null;
+  const doFetch = () => {
+    assertCurrentSession();
+    const accessToken = platformAdminStorage.getAccessToken();
+    sentToken = accessToken;
+    return fetch(`${getApiBaseUrl()}${path}`, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+    });
+  };
+
+  let response: Response;
+  try {
+    response = await doFetch();
+  } catch {
+    throw new ApiError(
+      "Could not reach the server. Check your connection and try again.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
+
+  assertCurrentSession();
+  if (response.status === 401 && platformAdminStorage.getAccessToken()) {
+    const refreshed = platformAdminStorage.getAccessToken() !== sentToken || await refreshPlatformAdminAccessToken();
+    assertCurrentSession();
+    if (refreshed) {
+      try {
+        response = await doFetch();
+      } catch {
+        throw new ApiError(
+          "Could not reach the server. Check your connection and try again.",
+          0,
+          "NETWORK_ERROR",
+        );
+      }
+      assertCurrentSession();
+      if (response.status === 401 && platformAdminStorage.getAccessToken() === sentToken) platformAdminStorage.clear();
+    }
+  }
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as Envelope<unknown> | null;
+    const message =
+      typeof body?.error === "string" ? body.error : body?.error?.message;
+    const code =
+      typeof body?.error === "object" && body.error
+        ? body.error.code
+        : undefined;
+    const details =
+      typeof body?.error === "object" && body.error
+        ? body.error.details
+        : undefined;
+    throw new ApiError(
+      message ?? `Download failed (${response.status}).`,
+      response.status,
+      code,
+      details,
+    );
+  }
+
+  const lengthHeader = response.headers.get("Content-Length");
+  const length = lengthHeader === null ? Number.NaN : Number(lengthHeader);
+  return {
+    blob: await response.blob(),
+    fileName: fileNameFromDisposition(
+      response.headers.get("Content-Disposition"),
+    ),
+    checksumSha256: response.headers.get("X-Checksum-SHA256"),
+    sizeBytes: Number.isFinite(length) ? length : null,
+  };
 }

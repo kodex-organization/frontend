@@ -1,4 +1,5 @@
-import { platformAdminFetch } from "@/lib/platform-admin/client";
+import { platformAdminFetch, platformAdminDownload } from "@/lib/platform-admin/client";
+import type { ApiDownloadResult } from "@/lib/api/client";
 
 export interface SubscriptionPlan {
   id: string;
@@ -15,6 +16,31 @@ export interface TenantBranch {
   address?: string | null;
   tablesCount?: number;
   activeSessionsCount?: number;
+}
+
+export interface TenantAdminRef {
+  id: string;
+  fullName: string | null;
+  email: string;
+}
+
+export interface TenantLifecycleEvent {
+  id: string;
+  actionType: string;
+  occurredAt: string;
+  newStatus: string | null;
+  reason: string | null;
+  forced: boolean;
+  openSessionsCount: number | null;
+  udhaarCustomerCount: number | null;
+  performedBy: TenantAdminRef | null;
+}
+
+export interface TenantTerminationInfo {
+  terminatedAt: string;
+  reason: string | null;
+  forced: boolean;
+  performedBy: TenantAdminRef | null;
 }
 
 export interface TenantOwner {
@@ -35,6 +61,8 @@ export interface Tenant {
   createdAt: string;
   updatedAt?: string;
   deletedAt?: string | null;
+  terminationInfo?: TenantTerminationInfo | null;
+  lifecycleEvents?: TenantLifecycleEvent[];
   subscriptionPlanId?: string | null;
   subscriptionPlan?: SubscriptionPlan | null;
   currentSubscription?: {
@@ -142,6 +170,12 @@ export const TenancyApi = {
       body: JSON.stringify({ forceOverride, forceReason }),
     }),
 
+  restoreTenant: (id: string, reason?: string) =>
+    platformAdminFetch<Tenant>(`/super-admin/tenants/${id}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+
   listSubscriptionPlans: () =>
     platformAdminFetch<SubscriptionPlan[]>("/super-admin/subscriptions/plans"),
 
@@ -156,6 +190,11 @@ export const TenancyApi = {
       `/super-admin/tenants/${tenantId}/exports`
     ),
 
+  downloadTenantExport: (tenantId: string, exportId: string): Promise<ApiDownloadResult> =>
+    platformAdminDownload(
+      `/super-admin/tenants/${tenantId}/exports/${exportId}/download`
+    ),
+
   listSupportNotes: (tenantId: string) =>
     platformAdminFetch<SupportNote[]>(`/super-admin/tenants/${tenantId}/notes`),
 
@@ -165,5 +204,3 @@ export const TenancyApi = {
       body: JSON.stringify({ note }),
     }),
 };
-
-
