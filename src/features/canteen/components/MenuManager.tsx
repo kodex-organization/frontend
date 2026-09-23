@@ -289,18 +289,18 @@ export function MenuManager() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center flex-col gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-muted-foreground">Loading Canteen Menu Data...</p>
+        <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+        <p className="text-sm text-slate-500">Loading Canteen Menu Data...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex h-64 items-center justify-center flex-col gap-4 text-destructive">
+      <div className="flex h-64 items-center justify-center flex-col gap-4 text-rose-600">
         <AlertCircle className="h-10 w-10" />
-        <p className="text-lg font-semibold">Error Loading Data</p>
-        <p className="text-sm text-muted-foreground">{error}</p>
+        <p className="text-lg font-semibold text-slate-900">Error Loading Data</p>
+        <p className="text-sm text-slate-500">{error}</p>
         <Button onClick={loadData} variant="secondary" className="w-auto">
           Try Again
         </Button>
@@ -311,12 +311,12 @@ export function MenuManager() {
   return (
     <div className="space-y-6">
       {/* Top Header & Global Actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Canteen Products & Catalog
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+            Canteen Products &amp; Catalog
           </h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-500">
             Manage food, beverages, snacks, and retail items sold in the canteen.
           </p>
         </div>
@@ -359,8 +359,8 @@ export function MenuManager() {
               onClick={() => setSelectedCategory(null)}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition text-left ${
                 selectedCategory === null
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                  ? "bg-brand-600 text-white shadow-sm"
+                  : "text-slate-700 hover:bg-slate-100"
               }`}
             >
               <span className="flex items-center gap-2">
@@ -379,8 +379,8 @@ export function MenuManager() {
                   key={c.id}
                   className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm transition ${
                     isSelected
-                      ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                      ? "bg-brand-600 text-white font-medium shadow-sm"
+                      : "text-slate-700 hover:bg-slate-100"
                   }`}
                 >
                   <button
@@ -409,7 +409,7 @@ export function MenuManager() {
                             e.stopPropagation();
                             handleOpenCategoryModal(c);
                           }}
-                          className={`p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 ${
+                          className={`p-1 rounded hover:bg-slate-200 ${
                             isSelected ? "text-white" : "text-slate-500"
                           }`}
                           title="Edit Category"
@@ -438,7 +438,7 @@ export function MenuManager() {
           </div>
 
           {categories.length === 0 && (
-            <div className="p-4 text-center border border-dashed rounded-xl text-xs text-muted-foreground">
+            <div className="p-4 text-center border border-dashed border-slate-300 rounded-xl text-xs text-slate-500">
               No categories created yet.
             </div>
           )}
@@ -449,38 +449,38 @@ export function MenuManager() {
           {/* Search bar & count summary */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
                 placeholder="Search products by name, barcode, or description..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-10"
+                className="pl-9 h-10 bg-white border-slate-200"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
-            <div className="text-xs text-muted-foreground self-center shrink-0">
-              Showing <span className="font-bold text-foreground">{filteredItems.length}</span> of{" "}
-              <span className="font-bold text-foreground">{items.length}</span> products
+            <div className="text-xs text-slate-500 self-center shrink-0">
+              Showing <span className="font-bold text-slate-900">{filteredItems.length}</span> of{" "}
+              <span className="font-bold text-slate-900">{items.length}</span> products
             </div>
           </div>
 
           {/* Empty filtered items */}
           {filteredItems.length === 0 ? (
-            <div className="border border-dashed rounded-2xl p-12 text-center flex flex-col items-center justify-center gap-3 bg-slate-50/50 dark:bg-slate-900/50">
-              <Package className="w-10 h-10 text-muted-foreground opacity-40" />
+            <div className="border border-dashed border-slate-300 rounded-xl p-12 text-center flex flex-col items-center justify-center gap-3 bg-slate-50">
+              <Package className="w-10 h-10 text-slate-300" />
               <div>
-                <p className="font-semibold text-slate-800 dark:text-slate-200">
+                <p className="font-semibold text-slate-700">
                   No products found
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-slate-500 mt-1">
                   {searchQuery
                     ? "Try adjusting your search query or clear the filter."
                     : "No products exist under this category yet."}
@@ -506,12 +506,12 @@ export function MenuManager() {
                 return (
                   <div
                     key={item.id}
-                    className="border rounded-2xl p-4 bg-white dark:bg-slate-900 shadow-xs flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition"
+                    className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between hover:shadow-md hover:border-slate-300 transition-all duration-150"
                   >
                     <div>
                       {/* Top status & category badges */}
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 truncate max-w-[120px]">
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 truncate max-w-[120px]">
                           {categoryName}
                         </span>
                         <button
@@ -537,11 +537,11 @@ export function MenuManager() {
                       </div>
 
                       {/* Product Name & Description */}
-                      <h4 className="font-bold text-slate-900 dark:text-white text-base leading-snug">
+                      <h4 className="font-bold text-slate-900 text-base leading-snug">
                         {item.name}
                       </h4>
                       {item.description && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">
                           {item.description}
                         </p>
                       )}
@@ -558,12 +558,12 @@ export function MenuManager() {
                     </div>
 
                     {/* Bottom Price & Controls */}
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
                       <div>
-                        <span className="text-xs text-muted-foreground block">
+                        <span className="text-xs text-slate-400 block">
                           Price
                         </span>
-                        <span className="font-extrabold text-lg text-primary font-mono">
+                        <span className="font-extrabold text-lg text-brand-700 font-mono">
                           Rs. {Number(item.currentPrice).toFixed(2)}
                         </span>
                       </div>
@@ -582,7 +582,7 @@ export function MenuManager() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                            className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50"
                             onClick={() => setItemToDelete(item)}
                             title="Delete Product"
                           >
@@ -601,10 +601,10 @@ export function MenuManager() {
 
       {/* --- MODAL: Add / Edit Category --- */}
       {categoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900">
                 {editingCategory ? "Edit Category" : "Add New Category"}
               </h3>
               <button
@@ -646,13 +646,13 @@ export function MenuManager() {
                 />
                 <label
                   htmlFor="categoryActive"
-                  className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer"
+                  className="text-sm font-medium text-slate-700 cursor-pointer"
                 >
                   Active in menu
                 </label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <Button
                   type="button"
                   variant="outline"
@@ -683,10 +683,10 @@ export function MenuManager() {
 
       {/* --- MODAL: Add / Edit Product --- */}
       {itemModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900">
                 {editingItem ? "Edit Canteen Product" : "Add New Canteen Product"}
               </h3>
               <button
@@ -726,7 +726,7 @@ export function MenuManager() {
                         categoryId: e.target.value,
                       }))
                     }
-                    className="h-10 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-primary"
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition-all"
                   >
                     <option value="">-- None / General --</option>
                     {categories.map((c) => (
@@ -787,7 +787,7 @@ export function MenuManager() {
                         description: e.target.value,
                       }))
                     }
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-sm text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-primary resize-none"
+                    className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 transition-all resize-none placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -807,13 +807,13 @@ export function MenuManager() {
                 />
                 <label
                   htmlFor="itemActive"
-                  className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer"
+                  className="text-sm font-medium text-slate-700 cursor-pointer"
                 >
                   Active in catalog
                 </label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <Button
                   type="button"
                   variant="outline"

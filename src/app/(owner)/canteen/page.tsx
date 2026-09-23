@@ -20,29 +20,29 @@ export default function CanteenPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+            <div className="p-2 rounded-xl bg-brand-50 text-brand-600">
               <UtensilsCrossed className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                Canteen & Concessions
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                Canteen &amp; Concessions
               </h1>
-              <p className="text-sm text-muted-foreground">
-                Issue food & drinks to table sessions, process direct walk-in sales, and manage inventory.
+              <p className="text-sm text-slate-500">
+                Issue food &amp; drinks to table sessions, process direct walk-in sales, and manage inventory.
               </p>
             </div>
           </div>
         </div>
 
         {/* Tab Navigation Controls */}
-        <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+        <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200">
           <button
             type="button"
             onClick={() => setActiveTab("pos")}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
               activeTab === "pos"
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                : "text-slate-500 hover:text-slate-800"
             }`}
           >
             <ShoppingCart className="w-4 h-4" /> Point of Sale
@@ -52,11 +52,11 @@ export default function CanteenPage() {
             onClick={() => setActiveTab("menu")}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
               activeTab === "menu"
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                : "text-slate-500 hover:text-slate-800"
             }`}
           >
-            <Package className="w-4 h-4" /> Menu & Products
+            <Package className="w-4 h-4" /> Menu &amp; Products
           </button>
         </div>
       </div>

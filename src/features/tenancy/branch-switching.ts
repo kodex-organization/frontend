@@ -1,5 +1,5 @@
 import { ApiError, apiFetch } from "@/lib/api/client";
-import { tokenStorage, redirectPathForRoles, type SessionTokens, type SessionUser, type UserRole } from "@/lib/auth/session";
+import { tokenStorage, type SessionTokens, type SessionUser, type UserRole } from "@/lib/auth/session";
 
 export const ASSIGNED_BRANCHES_CHANGED_EVENT =
   "cuecloud:assigned-branches-changed";
@@ -77,7 +77,9 @@ export async function completeBranchSwitch(
   ]);
 
   if (tokenStorage.getSessionVersion() === switchedVersion) {
-    dependencies.navigate(redirectPathForRoles(session.user.roles));
+    // Stay on the current page after branch switch instead of always redirecting to the role's default.
+    // If the navigate dependency wants a specific path (e.g. login redirect), it handles that itself.
+    dependencies.navigate(window.location.pathname);
   }
 
   return {
