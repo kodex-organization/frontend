@@ -29,6 +29,13 @@ export function notificationPayload(notification: Notification): Record<string, 
 
 export function notificationMessage(notification: Notification) {
   const payload = notificationPayload(notification);
+  if (notification.category === "announcement") {
+    const title = typeof payload.title === "string" ? payload.title.trim() : "";
+    const body = typeof payload.body === "string" ? payload.body.trim() : "";
+    if (title && body) return `${title}: ${body}`;
+    if (title) return title;
+    if (body) return body;
+  }
   return typeof payload.message === "string" && payload.message.trim()
     ? payload.message
     : notification.category === "overtime"

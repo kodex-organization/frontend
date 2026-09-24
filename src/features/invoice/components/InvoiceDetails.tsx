@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { toast, ToastContainer } from "react-toastify";
+import { toast } from "react-toastify";
 
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
@@ -123,7 +123,6 @@ export default function InvoiceDetails({
 
   return (
     <main className="mx-auto w-full max-w-6xl pb-12">
-      <ToastContainer position="top-right" />
 
       <Link href={backHref} className="text-sm font-semibold text-slate-600 hover:text-emerald-700">
         ← Back to billing

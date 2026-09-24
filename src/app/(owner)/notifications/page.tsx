@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Clock3,
   Info,
+  Megaphone,
   Percent,
   ReceiptText,
   RefreshCw,
@@ -39,7 +40,7 @@ import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
 
 const PAGE_SIZE = 10;
-const defaultChannels = ["in_app", "push", "sms"];
+const defaultChannels = ["push", "sms"];
 const statuses = ["queued", "pending", "sent", "failed", "read"];
 
 function formatRelativeTime(value: string) {
@@ -64,6 +65,7 @@ function CategoryIcon({ category }: { category: string | null | undefined }) {
   if (category === "invoice_void") return <ReceiptText className={className} />;
   if (category === "udhaar") return <WalletCards className={className} />;
   if (category === "end_of_day") return <CalendarDays className={className} />;
+  if (category === "announcement") return <Megaphone className={className} />;
   return <Info className={className} />;
 }
 
@@ -72,6 +74,7 @@ function categoryTone(category: string | null | undefined) {
   if (category === "overtime" || category === "manager_takeover") return "bg-amber-50 text-amber-700";
   if (category === "discount") return "bg-violet-50 text-violet-700";
   if (category === "udhaar") return "bg-blue-50 text-blue-700";
+  if (category === "announcement") return "bg-sky-50 text-sky-700";
   return "bg-slate-100 text-slate-600";
 }
 
@@ -225,7 +228,7 @@ function DeliveryLogSection() {
   const hasNext = page * PAGE_SIZE < total;
   return <section className="rounded-xl border border-slate-200 bg-white">
     <div className="border-b border-slate-100 px-5 py-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-slate-950">Delivery logs</h2><p className="mt-1 text-sm text-slate-500">Recent delivery attempts for your authorized notifications.</p></div><div className="flex items-center gap-2 text-xs text-slate-500"><span>{total} records</span><button aria-label="Refresh delivery logs" title="Refresh" className="rounded-md p-1.5 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600" onClick={() => setReloadNonce((value) => value + 1)}><RefreshCw className="h-4 w-4" /></button></div></div>
-      <div className="mt-4 flex flex-wrap items-center gap-2"><Select aria-label="Filter by channel" value={channel} onChange={(event) => filterChanged(setChannel, event.target.value)}><option value="">All channels</option>{availableChannels.map((item) => <option key={item}>{item}</option>)}</Select><Select aria-label="Filter by status" value={status} onChange={(event) => filterChanged(setStatus, event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item}>{item}</option>)}</Select><Select aria-label="Filter by category" value={category} onChange={(event) => filterChanged(setCategory, event.target.value)}><option value="">All categories</option>{notificationCategories.map((item) => <option key={item}>{categoryLabel(item)}</option>)}</Select>{hasFilters && <button className="inline-flex items-center gap-1 px-2 text-xs font-medium text-slate-600 hover:text-slate-950" onClick={clearFilters}><X className="h-3.5 w-3.5" />Clear</button>}</div>
+      <div className="mt-4 flex flex-wrap items-center gap-2"><Select aria-label="Filter by channel" value={channel} onChange={(event) => filterChanged(setChannel, event.target.value)}><option value="">All channels</option>{availableChannels.map((item) => <option key={item}>{item}</option>)}</Select><Select aria-label="Filter by status" value={status} onChange={(event) => filterChanged(setStatus, event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item}>{item}</option>)}</Select><Select aria-label="Filter by category" value={category} onChange={(event) => filterChanged(setCategory, event.target.value)}><option value="">All categories</option>{notificationCategories.map((item) => <option key={item} value={item}>{categoryLabel(item)}</option>)}</Select>{hasFilters && <button className="inline-flex items-center gap-1 px-2 text-xs font-medium text-slate-600 hover:text-slate-950" onClick={clearFilters}><X className="h-3.5 w-3.5" />Clear</button>}</div>
     </div>
     <div className="p-5">
       {loading ? <Loading message="Loading delivery logs…" /> : error && items.length === 0 ? <ErrorState message={error} onRetry={() => setReloadNonce((value) => value + 1)} /> : items.length === 0 ? <div className="rounded-lg border border-dashed border-slate-200 px-4 py-10 text-center"><p className="text-sm font-medium text-slate-700">No delivery history yet.</p><p className="mt-1 text-xs text-slate-500">Delivery attempts will appear here when notifications are sent.</p></div> : <>
