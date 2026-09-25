@@ -9,7 +9,7 @@ import { getNotificationPreferences, getNotifications, markAllNotificationsRead 
 import { flushNotificationQueue, queueNotificationPreferences, queueNotificationRead, queueNotificationsReadAll } from "./offline";
 import { isUnread, type Notification } from "./types";
 import { listenForForegroundMessages, requestPushPermission, revokePushToken, type PushSetupResult } from "./firebase";
-import { toast, ToastContainer } from "react-toastify";
+import { toast } from "react-toastify";
 
 interface NotificationContextValue {
   notifications: Notification[];
@@ -252,7 +252,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [markAllLoading, online, refresh]);
 
   const value = useMemo(() => ({ notifications, unreadCount: notifications.filter(isUnread).length, loading, error, refresh, resetForBranch, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush }), [notifications, loading, error, refresh, resetForBranch, markAsRead, markAllAsRead, markAllLoading, markAllError, preferences, preferencesLoading, preferencesSaving, preferencesError, loadPreferences, savePreferences, pushToken, pushState, pushMessage, enablePush, disablePush]);
-  return <NotificationContext.Provider value={value}><ToastContainer position="top-right" autoClose={4000} />{children}</NotificationContext.Provider>;
+return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
 }
 
 export function useNotifications() {
