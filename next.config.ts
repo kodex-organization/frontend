@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
+import withSerwistInit from "@serwist/next";
 
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(frontendRoot, "..");
@@ -44,4 +45,15 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+const withSerwist = withSerwistInit({
+  // Source service worker file.
+  swSrc: "src/app/sw.ts",
+// Generated service worker file.
+  swDest: "public/sw.js",
+  // Automatically register the service worker.
+  register: true,
+  // Keep enabled in development for offline testing.
+  disable: false,
+});
+
+export default withSerwist(nextConfig);
