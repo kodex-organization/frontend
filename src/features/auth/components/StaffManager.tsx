@@ -74,7 +74,7 @@ export function StaffManager() {
   const [staffToDeactivate, setStaffToDeactivate] = useState<DetailedStaffMember | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isOwner = user?.roles.includes("OWNER");
+  const isOwner = user?.roles?.some((r) => r.toUpperCase() === "OWNER");
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -83,7 +83,7 @@ export function StaffManager() {
         listStaff({
           search: search || undefined,
           role: roleFilter !== "ALL" ? roleFilter : undefined,
-          branchId: branchFilter || undefined,
+          branchId: isOwner ? undefined : branchFilter || undefined,
           status: statusFilter !== "all" ? statusFilter : undefined,
         }),
         fetchBranches({ limit: 100 }),
@@ -95,7 +95,7 @@ export function StaffManager() {
     } finally {
       setIsLoading(false);
     }
-  }, [search, roleFilter, branchFilter, statusFilter]);
+  }, [search, roleFilter, branchFilter, statusFilter, isOwner]);
 
   useEffect(() => {
     loadData();
@@ -107,7 +107,7 @@ export function StaffManager() {
       fullName: member.fullName || "",
       phone: member.phone || "",
       role: (member.roles[0] as any) || (member.isOwner ? "OWNER" : "CASHIER"),
-      branchId: member.branchId || "",
+      branchId: member.branchId || (isOwner ? "" : user?.branchId || ""),
       isActive: member.isActive,
     });
   };
@@ -120,8 +120,8 @@ export function StaffManager() {
       await updateStaff(editingStaff.id, {
         fullName: editForm.fullName,
         phone: editForm.phone || null,
-        role: editForm.role,
-        branchId: editForm.branchId || null,
+        role: isOwner ? editForm.role : "CASHIER", // Managers cannot assign peer roles
+        branchId: isOwner ? (editForm.branchId || null) : user?.branchId || null,
         isActive: editForm.isActive,
       });
       toast.success(`Updated ${editForm.fullName || "staff member"} successfully.`);
@@ -255,12 +255,11 @@ export function StaffManager() {
           className="px-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
         >
           <option value="ALL">All Roles</option>
-          <option value="OWNER">Owner</option>
+          {isOwner && <option value="OWNER">Owner</option>}
           <option value="MANAGER">Manager</option>
           <option value="ACCOUNTANT">Accountant</option>
           <option value="CASHIER">Cashier</option>
         </select>
-
 
         <select
           value={statusFilter}
@@ -304,7 +303,14 @@ export function StaffManager() {
                 {staff.map((member) => {
                   const isSelf = member.id === user?.id;
                   const isTargetOwner = member.isOwner || member.roles.includes("OWNER");
-                  const canModify = isOwner || !isTargetOwner;
+                  const isTargetManager = member.roles.includes("MANAGER");
+                  const isTargetAccountant = member.roles.includes("ACCOUNTANT");
+
+                  // Role-based action authority:
+                  // Owners can modify anyone except self-deactivation.
+                  // Managers can ONLY modify Cashiers at their branch.
+                  const canModify =
+                    isOwner || (!isTargetOwner && !isTargetManager && !isTargetAccountant);
 
                   return (
                     <tr key={member.id} className="hover:bg-slate-50/70 transition-colors">
@@ -319,7 +325,7 @@ export function StaffManager() {
                         </div>
                         <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
                           <span>{member.email}</span>
-                          {member.phone && <span>• {member.phone}</span>}
+                          {member.phone && <span>· {member.phone}</span>}
                         </div>
                       </td>
                       <td className="py-3 px-4">{getRoleBadge(member.roles, member.isOwner)}</td>
@@ -461,32 +467,50 @@ export function StaffManager() {
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Role</label>
-                <select
-                  value={editForm.role}
-                  disabled={!isOwner && editForm.role === "OWNER"}
-                  onChange={(e) => setEditForm({ ...editForm, role: e.target.value as any })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
-                >
-                  {isOwner && <option value="OWNER">Owner</option>}
-                  <option value="MANAGER">Manager</option>
-                  <option value="ACCOUNTANT">Accountant</option>
-                  <option value="CASHIER">Cashier</option>
-                </select>
+                {isOwner ? (
+                  <select
+                    value={editForm.role}
+                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value as any })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+                  >
+                    <option value="OWNER">Owner</option>
+                    <option value="MANAGER">Manager</option>
+                    <option value="ACCOUNTANT">Accountant</option>
+                    <option value="CASHIER">Cashier</option>
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    readOnly
+                    value="Cashier"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"
+                  />
+                )}
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Assigned Branch</label>
-                <select
-                  value={editForm.branchId}
-                  onChange={(e) => setEditForm({ ...editForm, branchId: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
-                >
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
+                {isOwner ? (
+                  <select
+                    value={editForm.branchId}
+                    onChange={(e) => setEditForm({ ...editForm, branchId: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+                  >
+                    <option value="">All Branches</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    readOnly
+                    value={branches.find((b) => b.id === user?.branchId)?.name ?? "Current Branch"}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"
+                  />
+                )}
               </div>
 
               <div className="flex items-center gap-2 pt-1">

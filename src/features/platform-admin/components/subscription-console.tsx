@@ -13,6 +13,7 @@ import {
   Search,
   Trash2,
   XCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -46,6 +47,7 @@ import {
   type SubscriptionPlanInput,
   type TenantSubscription,
 } from "../subscriptions";
+import { TenancyApi, Tenant } from "@/features/tenancy";
 
 const emptyPlan: SubscriptionPlanInput = {
   name: "",
@@ -82,13 +84,33 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-function subscriptionFormFromCurrent(subscription: TenantSubscription | null) {
+function isDatePast(dateStr?: string | null): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr + "T23:59:59");
+  return d < new Date();
+}
+
+function subscriptionFormFromCurrent(subscription: TenantSubscription | null): SubscriptionFormState {
   if (!subscription) return { ...emptySubscriptionForm };
-  const manageableStatus = ["active", "trialing", "past_due", "expired"].includes(
-    subscription.status,
-  )
-    ? (subscription.status as "active" | "trialing" | "past_due" | "expired")
-    : "active";
+
+  const periodEndPast = isDatePast(subscription.currentPeriodEnd);
+  const gracePast = isDatePast(subscription.gracePeriodEndsAt);
+
+  let manageableStatus: SubscriptionFormState["status"] = "active";
+
+  if (subscription.status === "trialing") {
+    manageableStatus = isDatePast(subscription.trialEndsAt) ? "expired" : "trialing";
+  } else if (!periodEndPast && subscription.currentPeriodEnd) {
+    // Period end is still in the future -> status is active
+    manageableStatus = "active";
+  } else if (periodEndPast) {
+    // Period end has passed -> check grace window
+    const hasActiveGrace = subscription.gracePeriodEndsAt && !gracePast;
+    manageableStatus = hasActiveGrace ? "past_due" : "expired";
+  } else {
+    manageableStatus = (subscription.status as any) || "active";
+  }
+
   return {
     planId: subscription.planId,
     billingCycle: subscription.billingCycle,
@@ -103,25 +125,35 @@ function subscriptionFormFromCurrent(subscription: TenantSubscription | null) {
 }
 
 function StatusBadge({ value }: { value: string }) {
-  const positive = value === "active" || value === "paid";
+  const normalized = value.toLowerCase();
+  const positive = normalized === "active" || normalized === "paid";
   const warning =
-    value === "trialing" || value === "pending" || value === "past_due";
+    normalized === "trialing" ||
+    normalized === "pending" ||
+    normalized === "past_due" ||
+    normalized === "trial";
+  const danger =
+    normalized === "expired" ||
+    normalized === "failed" ||
+    normalized === "suspended" ||
+    normalized === "cancelled" ||
+    normalized === "unpaid";
+
   return (
     <span
-      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
-        positive
-          ? "bg-brand-50 text-brand-700"
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${positive
+          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
           : warning
-            ? "bg-amber-50 text-amber-700"
-            : "bg-slate-100 text-slate-700"
-      }`}
+            ? "bg-amber-50 text-amber-700 border border-amber-200"
+            : danger
+              ? "bg-rose-50 text-rose-700 border border-rose-200"
+              : "bg-slate-100 text-slate-700 border border-slate-200"
+        }`}
     >
       {value.replaceAll("_", " ")}
     </span>
   );
 }
-
-import { TenancyApi, Tenant } from "@/features/tenancy";
 
 export interface SubscriptionConsoleProps {
   initialTenantId?: string | null;
@@ -145,15 +177,13 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
   const [tenantInput, setTenantInput] = useState(initialTenantId || "");
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(initialTenantId || null);
   const [subscription, setSubscription] = useState<TenantSubscription | null>(null);
-  const [subscriptionForm, setSubscriptionForm] = useState(
+  const [subscriptionForm, setSubscriptionForm] = useState<SubscriptionFormState>(
     emptySubscriptionForm,
   );
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [subscriptionSaving, setSubscriptionSaving] = useState(false);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
-  const [subscriptionFeedback, setSubscriptionFeedback] = useState<string | null>(
-    null,
-  );
+  const [subscriptionFeedback, setSubscriptionFeedback] = useState<string | null>(null);
   const [pendingPlanDelete, setPendingPlanDelete] = useState<SubscriptionPlan | null>(null);
   const [planDeleting, setPlanDeleting] = useState(false);
   const [pendingSubscriptionAction, setPendingSubscriptionAction] = useState<"suspend" | "resume" | "cancel" | null>(null);
@@ -176,7 +206,6 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
       setPlansLoading(false);
     }
   }, []);
-
 
   useEffect(() => {
     void loadPlans();
@@ -273,6 +302,9 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
       const current = await getTenantSubscription(tenantId);
       setSubscription(current);
       setSubscriptionForm(subscriptionFormFromCurrent(current));
+
+      // Refresh tenant list so the top dropdown reflects updated status
+      void TenancyApi.listTenants().then(setTenants).catch(() => { });
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         setSubscription(null);
@@ -326,9 +358,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
       });
       setSubscription(updated);
       setSubscriptionForm(subscriptionFormFromCurrent(updated));
-      setSubscriptionFeedback("Tenant subscription updated.");
-      // Refresh the tenants list so the dropdown's "(status)" label updates
-      // immediately instead of only after a manual page refresh/navigation.
+      setSubscriptionFeedback("Tenant subscription updated successfully.");
       await loadPlans();
     } catch (error) {
       setSubscriptionError(errorMessage(error, "Could not update the subscription."));
@@ -349,10 +379,6 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
     setSubscriptionError(null);
     setSubscriptionFeedback(null);
     try {
-      // Extend from the tenant's existing trial end date, not from today —
-      // otherwise every click recomputes "today + 14 days" and repeated
-      // clicks (or a trial end already further out than 14 days from today)
-      // never actually move the date forward correctly.
       const baseDate = subscription?.trialEndsAt
         ? new Date(subscription.trialEndsAt)
         : new Date();
@@ -363,8 +389,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
       setSubscription(updated);
       setSubscriptionForm(subscriptionFormFromCurrent(updated));
       setSubscriptionFeedback("Trial extended by 14 days.");
-      const updatedMetrics = await getSubscriptionMetrics().catch(() => null);
-      if (updatedMetrics) setMetrics(updatedMetrics);
+      await loadPlans();
     } catch (error) {
       setSubscriptionError(errorMessage(error, "Could not extend trial."));
     } finally {
@@ -382,8 +407,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
       setSubscription(updated);
       setSubscriptionForm(subscriptionFormFromCurrent(updated));
       setSubscriptionFeedback(`Payment status marked as ${status}.`);
-      const updatedMetrics = await getSubscriptionMetrics().catch(() => null);
-      if (updatedMetrics) setMetrics(updatedMetrics);
+      await loadPlans();
     } catch (error) {
       setSubscriptionError(errorMessage(error, "Could not update payment status."));
     } finally {
@@ -400,15 +424,23 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
       const updated = await moveTenantToGracePeriod(selectedTenantId, 7);
       setSubscription(updated);
       setSubscriptionForm(subscriptionFormFromCurrent(updated));
-      setSubscriptionFeedback("Subscription moved to 7-day grace period.");
-      const updatedMetrics = await getSubscriptionMetrics().catch(() => null);
-      if (updatedMetrics) setMetrics(updatedMetrics);
+
+      const periodEnded = isDatePast(updated.currentPeriodEnd);
+      setSubscriptionFeedback(
+        periodEnded
+          ? "Subscription moved to 7-day grace period (Past Due)."
+          : "Grace period scheduled for 7 days. Status remains Active until the current period ends.",
+      );
+
+      await loadPlans();
     } catch (error) {
       setSubscriptionError(errorMessage(error, "Could not move to grace period."));
     } finally {
       setActionLoading(false);
     }
   };
+
+  const isPeriodLapsed = isDatePast(subscriptionForm.currentPeriodEnd);
 
   return (
     <div className="space-y-10">
@@ -423,7 +455,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
         </p>
       </header>
 
-      {/* Live Billing Aggregates (§3.15, Feature C) */}
+      {/* Live Billing Aggregates */}
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
@@ -457,6 +489,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
         </div>
       </section>
 
+      {/* Plans Section */}
       <section className="border-t border-slate-200 pt-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -635,6 +668,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
         </div>
       </section>
 
+      {/* Tenant Subscription Section */}
       <section className="border-t border-slate-200 pt-6">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Tenant subscription</h2>
@@ -720,6 +754,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
                     <option value="yearly">Yearly</option>
                   </Select>
                 </FormField>
+
                 <FormField label="Subscription status" htmlFor="tenant-status">
                   <Select
                     id="tenant-status"
@@ -727,7 +762,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
                     onChange={(event) =>
                       setSubscriptionForm((current) => ({
                         ...current,
-                        status: event.target.value as typeof current.status,
+                        status: event.target.value as SubscriptionFormState["status"],
                       }))
                     }
                   >
@@ -737,6 +772,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
                     <option value="expired">Expired</option>
                   </Select>
                 </FormField>
+
                 <FormField label="Payment status" htmlFor="tenant-payment">
                   <Select
                     id="tenant-payment"
@@ -755,28 +791,117 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
                     <option value="refunded">Refunded</option>
                   </Select>
                 </FormField>
-                {[
-                  ["Current period start", "currentPeriodStart"],
-                  ["Current period end", "currentPeriodEnd"],
-                  ["Next billing date", "nextBillingDate"],
-                  ["Grace period ends", "gracePeriodEndsAt"],
-                  ["Trial ends", "trialEndsAt"],
-                ].map(([label, key]) => (
-                  <FormField key={key} label={label} htmlFor={`subscription-${key}`}>
-                    <Input
-                      id={`subscription-${key}`}
-                      type="date"
-                      value={subscriptionForm[key as keyof typeof subscriptionForm]}
-                      onChange={(event) =>
-                        setSubscriptionForm((current) => ({
+
+                <FormField label="Current period start" htmlFor="subscription-currentPeriodStart">
+                  <Input
+                    id="subscription-currentPeriodStart"
+                    type="date"
+                    value={subscriptionForm.currentPeriodStart}
+                    onChange={(event) =>
+                      setSubscriptionForm((current) => ({
+                        ...current,
+                        currentPeriodStart: event.target.value,
+                      }))
+                    }
+                  />
+                </FormField>
+
+                {/* Current period end with auto-status recalculation */}
+                <FormField label="Current period end" htmlFor="subscription-currentPeriodEnd">
+                  <Input
+                    id="subscription-currentPeriodEnd"
+                    type="date"
+                    value={subscriptionForm.currentPeriodEnd}
+                    onChange={(event) => {
+                      const newEndDate = event.target.value;
+                      setSubscriptionForm((current) => {
+                        let nextStatus = current.status;
+                        if (newEndDate) {
+                          const isPast = isDatePast(newEndDate);
+                          if (isPast) {
+                            const graceValid = current.gracePeriodEndsAt && !isDatePast(current.gracePeriodEndsAt);
+                            nextStatus = graceValid ? "past_due" : "expired";
+                          } else if (current.status === "expired" || current.status === "past_due") {
+                            nextStatus = "active";
+                          }
+                        }
+                        return {
                           ...current,
-                          [key]: event.target.value,
-                        }))
-                      }
-                    />
-                  </FormField>
-                ))}
+                          currentPeriodEnd: newEndDate,
+                          status: nextStatus,
+                        };
+                      });
+                    }}
+                  />
+                </FormField>
+
+                <FormField label="Next billing date" htmlFor="subscription-nextBillingDate">
+                  <Input
+                    id="subscription-nextBillingDate"
+                    type="date"
+                    value={subscriptionForm.nextBillingDate}
+                    onChange={(event) =>
+                      setSubscriptionForm((current) => ({
+                        ...current,
+                        nextBillingDate: event.target.value,
+                      }))
+                    }
+                  />
+                </FormField>
+
+                <FormField label="Grace period ends" htmlFor="subscription-gracePeriodEndsAt">
+                  <Input
+                    id="subscription-gracePeriodEndsAt"
+                    type="date"
+                    value={subscriptionForm.gracePeriodEndsAt}
+                    onChange={(event) => {
+                      const newGrace = event.target.value;
+                      setSubscriptionForm((current) => {
+                        let nextStatus = current.status;
+                        const periodEnded = isDatePast(current.currentPeriodEnd);
+
+                        if (!periodEnded && current.currentPeriodEnd) {
+                          nextStatus = "active";
+                        } else if (periodEnded) {
+                          const graceValid = newGrace && !isDatePast(newGrace);
+                          nextStatus = graceValid ? "past_due" : "expired";
+                        }
+
+                        return {
+                          ...current,
+                          gracePeriodEndsAt: newGrace,
+                          status: nextStatus,
+                        };
+                      });
+                    }}
+                  />
+                </FormField>
+
+                <FormField label="Trial ends" htmlFor="subscription-trialEndsAt">
+                  <Input
+                    id="subscription-trialEndsAt"
+                    type="date"
+                    value={subscriptionForm.trialEndsAt}
+                    onChange={(event) =>
+                      setSubscriptionForm((current) => ({
+                        ...current,
+                        trialEndsAt: event.target.value,
+                      }))
+                    }
+                  />
+                </FormField>
               </div>
+
+              {/* Informational banner when period end is past */}
+              {isPeriodLapsed && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                  <span>
+                    Current period ended on <strong>{subscriptionForm.currentPeriodEnd}</strong>. Status automatically adjusted to{" "}
+                    <strong>{subscriptionForm.status.replaceAll("_", " ")}</strong>.
+                  </span>
+                </div>
+              )}
 
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" isLoading={subscriptionSaving}>
@@ -836,12 +961,31 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
               <h3 className="font-semibold text-slate-900">Current state</h3>
               {subscription ? (
                 <dl className="mt-4 space-y-4 text-sm">
-                  <div><dt className="text-slate-500">Plan</dt><dd className="mt-1 font-medium text-slate-900">{subscription.plan.name}</dd></div>
-                  <div className="flex gap-2"><StatusBadge value={subscription.status} /><StatusBadge value={subscription.paymentStatus} /></div>
-                  <div><dt className="text-slate-500">Current period</dt><dd className="mt-1 text-slate-800">{formatDate(subscription.currentPeriodStart)} to {formatDate(subscription.currentPeriodEnd)}</dd></div>
-                  <div><dt className="text-slate-500">Next billing</dt><dd className="mt-1 text-slate-800">{formatDate(subscription.nextBillingDate)}</dd></div>
-                  <div><dt className="text-slate-500">Grace period</dt><dd className="mt-1 text-slate-800">{formatDate(subscription.gracePeriodEndsAt)}</dd></div>
-                  <div className="flex items-center gap-2 text-xs text-slate-500"><CalendarClock className="h-4 w-4" /> Tenant {selectedTenantId}</div>
+                  <div>
+                    <dt className="text-slate-500">Plan</dt>
+                    <dd className="mt-1 font-medium text-slate-900">{subscription.plan.name}</dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <StatusBadge value={subscription.status} />
+                    <StatusBadge value={subscription.paymentStatus} />
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Current period</dt>
+                    <dd className="mt-1 text-slate-800">
+                      {formatDate(subscription.currentPeriodStart)} to {formatDate(subscription.currentPeriodEnd)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Next billing</dt>
+                    <dd className="mt-1 text-slate-800">{formatDate(subscription.nextBillingDate)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Grace period</dt>
+                    <dd className="mt-1 text-slate-800">{formatDate(subscription.gracePeriodEndsAt)}</dd>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <CalendarClock className="h-4 w-4" /> Tenant {selectedTenantId}
+                  </div>
                 </dl>
               ) : (
                 <p className="mt-4 text-sm text-slate-500">No current subscription.</p>
@@ -851,6 +995,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
         ) : null}
       </section>
 
+      {/* Delete Plan Modal */}
       <ConfirmModal
         isOpen={Boolean(pendingPlanDelete)}
         title={
@@ -887,6 +1032,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
         onCancel={() => setPendingPlanDelete(null)}
       />
 
+      {/* Subscription Action Modal */}
       <ConfirmModal
         isOpen={Boolean(pendingSubscriptionAction)}
         title={
@@ -935,8 +1081,7 @@ export function SubscriptionConsole({ initialTenantId }: SubscriptionConsoleProp
             setSubscriptionFeedback(
               `Subscription ${pendingSubscriptionAction === "suspend" ? "suspended" : pendingSubscriptionAction === "resume" ? "resumed" : "cancelled"} successfully.`,
             );
-            const updatedMetrics = await getSubscriptionMetrics().catch(() => null);
-            if (updatedMetrics) setMetrics(updatedMetrics);
+            await loadPlans();
             setPendingSubscriptionAction(null);
           } catch (error) {
             setSubscriptionError(

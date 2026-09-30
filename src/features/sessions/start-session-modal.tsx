@@ -16,7 +16,14 @@ interface StartSessionModalProps {
 }
 
 function formatRate(table: TableOption) {
-  const amount = Number(table.defaultHourlyRate);
+  // Check active hourly rate first before falling back to default/base rate
+  const rawAmount =
+    (table as any).hourlyRate ??
+    (table as any).rate ??
+    (table as any).currentRate ??
+    table.defaultHourlyRate;
+
+  const amount = Number(rawAmount);
   if (!Number.isFinite(amount)) return "Rate unavailable";
   if (!table.currency) return `${amount.toFixed(2)}/hr`;
 
@@ -29,6 +36,14 @@ function formatRate(table: TableOption) {
   } catch {
     return `${table.currency} ${amount.toFixed(2)}/hr`;
   }
+}
+
+function getTableDisplayName(table: TableOption) {
+  const identifier = table.tableNumber || (table as any).name || "";
+  if (!identifier) return "Table";
+  return identifier.toLowerCase().startsWith("table")
+    ? identifier
+    : `Table ${identifier}`;
 }
 
 export function StartSessionModal({
@@ -117,7 +132,9 @@ export function StartSessionModal({
         customerId: walkIn ? null : customerId,
       });
       await onStarted(started);
-      if (!isOnline || "offlineQueued" in started) toast.info("Saved offline. Action queued for sync.");
+      if (!isOnline || "offlineQueued" in started) {
+        toast.info("Saved offline. Action queued for sync.");
+      }
       onClose();
     } catch (submitError) {
       setError(
@@ -146,32 +163,38 @@ export function StartSessionModal({
             type="button"
             onClick={onClose}
             aria-label="Close start session dialog"
-            className="rounded p-1 text-slate-500 hover:bg-slate-100"
+            className="rounded p-1 text-slate-500 hover:bg-slate-100 cursor-pointer"
           >
             ×
           </button>
         </div>
 
-        <p className="mt-5 text-sm text-slate-500">This session will start in the active branch shown in the header.</p>
+        <p className="mt-5 text-sm text-slate-500">
+          This session will start in the active branch shown in the header.
+        </p>
 
         <label className="mt-4 block text-sm font-medium">
           Table
           <select
-            className="mt-1 w-full rounded-lg border p-3"
+            className="mt-1 w-full rounded-lg border p-3 bg-white"
             value={tableId}
             onChange={(event) => setTableId(event.target.value)}
             disabled={busy || !selectedBranchId}
           >
-            <option value="">{tables.length === 0 ? "No tables found in this branch" : "Select an available table"}</option>
+            <option value="">
+              {tables.length === 0
+                ? "No tables found in this branch"
+                : "Select an available table"}
+            </option>
             {tables.map((table) => (
               <option key={table.id} value={table.id}>
-                Table {table.tableNumber} — {formatRate(table)}
+                {getTableDisplayName(table)} — {formatRate(table)}
               </option>
             ))}
           </select>
         </label>
 
-        <label className="mt-4 flex gap-2 text-sm">
+        <label className="mt-4 flex gap-2 text-sm cursor-pointer select-none">
           <input
             type="checkbox"
             checked={walkIn}
@@ -194,27 +217,35 @@ export function StartSessionModal({
               disabled={busy || !isOnline}
             />
             <div className="mt-2 max-h-36 overflow-auto rounded-lg border">
-              {customers.map((customer) => (
-                <button
-                  key={customer.id}
-                  type="button"
-                  onClick={() => setCustomerId(customer.id)}
-                  className={`block w-full p-3 text-left text-sm ${
-                    customerId === customer.id
-                      ? "bg-brand-50"
-                      : "hover:bg-slate-50"
-                  }`}
-                >
-                  <strong>{customer.fullName}</strong>
-                  <br />
-                  {customer.phone}
-                </button>
-              ))}
+              {customers.length === 0 && query.trim() !== "" ? (
+                <p className="p-3 text-xs text-slate-400">No customers found</p>
+              ) : (
+                customers.map((customer) => (
+                  <button
+                    key={customer.id}
+                    type="button"
+                    onClick={() => setCustomerId(customer.id)}
+                    className={`block w-full p-3 text-left text-sm cursor-pointer ${
+                      customerId === customer.id
+                        ? "bg-brand-50 border-l-4 border-brand-600"
+                        : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <strong>{customer.fullName}</strong>
+                    <br />
+                    <span className="text-xs text-slate-500">{customer.phone}</span>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {!isOnline && <p className="mt-3 text-sm text-amber-700">Offline Mode active. Actions are saved locally and will synchronize when connection returns.</p>}
+        {!isOnline && (
+          <p className="mt-3 text-sm text-amber-700">
+            Offline Mode active. Actions are saved locally and will synchronize when connection returns.
+          </p>
+        )}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
         <button
@@ -225,7 +256,7 @@ export function StartSessionModal({
             busy
           }
           onClick={() => void submit()}
-          className="mt-6 w-full rounded-lg bg-brand-600 p-3 font-semibold text-white disabled:opacity-40"
+          className="mt-6 w-full rounded-lg bg-brand-600 p-3 font-semibold text-white disabled:opacity-40 cursor-pointer"
         >
           {busy ? "Starting…" : "Start timer"}
         </button>

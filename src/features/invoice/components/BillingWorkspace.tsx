@@ -20,7 +20,6 @@ const statusOptions: Array<{
 }> = [
     { value: "", label: "All statuses" },
     { value: "open", label: "Open" },
-    { value: "partially_paid", label: "Partially paid" },
     { value: "paid", label: "Paid" },
     { value: "void", label: "Voided" },
     { value: "draft", label: "Draft" },

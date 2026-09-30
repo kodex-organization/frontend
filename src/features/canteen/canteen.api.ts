@@ -38,6 +38,30 @@ export interface Order {
   sessionId?: string;
   status: string;
   items: OrderItem[];
+  invoiceId?: string;
+  invoiceNumber?: string;
+}
+
+export interface PaymentTender {
+  method: string;
+  amount: number;
+  reference?: string;
+}
+
+export interface StandaloneOrderItemInput {
+  menuItemId: string;
+  quantity: number;
+  unitPrice?: number;
+  notes?: string;
+}
+
+export interface StandaloneOrderPayload {
+  items: StandaloneOrderItemInput[];
+  payments?: PaymentTender[];
+  totalAmount?: number;
+  amountTendered?: number;
+  changeDue?: number;
+  customerId?: string | null;
 }
 
 export const CanteenApi = {
@@ -84,11 +108,19 @@ export const CanteenApi = {
       method: "POST",
       body: JSON.stringify({ items }),
     }),
-  createStandaloneOrder: (items: Array<{ menuItemId: string; quantity: number; notes?: string }>) =>
-    apiFetch<Order>("/canteen-pos/standalone-orders", {
+
+  createStandaloneOrder: (
+    payload: StandaloneOrderPayload | StandaloneOrderItemInput[]
+  ) => {
+    // If payload is already an object containing { items, payments }, pass it directly.
+    // If it's a legacy raw array, wrap it in { items: payload }.
+    const body = Array.isArray(payload) ? { items: payload } : payload;
+
+    return apiFetch<Order>("/canteen-pos/standalone-orders", {
       method: "POST",
-      body: JSON.stringify({ items }),
-    }),
+      body: JSON.stringify(body),
+    });
+  },
 
   // New POS Operations
   toggleItemAvailability: (id: string, isAvailable: boolean) =>

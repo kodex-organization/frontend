@@ -17,6 +17,11 @@ import {
   Armchair,
   User,
   Coffee,
+  CreditCard,
+  Banknote,
+  Smartphone,
+  Split,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +34,8 @@ interface CartItem extends MenuItem {
   cartQuantity: number;
   cartNotes?: string;
 }
+
+type PaymentMethod = "CASH" | "CARD" | "DIGITAL_WALLET" | "SPLIT";
 
 export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) {
   const { user } = useAuth();
@@ -55,6 +62,14 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
   // Barcode scanner buffer
   const [barcodeBuffer, setBarcodeBuffer] = useState("");
 
+  // Payment Tender Modal State (Option A)
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
+  const [cashTendered, setCashTendered] = useState<string>("");
+  const [paymentReference, setPaymentReference] = useState<string>("");
+  const [splitCashAmount, setSplitCashAmount] = useState<string>("");
+  const [splitCardAmount, setSplitCardAmount] = useState<string>("");
+
   const loadData = async () => {
     try {
       setIsLoading(true);
@@ -78,7 +93,6 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
       const sessions = await sessionApi.active(user?.branchId);
       setActiveSessions(sessions);
       if (sessions.length > 0 && !selectedSessionId && !propSessionId) {
-        // Default to first active session if user switches to session mode
         setSelectedSessionId(sessions[0].id);
       }
     } catch (err) {
@@ -98,7 +112,6 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
   // HID Barcode Scanner Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input field
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
@@ -162,19 +175,54 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
     setCart([]);
   };
 
+  const cartTotal = useMemo(() => {
+    return cart.reduce(
+      (sum, item) => sum + Number(item.currentPrice) * item.cartQuantity,
+      0
+    );
+  }, [cart]);
+
+  const totalQuantity = useMemo(() => {
+    return cart.reduce((sum, item) => sum + item.cartQuantity, 0);
+  }, [cart]);
+
   const targetSession = useMemo(() => {
     const sId = propSessionId || (destinationMode === "session" ? selectedSessionId : null);
     if (!sId) return null;
     return activeSessions.find((s) => s.id === sId) || null;
   }, [propSessionId, destinationMode, selectedSessionId, activeSessions]);
 
-  const handleCheckout = async () => {
+  // Cash change calculation
+  const numericCashTendered = parseFloat(cashTendered) || 0;
+  const changeDue = Math.max(0, numericCashTendered - cartTotal);
+
+  // Trigger Checkout
+  const handleInitiateCheckout = () => {
     if (cart.length === 0) return;
 
     if (destinationMode === "session" && !selectedSessionId && !propSessionId) {
       toast.error("Please select an active table session");
       return;
     }
+
+    // For Table Sessions, issue directly (paid when session closes)
+    if (destinationMode === "session" || propSessionId) {
+      void processSessionOrder();
+    } else {
+      // For Walk-in sales, open tender selection modal
+      setCashTendered(String(cartTotal));
+      setSplitCashAmount("");
+      setSplitCardAmount("");
+      setPaymentReference("");
+      setPaymentMethod("CASH");
+      setShowPaymentModal(true);
+    }
+  };
+
+  // 1. Process Order added to Table Session
+  const processSessionOrder = async () => {
+    const finalSessionId = propSessionId || (destinationMode === "session" ? selectedSessionId : null);
+    if (!finalSessionId) return;
 
     try {
       setIsSubmitting(true);
@@ -184,21 +232,81 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
         notes: c.cartNotes || undefined,
       }));
 
-      const finalSessionId = propSessionId || (destinationMode === "session" ? selectedSessionId : null);
-
-      if (finalSessionId) {
-        await CanteenApi.addItemsToSession(finalSessionId, payload);
-        const sessionLabel = targetSession
-          ? `Table ${targetSession.table.tableNumber}`
-          : "session";
-        toast.success(`Items successfully added to ${sessionLabel}!`);
-      } else {
-        await CanteenApi.createStandaloneOrder(payload);
-        toast.success("Direct walk-in order completed successfully!");
-      }
+      await CanteenApi.addItemsToSession(finalSessionId, payload);
+      const sessionLabel = targetSession
+        ? `Table ${targetSession.table.tableNumber}`
+        : "session";
+      toast.success(`Items successfully added to ${sessionLabel}!`);
       setCart([]);
     } catch (err: any) {
       toast.error(err.message || "Failed to process order");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 2. Process Walk-in Direct Order with Payment Recording
+  const processWalkInOrder = async () => {
+    if (paymentMethod === "CASH" && numericCashTendered < cartTotal) {
+      toast.error(`Cash received is less than total amount (PKR ${cartTotal.toFixed(2)})`);
+      return;
+    }
+
+    if (paymentMethod === "SPLIT") {
+      const splitCash = parseFloat(splitCashAmount) || 0;
+      const splitCard = parseFloat(splitCardAmount) || 0;
+      if (Math.abs(splitCash + splitCard - cartTotal) > 0.01) {
+        toast.error(`Split payments must equal total amount of PKR ${cartTotal.toFixed(2)}`);
+        return;
+      }
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      const itemsPayload = cart.map((c) => ({
+        menuItemId: c.id,
+        quantity: c.cartQuantity,
+        unitPrice: Number(c.currentPrice),
+        notes: c.cartNotes || undefined,
+      }));
+
+      // Structure payment tenders
+      let payments: Array<{ method: string; amount: number; reference?: string }> = [];
+      if (paymentMethod === "CASH") {
+        payments = [{ method: "CASH", amount: cartTotal }];
+      } else if (paymentMethod === "CARD") {
+        payments = [{ method: "CARD", amount: cartTotal, reference: paymentReference || undefined }];
+      } else if (paymentMethod === "DIGITAL_WALLET") {
+        payments = [{ method: "WALLET", amount: cartTotal, reference: paymentReference || undefined }];
+      } else if (paymentMethod === "SPLIT") {
+        payments = [
+          { method: "CASH", amount: parseFloat(splitCashAmount) || 0 },
+          { method: "CARD", amount: parseFloat(splitCardAmount) || 0, reference: paymentReference || undefined },
+        ];
+      }
+
+      const orderPayload = {
+        items: itemsPayload,
+        payments,
+        totalAmount: cartTotal,
+        amountTendered: paymentMethod === "CASH" ? numericCashTendered : cartTotal,
+        changeDue: paymentMethod === "CASH" ? changeDue : 0,
+      };
+
+      // Call API (supports both new object payload and legacy array payload)
+      await (CanteenApi.createStandaloneOrder as any)(orderPayload);
+
+      toast.success(
+        paymentMethod === "CASH" && changeDue > 0
+          ? `Sale completed! Change due: PKR ${changeDue.toFixed(2)}`
+          : "Walk-in sale completed and invoice generated!"
+      );
+
+      setShowPaymentModal(false);
+      setCart([]);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to process walk-in sale");
     } finally {
       setIsSubmitting(false);
     }
@@ -226,7 +334,6 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
     );
   }
 
-  // Filtered items
   const filteredItems = items.filter((item) => {
     const matchesCategory =
       activeCategory === null || item.categoryId === activeCategory;
@@ -240,17 +347,10 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
     return matchesCategory && matchesSearch;
   });
 
-  const cartTotal = cart.reduce(
-    (sum, item) => sum + Number(item.currentPrice) * item.cartQuantity,
-    0
-  );
-  const totalQuantity = cart.reduce((sum, item) => sum + item.cartQuantity, 0);
-
   return (
     <div className="flex flex-col lg:flex-row h-full min-h-[78vh] gap-6">
       {/* LEFT SECTION: Search, Category Filters & Products Grid */}
       <div className="flex-1 flex flex-col gap-4">
-        {/* Search Bar & Scanner Status */}
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -393,7 +493,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
             <button
               type="button"
               onClick={clearCart}
-              className="text-xs font-semibold text-slate-400 hover:text-rose-600 transition-colors"
+              className="text-xs font-semibold text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
             >
               Clear
             </button>
@@ -410,7 +510,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
               <button
                 type="button"
                 onClick={() => setDestinationMode("walkin")}
-                className={`py-1.5 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                className={`py-1.5 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                   destinationMode === "walkin"
                     ? "bg-white text-slate-900 shadow-sm border border-slate-200"
                     : "text-slate-500 hover:text-slate-700"
@@ -426,7 +526,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                     loadActiveSessions();
                   }
                 }}
-                className={`py-1.5 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                className={`py-1.5 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                   destinationMode === "session"
                     ? "bg-white text-slate-900 shadow-sm border border-slate-200"
                     : "text-slate-500 hover:text-slate-700"
@@ -451,7 +551,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                   <select
                     value={selectedSessionId}
                     onChange={(e) => setSelectedSessionId(e.target.value)}
-                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-800 outline-none font-medium focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all"
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-800 outline-none font-medium focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all cursor-pointer"
                   >
                     {activeSessions.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -510,7 +610,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                   <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
                     <button
                       type="button"
-                      className="h-6 w-6 rounded flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition"
+                      className="h-6 w-6 rounded flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
                       onClick={() =>
                         c.cartQuantity > 1
                           ? updateCartItem(c.id, {
@@ -526,7 +626,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                     </span>
                     <button
                       type="button"
-                      className="h-6 w-6 rounded flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition"
+                      className="h-6 w-6 rounded flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
                       onClick={() =>
                         updateCartItem(c.id, {
                           cartQuantity: c.cartQuantity + 1,
@@ -543,7 +643,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
 
                   <button
                     type="button"
-                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                     onClick={() => removeFromCart(c.id)}
                     title="Remove item"
                   >
@@ -585,7 +685,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
           </div>
 
           <Button
-            className="w-full h-12 text-sm font-bold gap-2"
+            className="w-full h-12 text-sm font-bold gap-2 cursor-pointer"
             disabled={
               cart.length === 0 ||
               isSubmitting ||
@@ -593,7 +693,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                 !selectedSessionId &&
                 !propSessionId)
             }
-            onClick={handleCheckout}
+            onClick={handleInitiateCheckout}
           >
             {isSubmitting ? (
               <>
@@ -612,6 +712,264 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
           </Button>
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          OPTION A: WALK-IN PAYMENT & TENDER MODAL
+      ═══════════════════════════════════════════════════════════════════ */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">
+                    Walk-in Direct Payment
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Select tender to generate invoice & receipt
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPaymentModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Total Display Banner */}
+            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4 text-center">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Total Bill Due
+              </span>
+              <p className="text-3xl font-black text-slate-900 font-mono mt-0.5">
+                PKR {cartTotal.toFixed(2)}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {totalQuantity} item{totalQuantity > 1 ? "s" : ""} from canteen
+              </p>
+            </div>
+
+            {/* Tender Method Selector */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                Payment Tender
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("CASH")}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    paymentMethod === "CASH"
+                      ? "border-emerald-600 bg-emerald-50/80 text-emerald-800 ring-2 ring-emerald-500/20 shadow-xs"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <Banknote className="w-4 h-4 text-emerald-600" />
+                  <span>Cash</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("CARD")}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    paymentMethod === "CARD"
+                      ? "border-indigo-600 bg-indigo-50/80 text-indigo-800 ring-2 ring-indigo-500/20 shadow-xs"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <CreditCard className="w-4 h-4 text-indigo-600" />
+                  <span>Card</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("DIGITAL_WALLET")}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    paymentMethod === "DIGITAL_WALLET"
+                      ? "border-purple-600 bg-purple-50/80 text-purple-800 ring-2 ring-purple-500/20 shadow-xs"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <Smartphone className="w-4 h-4 text-purple-600" />
+                  <span>Raast/Wallet</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod("SPLIT");
+                    setSplitCashAmount(String(Math.floor(cartTotal / 2)));
+                    setSplitCardAmount(String(cartTotal - Math.floor(cartTotal / 2)));
+                  }}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    paymentMethod === "SPLIT"
+                      ? "border-amber-600 bg-amber-50/80 text-amber-800 ring-2 ring-amber-500/20 shadow-xs"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <Split className="w-4 h-4 text-amber-600" />
+                  <span>Split</span>
+                </button>
+              </div>
+            </div>
+
+            {/* CASH Tender Fields & Quick Cash Presets */}
+            {paymentMethod === "CASH" && (
+              <div className="space-y-3 pt-1">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Cash Received (PKR)
+                    </label>
+                    <span className="text-xs text-slate-400">Bill: PKR {cartTotal.toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="number"
+                    step="any"
+                    min={cartTotal}
+                    value={cashTendered}
+                    onChange={(e) => setCashTendered(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-base font-mono font-bold text-slate-900 outline-none focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-100"
+                    placeholder="Enter cash given by customer..."
+                    autoFocus
+                  />
+                </div>
+
+                {/* Quick Note Presets */}
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCashTendered(String(cartTotal))}
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                  >
+                    Exact ({cartTotal.toFixed(0)})
+                  </button>
+                  {[500, 1000, 5000].map((preset) => {
+                    if (preset < cartTotal && cartTotal > 500) return null;
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setCashTendered(String(preset))}
+                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                      >
+                        PKR {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Change Due Readout */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <span className="text-xs font-bold text-emerald-900 uppercase tracking-wide">
+                    Change Due to Customer:
+                  </span>
+                  <span className="text-lg font-black text-emerald-700 font-mono">
+                    PKR {changeDue.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* CARD & DIGITAL WALLET Reference */}
+            {(paymentMethod === "CARD" || paymentMethod === "DIGITAL_WALLET") && (
+              <div className="space-y-1.5 pt-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                  Transaction / Approval Code{" "}
+                  <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Card Ref #1234 or Raast TID"
+                  value={paymentReference}
+                  onChange={(e) => setPaymentReference(e.target.value)}
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs text-slate-900 outline-none focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-100"
+                />
+              </div>
+            )}
+
+            {/* SPLIT TENDER Fields */}
+            {paymentMethod === "SPLIT" && (
+              <div className="space-y-2.5 pt-1">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                      Cash Portion
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 300"
+                      value={splitCashAmount}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSplitCashAmount(val);
+                        const remainder = cartTotal - (parseFloat(val) || 0);
+                        setSplitCardAmount(remainder > 0 ? remainder.toFixed(2) : "0");
+                      }}
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-mono font-bold text-slate-900 outline-none focus:border-brand-500 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                      Card / Digital Portion
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 280"
+                      value={splitCardAmount}
+                      onChange={(e) => setSplitCardAmount(e.target.value)}
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-mono font-bold text-slate-900 outline-none focus:border-brand-500 focus:bg-white"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between items-center text-xs text-slate-500 px-1">
+                  <span>Split Total:</span>
+                  <span className="font-bold text-slate-900 font-mono">
+                    PKR {((parseFloat(splitCashAmount) || 0) + (parseFloat(splitCardAmount) || 0)).toFixed(2)} / {cartTotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowPaymentModal(false)}
+                className="w-1/3 h-11 text-xs cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={isSubmitting || (paymentMethod === "CASH" && numericCashTendered < cartTotal)}
+                onClick={processWalkInOrder}
+                className="w-2/3 h-11 text-xs font-bold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Recording Sale...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" /> Confirm & Issue Invoice
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

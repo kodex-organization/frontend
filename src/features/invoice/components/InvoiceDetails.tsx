@@ -32,7 +32,16 @@ function findJwtToken(): string | null {
 
 function parseErrorMessage(err: any): string {
   if (typeof err === "string") return err;
-  return err?.message || err?.error || "An error occurred";
+  const message =
+    err?.response?.data?.error?.message ??
+    err?.response?.data?.message ??
+    err?.error?.message ??
+    err?.data?.error?.message ??
+    err?.message ??
+    (typeof err?.error === "string" ? err.error : undefined);
+  return typeof message === "string" && message.trim()
+    ? message
+    : "An error occurred";
 }
 
 export default function InvoiceDetails({
@@ -351,33 +360,42 @@ function ApplyDiscountModal({
   const isOwnerOrManager =
     user?.isOwner ||
     user?.roles?.some((role: string) =>
-      ["OWNER", "MANAGER", "ADMIN"].includes(String(role).toUpperCase())
+      ["OWNER", "MANAGER"].includes(String(role).toUpperCase())
     );
 
   const [discountType, setDiscountType] = useState<"fixed" | "percentage">("fixed");
   const [amount, setAmount] = useState<string>("");
   const [reason, setReason] = useState<string>("");
-  const [managerPin, setManagerPin] = useState<string>("");
+  const [ownerPassword, setOwnerPassword] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    const numericAmount = parseFloat(amount);
-    if (isNaN(numericAmount) || numericAmount <= 0) {
-      setError("Please enter a valid discount amount.");
+    const numericAmount = Number(amount);
+    const nextAmountError = !amount.trim()
+      ? "Discount amount is required."
+      : !Number.isFinite(numericAmount) || numericAmount <= 0
+        ? "Enter a discount amount greater than zero."
+        : null;
+    const nextPasswordError =
+      !isOwnerOrManager && !ownerPassword.trim()
+        ? "Owner password is required."
+        : null;
+
+    setAmountError(nextAmountError);
+    setPasswordError(nextPasswordError);
+
+    if (nextAmountError || nextPasswordError) {
       return;
     }
 
     if (!reason.trim()) {
       setError("Reason code / explanation is required.");
-      return;
-    }
-
-    if (!isOwnerOrManager && !managerPin.trim()) {
-      setError("Manager PIN approval is required.");
       return;
     }
 
@@ -396,7 +414,7 @@ function ApplyDiscountModal({
           discountType,
           amount: numericAmount,
           reason,
-          managerPin: managerPin.trim() || undefined,
+          ownerPassword: ownerPassword.trim() || undefined,
         }),
       });
 
@@ -418,7 +436,7 @@ function ApplyDiscountModal({
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <h2 className="text-xl font-bold text-slate-900">Apply Invoice Discount</h2>
         <p className="mt-1 text-xs text-slate-500">
-          {isOwnerOrManager ? "Auto-authorized under your Owner/Manager account." : "Requires reason code and manager authorization PIN."}
+          {isOwnerOrManager ? "Auto-authorized under your Owner/Manager account." : "Requires reason code and owner password approval."}
         </p>
 
         {error && (
@@ -458,10 +476,19 @@ function ApplyDiscountModal({
               min="0"
               placeholder={discountType === "fixed" ? "100" : "10"}
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
-              required
+              onChange={(e) => {
+                setAmount(e.target.value);
+                setAmountError(null);
+              }}
+              aria-invalid={!!amountError}
+              aria-describedby={amountError ? "discount-amount-error" : undefined}
+              className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none ${amountError ? "border-red-400 focus:border-red-500" : "border-slate-300 focus:border-emerald-600"}`}
             />
+            {amountError && (
+              <p id="discount-amount-error" className="mt-1 text-xs font-medium text-red-600" role="alert">
+                {amountError}
+              </p>
+            )}
           </div>
 
           <div>
@@ -482,15 +509,25 @@ function ApplyDiscountModal({
 
           {!isOwnerOrManager && (
             <div>
-              <label className="block text-xs font-semibold text-slate-700">Manager Authorization PIN *</label>
+              <label className="block text-xs font-semibold text-slate-700">Owner Authorization Password *</label>
               <input
                 type="password"
-                placeholder="Enter Manager PIN"
-                value={managerPin}
-                onChange={(e) => setManagerPin(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
-                required
+                autoComplete="current-password"
+                placeholder="Enter Owner Password"
+                value={ownerPassword}
+                onChange={(e) => {
+                  setOwnerPassword(e.target.value);
+                  setPasswordError(null);
+                }}
+                aria-invalid={!!passwordError}
+                aria-describedby={passwordError ? "owner-password-error" : undefined}
+                className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none ${passwordError ? "border-red-400 focus:border-red-500" : "border-slate-300 focus:border-emerald-600"}`}
               />
+              {passwordError && (
+                <p id="owner-password-error" className="mt-1 text-xs font-medium text-red-600" role="alert">
+                  {passwordError}
+                </p>
+              )}
             </div>
           )}
 
