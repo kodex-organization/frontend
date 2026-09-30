@@ -28,11 +28,7 @@ export function useInvoice(id: string) {
       return;
     }
 
-    if (!isOnline) {
-      setError("Reconnect to load the latest invoice details.");
-      setLoading(false);
-      return;
-    }
+    // When offline, invoiceService loads from offlineDB.cachedInvoices automatically
 
     setLoading(true);
     setError(null);

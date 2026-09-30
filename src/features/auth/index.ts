@@ -2,7 +2,7 @@
 // Components, hooks, and API calls for login/session
 
 import { apiFetch } from "@/lib/api/client";
-import type { SessionTokens, SessionUser } from "@/lib/auth/session";
+import { tokenStorage, type SessionTokens, type SessionUser } from "@/lib/auth/session";
 
 export const FEATURE = "auth";
 
@@ -42,22 +42,74 @@ export function getDeviceInfo(): DeviceInfo {
 
 interface LoginResponse extends SessionTokens {
   user: SessionUser;
+  isOffline?: boolean;
 }
 
-export async function loginWithPassword(email: string, password: string) {
-  return apiFetch<LoginResponse>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password, device: getDeviceInfo() }),
-    skipAuthRetry: true,
-  } as RequestInit & { skipAuthRetry: boolean });
+import {
+  authenticateOfflineWithPassword,
+  authenticateOfflineWithPin,
+  saveOfflineAuthProfile,
+} from "@/lib/auth/offline-auth";
+
+export async function loginWithPassword(email: string, password: string): Promise<LoginResponse> {
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+
+  if (isOffline) {
+    return authenticateOfflineWithPassword(email, password);
+  }
+
+  try {
+    const liveResponse = await apiFetch<LoginResponse>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password, device: getDeviceInfo() }),
+      skipAuthRetry: true,
+    } as RequestInit & { skipAuthRetry: boolean });
+
+    saveOfflineAuthProfile({
+      user: liveResponse.user,
+      tokens: { accessToken: liveResponse.accessToken },
+      password,
+    });
+
+    return liveResponse;
+  } catch (err: any) {
+    if (err?.code === "NETWORK_ERROR" || err?.status === 0 || !navigator.onLine) {
+      return authenticateOfflineWithPassword(email, password);
+    }
+    throw err;
+  }
 }
 
-export async function loginWithPin(pin: string, identifier: { email?: string; userId?: string }) {
-  return apiFetch<LoginResponse>("/auth/login/pin", {
-    method: "POST",
-    body: JSON.stringify({ ...identifier, pin, device: getDeviceInfo() }),
-    skipAuthRetry: true,
-  } as RequestInit & { skipAuthRetry: boolean });
+export async function loginWithPin(
+  pin: string,
+  identifier: { email?: string; userId?: string },
+): Promise<LoginResponse> {
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+
+  if (isOffline) {
+    return authenticateOfflineWithPin(pin, identifier);
+  }
+
+  try {
+    const liveResponse = await apiFetch<LoginResponse>("/auth/login/pin", {
+      method: "POST",
+      body: JSON.stringify({ ...identifier, pin, device: getDeviceInfo() }),
+      skipAuthRetry: true,
+    } as RequestInit & { skipAuthRetry: boolean });
+
+    saveOfflineAuthProfile({
+      user: liveResponse.user,
+      tokens: { accessToken: liveResponse.accessToken },
+      pin,
+    });
+
+    return liveResponse;
+  } catch (err: any) {
+    if (err?.code === "NETWORK_ERROR" || err?.status === 0 || !navigator.onLine) {
+      return authenticateOfflineWithPin(pin, identifier);
+    }
+    throw err;
+  }
 }
 
 export async function logoutRequest() {
@@ -123,10 +175,29 @@ export interface CreateStaffResult {
 }
 
 export async function createStaff(input: CreateStaffInput) {
-  return apiFetch<CreateStaffResult>(
+  const result = await apiFetch<CreateStaffResult>(
     "/auth/staff",
     { method: "POST", body: JSON.stringify(input) },
   );
+
+  if (result?.id || input.email) {
+    const accessContext = tokenStorage.getAccessContext();
+    saveOfflineAuthProfile({
+      user: {
+        id: result.id || crypto.randomUUID(),
+        email: input.email,
+        fullName: input.fullName,
+        roles: [input.role],
+        branchId: input.branchId || accessContext?.branchId || "00000000-0000-0000-0000-000000000002",
+        language: "en",
+      },
+      tenantId: accessContext?.tenantId || "00000000-0000-0000-0000-000000000001",
+      password: input.password,
+      pin: input.pin,
+    });
+  }
+
+  return result;
 }
 
 export async function listStaff(query?: {

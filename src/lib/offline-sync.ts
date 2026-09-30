@@ -3,7 +3,7 @@ import { tokenStorage } from "@/lib/auth/session";
 
 const OUTBOX_KEY = "cuecloud_sync_outbox";
 
-type QueueAction = "START" | "PAUSE" | "RESUME" | "END";
+type QueueAction = "START" | "PAUSE" | "RESUME" | "END" | "SWITCH_TABLE";
 
 export interface QueueItem {
   idempotencyKey: string;
@@ -61,20 +61,27 @@ export async function triggerSyncPush(): Promise<{ pushedCount: number }> {
   const changes = getSyncQueue();
   if (changes.length === 0) return { pushedCount: 0 };
 
-  const storedDeviceId = canUseStorage()
-    ? window.localStorage.getItem("device_id")
-    : null;
-  const deviceId = storedDeviceId || tokenStorage.getAccessContext()?.deviceId || crypto.randomUUID();
+  const contextDeviceId = context?.deviceId || tokenStorage.getAccessContext()?.deviceId;
+  const deviceId = contextDeviceId || (canUseStorage() ? window.localStorage.getItem("device_id") : null) || crypto.randomUUID();
 
-  if (canUseStorage() && !storedDeviceId) {
-    window.localStorage.setItem("device_id", deviceId);
+  if (canUseStorage() && contextDeviceId) {
+    window.localStorage.setItem("device_id", contextDeviceId);
   }
+
+  const sanitizedChanges = changes.map((c) => ({
+    idempotencyKey: c.idempotencyKey || crypto.randomUUID(),
+    entityType: c.entityType || "Session",
+    entityId: c.entityId,
+    action: c.action,
+    payload: c.payload ?? {},
+    originTimestamp: c.originTimestamp ? new Date(c.originTimestamp).toISOString() : new Date().toISOString(),
+  }));
 
   const response = await apiFetch<{ processed?: number; acceptedChanges?: unknown[] }>(
     "/sync/push",
     {
       method: "POST",
-      body: JSON.stringify({ deviceId, changes }),
+      body: JSON.stringify({ deviceId, changes: sanitizedChanges }),
     },
   );
 

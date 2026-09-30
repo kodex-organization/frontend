@@ -89,14 +89,17 @@ export type OfflineEntity =
   | "customer"
   | "payment"
   | "udhaar"
-  | "notification";
+  | "notification"
+  | "canteen_order"
+  | "canteen_category"
+  | "canteen_item";
 
 export type PendingSyncItem = {
   id?: number;
   branchId: string;
   entity: OfflineEntity;
   entityId: string;
-  action: "create" | "update" | "delete";
+  action: "START" | "PAUSE" | "RESUME" | "END" | "SWITCH_TABLE" | "create" | "update" | "delete" | string;
   payload:
     | SessionOfflinePayload
     | InvoiceOfflinePayload
@@ -132,6 +135,7 @@ export type CachedEntity<T> = {
   branchId: string;
   data: T;
   cachedAt: string;
+  [key: string]: any;
 };
 
 class CueCloudOfflineDB extends Dexie {
@@ -141,6 +145,9 @@ class CueCloudOfflineDB extends Dexie {
   cachedTables!: Table<CachedEntity<any>, string>;
   cachedCustomers!: Table<CachedEntity<any>, string>;
   cachedInvoices!: Table<CachedEntity<any>, string>;
+  cachedCanteenCategories!: Table<CachedEntity<any>, string>;
+  cachedCanteenMenuItems!: Table<CachedEntity<any>, string>;
+  cachedCanteenOrders!: Table<CachedEntity<any>, string>;
 
   constructor() {
     super("cuecloud_offline_db");
@@ -187,99 +194,206 @@ class CueCloudOfflineDB extends Dexie {
       cachedCustomers: "id, branchId, cachedAt",
       cachedInvoices: "id, branchId, cachedAt",
     });
+    this.version(6).stores({
+      pendingQueue:
+        "++id, branchId, [branchId+status], entity, entityId, action, status, idempotencyKey, originTimestamp",
+      syncMeta: "key",
+      notificationQueue:
+        "++id, branchId, [branchId+status], notificationId, action, status",
+      cachedTables: "id, branchId, cachedAt",
+      cachedCustomers: "id, branchId, cachedAt",
+      cachedInvoices: "id, branchId, cachedAt",
+      cachedCanteenCategories: "id, branchId, cachedAt",
+      cachedCanteenMenuItems: "id, branchId, categoryId, cachedAt",
+      cachedCanteenOrders: "id, branchId, sessionId, cachedAt",
+    });
   }
 }
 
 export const offlineDB = new CueCloudOfflineDB();
 
 export async function queueSessionChange(
-  payload: SessionOfflinePayload,
-  action: "create" | "update" | "delete",
+  payload: SessionOfflinePayload | Record<string, unknown>,
+  action: "START" | "PAUSE" | "RESUME" | "END" | "SWITCH_TABLE" | "create" | "update" | "delete" | string = "START",
 ) {
-  return offlineDB.pendingQueue.add({
-    branchId: payload.branchId,
-    entity: "session",
-    entityId: payload.id,
-    action,
-    payload,
-    status: "pending",
-    idempotencyKey: crypto.randomUUID(),
-    originTimestamp: new Date().toISOString(),
-    retryCount: 0,
-    lastError: null,
-  });
+  try {
+    return await offlineDB.pendingQueue.add({
+      branchId: (payload as any).branchId || getActiveOfflineBranchId() || "default",
+      entity: "session",
+      entityId: (payload as any).id,
+      action,
+      payload,
+      status: "pending",
+      idempotencyKey: crypto.randomUUID(),
+      originTimestamp: new Date().toISOString(),
+      retryCount: 0,
+      lastError: null,
+    });
+  } catch (err) {
+    console.warn("Could not queue session change to Dexie pendingQueue:", err);
+    return null;
+  }
 }
 
 export async function queueInvoiceChange(
   payload: InvoiceOfflinePayload,
   action: "create" | "update" | "delete",
 ) {
-  return offlineDB.pendingQueue.add({
-    branchId: payload.branchId,
-    entity: "invoice",
-    entityId: payload.id,
-    action,
-    payload,
-    status: "pending",
-    idempotencyKey: crypto.randomUUID(),
-    originTimestamp: new Date().toISOString(),
-    retryCount: 0,
-    lastError: null,
-  });
+  try {
+    return await offlineDB.pendingQueue.add({
+      branchId: payload.branchId,
+      entity: "invoice",
+      entityId: payload.id,
+      action,
+      payload,
+      status: "pending",
+      idempotencyKey: crypto.randomUUID(),
+      originTimestamp: new Date().toISOString(),
+      retryCount: 0,
+      lastError: null,
+    });
+  } catch (err) {
+    console.warn("Could not queue invoice change to Dexie pendingQueue:", err);
+    return null;
+  }
 }
 
 export async function queueCustomerChange(
   payload: CustomerOfflinePayload,
   action: "create" | "update" | "delete",
 ) {
-  return offlineDB.pendingQueue.add({
-    branchId: payload.branchId,
-    entity: "customer",
-    entityId: payload.id,
-    action,
-    payload,
-    status: "pending",
-    idempotencyKey: crypto.randomUUID(),
-    originTimestamp: new Date().toISOString(),
-    retryCount: 0,
-    lastError: null,
-  });
+  try {
+    return await offlineDB.pendingQueue.add({
+      branchId: payload.branchId,
+      entity: "customer",
+      entityId: payload.id,
+      action,
+      payload,
+      status: "pending",
+      idempotencyKey: crypto.randomUUID(),
+      originTimestamp: new Date().toISOString(),
+      retryCount: 0,
+      lastError: null,
+    });
+  } catch (err) {
+    console.warn("Could not queue customer change to Dexie pendingQueue:", err);
+    return null;
+  }
 }
 
 export async function queuePaymentChange(
   payload: PaymentOfflinePayload,
   action: "create" | "update" | "delete" = "create",
 ) {
-  return offlineDB.pendingQueue.add({
-    branchId: payload.branchId,
-    entity: "payment",
-    entityId: payload.id,
-    action,
-    payload,
-    status: "pending",
-    idempotencyKey: crypto.randomUUID(),
-    originTimestamp: new Date().toISOString(),
-    retryCount: 0,
-    lastError: null,
-  });
+  try {
+    return await offlineDB.pendingQueue.add({
+      branchId: payload.branchId,
+      entity: "payment",
+      entityId: payload.id,
+      action,
+      payload,
+      status: "pending",
+      idempotencyKey: crypto.randomUUID(),
+      originTimestamp: new Date().toISOString(),
+      retryCount: 0,
+      lastError: null,
+    });
+  } catch (err) {
+    console.warn("Could not queue payment change to Dexie pendingQueue:", err);
+    return null;
+  }
 }
 
 export async function queueUdhaarChange(
   payload: UdhaarOfflinePayload,
   action: "create" | "update" | "delete" = "create",
 ) {
-  return offlineDB.pendingQueue.add({
-    branchId: payload.branchId,
-    entity: "udhaar",
-    entityId: payload.id,
-    action,
-    payload,
-    status: "pending",
-    idempotencyKey: crypto.randomUUID(),
-    originTimestamp: new Date().toISOString(),
-    retryCount: 0,
-    lastError: null,
-  });
+  try {
+    return await offlineDB.pendingQueue.add({
+      branchId: payload.branchId,
+      entity: "udhaar",
+      entityId: payload.id,
+      action,
+      payload,
+      status: "pending",
+      idempotencyKey: crypto.randomUUID(),
+      originTimestamp: new Date().toISOString(),
+      retryCount: 0,
+      lastError: null,
+    });
+  } catch (err) {
+    console.warn("Could not queue udhaar change to Dexie pendingQueue:", err);
+    return null;
+  }
+}
+
+export async function queueCanteenOrderChange(
+  payload: Record<string, unknown>,
+  action: "ADD_ITEMS_TO_SESSION" | "CREATE_STANDALONE" | "create" | "update" | "delete" | string = "CREATE_STANDALONE",
+) {
+  try {
+    return await offlineDB.pendingQueue.add({
+      branchId: (payload as any).branchId || getActiveOfflineBranchId() || "default",
+      entity: "canteen_order",
+      entityId: (payload as any).id || (payload as any).orderId || crypto.randomUUID(),
+      action,
+      payload,
+      status: "pending",
+      idempotencyKey: crypto.randomUUID(),
+      originTimestamp: new Date().toISOString(),
+      retryCount: 0,
+      lastError: null,
+    });
+  } catch (err) {
+    console.warn("Could not queue canteen order change to Dexie pendingQueue:", err);
+    return null;
+  }
+}
+
+export async function queueCanteenCategoryChange(
+  payload: Record<string, unknown>,
+  action: "CREATE" | "UPDATE" | "DELETE" | string = "CREATE",
+) {
+  try {
+    return await offlineDB.pendingQueue.add({
+      branchId: (payload as any).branchId || getActiveOfflineBranchId() || "default",
+      entity: "canteen_category",
+      entityId: (payload as any).id || crypto.randomUUID(),
+      action,
+      payload,
+      status: "pending",
+      idempotencyKey: crypto.randomUUID(),
+      originTimestamp: new Date().toISOString(),
+      retryCount: 0,
+      lastError: null,
+    });
+  } catch (err) {
+    console.warn("Could not queue canteen category change to Dexie pendingQueue:", err);
+    return null;
+  }
+}
+
+export async function queueCanteenItemChange(
+  payload: Record<string, unknown>,
+  action: "CREATE" | "UPDATE" | "DELETE" | "AVAILABILITY" | string = "CREATE",
+) {
+  try {
+    return await offlineDB.pendingQueue.add({
+      branchId: (payload as any).branchId || getActiveOfflineBranchId() || "default",
+      entity: "canteen_item",
+      entityId: (payload as any).id || crypto.randomUUID(),
+      action,
+      payload,
+      status: "pending",
+      idempotencyKey: crypto.randomUUID(),
+      originTimestamp: new Date().toISOString(),
+      retryCount: 0,
+      lastError: null,
+    });
+  } catch (err) {
+    console.warn("Could not queue canteen item change to Dexie pendingQueue:", err);
+    return null;
+  }
 }
 
 export function getActiveOfflineBranchId() {

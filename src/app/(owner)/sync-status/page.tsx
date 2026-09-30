@@ -52,7 +52,7 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useConnectionStatus, connectionLabel, checkServerConnection } from "@/lib/connectivity/online-status";
 import { useAuth } from "@/lib/auth/auth-context";
 import { tokenStorage } from "@/lib/auth/session";
-import { getQueueCount, triggerSyncPush } from "@/lib/offline-sync";
+import { getQueueCount, getSyncQueue, triggerSyncPush, type QueueItem } from "@/lib/offline-sync";
 
 type ActiveAction = "push" | "pull" | "connection" | "remove" | "clearSynced" | null;
 
@@ -137,8 +137,11 @@ function getEntityBadgeColor(entity: string) {
 
 function itemDescription(item: PendingSyncItem) {
   if (item.entity === "session") {
-    const payload = item.payload as SessionOfflinePayload;
-    return `${payload.status || "active"} session${payload.appliedHourlyRate ? ` · Rs. ${payload.appliedHourlyRate}/hr` : ""}`;
+    const payload = item.payload as any;
+    if (String(item.action).toUpperCase() === "SWITCH_TABLE") {
+      return `Switch to Table ${payload?.tableNumber || payload?.tableId?.slice(0, 8) || ""}`;
+    }
+    return `${payload?.status || "active"} session${payload?.appliedHourlyRate ? ` · Rs. ${payload.appliedHourlyRate}/hr` : ""}`;
   }
   if (item.entity === "invoice") {
     const payload = item.payload as InvoiceOfflinePayload;
@@ -186,9 +189,29 @@ export default function SyncStatusPage() {
   const [localQueueCount, setLocalQueueCount] = useState(0);
 
   const loadQueue = useCallback(async () => {
-    const items = await getPendingSyncItems();
-    setPendingItems(items.sort((a, b) => b.originTimestamp.localeCompare(a.originTimestamp)));
-    setLocalQueueCount(getQueueCount());
+    const dbItems = await getPendingSyncItems();
+    const outbox = getSyncQueue();
+    setLocalQueueCount(outbox.length);
+
+    const dbKeys = new Set(dbItems.map((i) => i.idempotencyKey));
+    const outboxItems: PendingSyncItem[] = outbox
+      .filter((q: QueueItem) => !dbKeys.has(q.idempotencyKey))
+      .map((q: QueueItem, idx: number) => ({
+        id: -(idx + 1),
+        branchId: (q.payload?.branchId as string) || "current",
+        entity: (q.entityType.toLowerCase() as any) || "session",
+        entityId: q.entityId,
+        action: q.action as any,
+        payload: q.payload as any,
+        status: "pending",
+        idempotencyKey: q.idempotencyKey,
+        originTimestamp: q.originTimestamp || new Date().toISOString(),
+        retryCount: 0,
+        lastError: null,
+      }));
+
+    const combined = [...outboxItems, ...dbItems];
+    setPendingItems(combined.sort((a, b) => b.originTimestamp.localeCompare(a.originTimestamp)));
   }, []);
 
   const checkConnection = useCallback(async (showProgress = false) => {
@@ -203,18 +226,22 @@ export default function SyncStatusPage() {
       const time = await getServerTime();
       setServerTime(time.serverTime);
 
-      if (!isAuthenticated || !syncDeviceId || !syncBranchId) {
+      const currentContext = tokenStorage.getAccessContext();
+      const effectiveDeviceId = currentContext?.deviceId || syncDeviceId;
+      const effectiveBranchId = user?.branchId || currentContext?.branchId || syncBranchId;
+
+      if (!isAuthenticated || !effectiveDeviceId || !effectiveBranchId) {
         throw new Error("Sign in again to establish device sync context.");
       }
 
-      const heartbeat = await sendHeartbeat(syncDeviceId, syncBranchId);
+      const heartbeat = await sendHeartbeat(effectiveDeviceId, effectiveBranchId);
       setLastHeartbeat(heartbeat.lastHeartbeatAt);
     } catch (connectionError) {
       setError(getErrorMessage(connectionError, "The sync service could not be reached."));
     } finally {
       if (showProgress) setActiveAction(null);
     }
-  }, [authLoading, isAuthenticated, syncBranchId, syncDeviceId]);
+  }, [authLoading, isAuthenticated, syncBranchId, syncDeviceId, user?.branchId]);
 
   const handlePush = async () => {
     setActiveAction("push");
@@ -223,71 +250,74 @@ export default function SyncStatusPage() {
 
     try {
       if (await checkServerConnection() !== 'online') throw new Error('The sync server is unreachable. Operations remain stored locally.');
-      if (!syncDeviceId) throw new Error("This device is not configured for synchronization.");
+      const currentContext = tokenStorage.getAccessContext();
+      const effectiveDeviceId = currentContext?.deviceId || syncDeviceId;
+      if (!effectiveDeviceId) throw new Error("This device is not configured for synchronization.");
 
+      let totalPushed = 0;
+
+      // 1. Process localStorage outbox queue if any
       if (getQueueCount() > 0) {
-        await triggerSyncPush();
-        setLocalQueueCount(0);
-        setLastSynced(new Date().toISOString());
-        setNotice("Synchronization Complete: All pending actions have been processed.");
-        return;
+        const outboxResult = await triggerSyncPush();
+        totalPushed += outboxResult.pushedCount;
       }
 
+      // 2. Process IndexedDB pending queue if any
       const items = await getPendingSyncItems();
       const pushable = items.filter((i) => i.status === "pending" || i.status === "failed");
-      if (pushable.length === 0) {
-        setNotice("All changes are already synchronized.");
-        return;
-      }
+      if (pushable.length > 0) {
+        const response = await pushSyncChanges(
+          effectiveDeviceId,
+          pushable.map((item) => ({
+            idempotencyKey: item.idempotencyKey,
+            entityType: item.entity,
+            entityId: item.entityId,
+            action: item.action,
+            payload: item.payload,
+            originTimestamp: item.originTimestamp,
+          })),
+        );
 
-      const response = await pushSyncChanges(
-        syncDeviceId,
-        pushable.map((item) => ({
-          idempotencyKey: item.idempotencyKey,
-          entityType: item.entity,
-          entityId: item.entityId,
-          action: item.action,
-          payload: item.payload,
-          originTimestamp: item.originTimestamp,
-        })),
-      );
+        const acceptedKeys = new Set(
+          response.acceptedChanges
+            .map((change) => change.idempotencyKey)
+            .filter(Boolean),
+        );
+        const rejectedByKey = new Map(
+          response.rejectedChanges.map((change) => [
+            change.idempotencyKey,
+            change,
+          ]),
+        );
 
-      const acceptedKeys = new Set(
-        response.acceptedChanges
-          .map((change) => change.idempotencyKey)
-          .filter(Boolean),
-      );
-      const rejectedByKey = new Map(
-        response.rejectedChanges.map((change) => [
-          change.idempotencyKey,
-          change,
-        ]),
-      );
+        const acceptedIds = pushable
+          .filter((item) => acceptedKeys.has(item.idempotencyKey))
+          .map((item) => item.id)
+          .filter((id): id is number => typeof id === "number");
 
-      const acceptedIds = pushable
-        .filter((item) => acceptedKeys.has(item.idempotencyKey))
-        .map((item) => item.id)
-        .filter((id): id is number => typeof id === "number");
+        await markItemsAsSynced(acceptedIds);
 
-      await markItemsAsSynced(acceptedIds);
-
-      for (const item of pushable.filter((entry) => !acceptedKeys.has(entry.idempotencyKey))) {
-        if (typeof item.id === "number") {
-          const rejection = rejectedByKey.get(item.idempotencyKey);
-          await markItemAsFailed(
-            item.id,
-            rejection?.error ?? "The server rejected this local change.",
-          );
+        for (const item of pushable.filter((entry) => !acceptedKeys.has(entry.idempotencyKey))) {
+          if (typeof item.id === "number") {
+            const rejection = rejectedByKey.get(item.idempotencyKey);
+            await markItemAsFailed(
+              item.id,
+              rejection?.error ?? "The server rejected this local change.",
+            );
+          }
         }
+
+        totalPushed += acceptedIds.length;
       }
 
       await loadQueue();
-      setLastSynced(response.serverTime);
-      setNotice(
-        response.rejectedChanges.length
-          ? `${acceptedIds.length} changes synchronized; ${response.rejectedChanges.length} need review.`
-          : `${acceptedIds.length} ${acceptedIds.length === 1 ? "change" : "changes"} synchronized successfully.`,
-      );
+      setLastSynced(new Date().toISOString());
+
+      if (totalPushed > 0) {
+        setNotice(`${totalPushed} ${totalPushed === 1 ? "change" : "changes"} synchronized successfully.`);
+      } else {
+        setNotice("All changes are already synchronized.");
+      }
     } catch (pushError) {
       setError(getErrorMessage(pushError, "Pending changes could not be synchronized."));
     } finally {
@@ -302,9 +332,11 @@ export default function SyncStatusPage() {
 
     try {
       if (await checkServerConnection() !== 'online') throw new Error('Reconnect to retrieve latest server changes.');
-      if (!syncDeviceId) throw new Error("This device is not configured for synchronization.");
+      const currentContext = tokenStorage.getAccessContext();
+      const effectiveDeviceId = currentContext?.deviceId || syncDeviceId;
+      if (!effectiveDeviceId) throw new Error("This device is not configured for synchronization.");
 
-      const response = await pullSyncChanges(syncDeviceId, lastSynced ?? undefined);
+      const response = await pullSyncChanges(effectiveDeviceId, lastSynced ?? undefined);
       setPulledChanges(response.changeCount);
       setLastSynced(response.serverTime);
       setNotice(
@@ -334,7 +366,16 @@ export default function SyncStatusPage() {
     if (!pendingRemoval || typeof pendingRemoval.id !== "number") return;
     setActiveAction("remove");
     try {
-      await removePendingQueueItem(pendingRemoval.id);
+      if (pendingRemoval.id < 0) {
+        const currentQueue = getSyncQueue();
+        const updated = currentQueue.filter((q: QueueItem) => q.idempotencyKey !== pendingRemoval.idempotencyKey);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("cuecloud_sync_outbox", JSON.stringify(updated));
+          window.dispatchEvent(new Event("cuecloud:offline-queue-changed"));
+        }
+      } else {
+        await removePendingQueueItem(pendingRemoval.id);
+      }
       await loadQueue();
       setNotice("The local pending change was discarded.");
     } finally {
@@ -348,16 +389,16 @@ export default function SyncStatusPage() {
   }, [loadQueue]);
 
   useEffect(() => {
-    const refreshLocalQueue = () => setLocalQueueCount(getQueueCount());
-    window.addEventListener("online", refreshLocalQueue);
-    window.addEventListener("cuecloud:offline-queue-changed", refreshLocalQueue);
-    window.addEventListener(SYNC_STATUS_EVENT, refreshLocalQueue);
+    const refreshAll = () => void loadQueue();
+    window.addEventListener("online", refreshAll);
+    window.addEventListener("cuecloud:offline-queue-changed", refreshAll);
+    window.addEventListener(SYNC_STATUS_EVENT, refreshAll);
     return () => {
-      window.removeEventListener("online", refreshLocalQueue);
-      window.removeEventListener("cuecloud:offline-queue-changed", refreshLocalQueue);
-      window.removeEventListener(SYNC_STATUS_EVENT, refreshLocalQueue);
+      window.removeEventListener("online", refreshAll);
+      window.removeEventListener("cuecloud:offline-queue-changed", refreshAll);
+      window.removeEventListener(SYNC_STATUS_EVENT, refreshAll);
     };
-  }, []);
+  }, [loadQueue]);
 
   // Listen to background sync manager events
   useEffect(() => {
@@ -428,11 +469,11 @@ export default function SyncStatusPage() {
           <button
             type="button"
             onClick={handlePush}
-            disabled={isBusy || !isOnline || (localQueueCount === 0 && pendingCount === 0 && failedCount === 0)}
+            disabled={isBusy || !isOnline || (pendingCount === 0 && failedCount === 0)}
             className="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-sm transition-all disabled:opacity-50"
           >
             <ArrowUpFromLine size={15} className={activeAction === "push" ? "animate-bounce" : ""} />
-            <span>Sync Now ({localQueueCount + pendingCount + failedCount})</span>
+            <span>Sync Now ({pendingCount + failedCount})</span>
           </button>
         </div>
       </div>
@@ -461,7 +502,7 @@ export default function SyncStatusPage() {
               <ArrowUpFromLine size={16} />
             </span>
           </div>
-          <p className="text-2xl font-bold text-slate-900 mt-2">{localQueueCount + pendingCount}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-2">{pendingCount}</p>
           <p className="text-[11px] text-slate-500 mt-1">Pending transmission</p>
         </div>
 

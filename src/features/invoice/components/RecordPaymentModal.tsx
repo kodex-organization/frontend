@@ -90,10 +90,7 @@ export default function RecordPaymentModal({
       return;
     }
 
-    if (!isOnline) {
-      setError("Reconnect before recording a payment.");
-      return;
-    }
+    // In offline mode, payments are saved locally and queued for automatic sync.
 
     setSubmitting(true);
     setError("");
@@ -262,7 +259,7 @@ export default function RecordPaymentModal({
             </button>
             <button
               type="submit"
-              disabled={submitting || !isOnline}
+              disabled={submitting}
               className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "Recording…" : "Record payment"}

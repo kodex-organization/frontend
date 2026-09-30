@@ -129,7 +129,7 @@ export default function BillingWorkspace({
             className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"
               }`}
           />
-          {isOnline ? "Connected" : "Offline · actions disabled"}
+          {isOnline ? "Connected" : "Offline mode · local actions enabled"}
         </span>
       </header>
 

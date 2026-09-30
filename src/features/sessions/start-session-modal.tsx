@@ -13,6 +13,7 @@ interface StartSessionModalProps {
   open: boolean;
   onClose: () => void;
   onStarted: (session?: ActiveSession) => void | Promise<void>;
+  defaultTableId?: string;
 }
 
 function formatRate(table: TableOption) {
@@ -35,6 +36,7 @@ export function StartSessionModal({
   open,
   onClose,
   onStarted,
+  defaultTableId,
 }: StartSessionModalProps) {
   const isOnline = useOnlineStatus();
   const { user } = useAuth();
@@ -42,11 +44,19 @@ export function StartSessionModal({
   const [tables, setTables] = useState<TableOption[]>([]);
   const [query, setQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [tableId, setTableId] = useState("");
+  const [tableId, setTableId] = useState(defaultTableId ?? "");
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [walkIn, setWalkIn] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open && defaultTableId) {
+      setTableId(defaultTableId);
+    } else if (!open) {
+      setTableId("");
+    }
+  }, [defaultTableId, open]);
 
   useEffect(() => {
     if (!open || !selectedBranchId) return;

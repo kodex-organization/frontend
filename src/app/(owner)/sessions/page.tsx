@@ -130,13 +130,38 @@ export default function SessionsPage() {
     }
   }, [authLoading, isAuthenticated, load]);
 
+  useEffect(() => {
+    const handleSyncChange = () => {
+      if (isOnline) {
+        void load();
+      }
+    };
+    window.addEventListener("cuecloud:offline-queue-changed", handleSyncChange);
+    window.addEventListener("cuecloud:sync-status-changed", handleSyncChange);
+    window.addEventListener("online", handleSyncChange);
+    return () => {
+      window.removeEventListener("cuecloud:offline-queue-changed", handleSyncChange);
+      window.removeEventListener("cuecloud:sync-status-changed", handleSyncChange);
+      window.removeEventListener("online", handleSyncChange);
+    };
+  }, [isOnline, load]);
+
   async function action(id: string, nextAction: "pause" | "resume" | "end") {
     try {
-      setItems((current) => current.map((session) =>
-        session.id === id
-          ? { ...session, status: nextAction === "pause" ? "paused" : nextAction === "end" ? "ended" : "active", endedAt: nextAction === "end" ? new Date().toISOString() : session.endedAt }
-          : session,
-      ));
+      if (nextAction === "end") {
+        setItems((current) => current.filter((session) => session.id !== id));
+      } else {
+        setItems((current) =>
+          current.map((session) =>
+            session.id === id
+              ? {
+                  ...session,
+                  status: nextAction === "pause" ? "paused" : "active",
+                }
+              : session,
+          ),
+        );
+      }
       const result = await sessionApi.action(id, nextAction);
       if (!isOnline || "offlineQueued" in result) toast.info("Saved offline. Action queued for sync.");
       else await load();
@@ -156,9 +181,24 @@ export default function SessionsPage() {
     });
 
     try {
-      const tables = await sessionApi.tables();
+      const branchId = session.branch?.id || selectedBranchId;
+      const tables = await sessionApi.tables(branchId);
+
+      // Collect IDs of tables occupied by other active/paused sessions
+      const occupiedTableIds = new Set(
+        items
+          .filter(
+            (s) =>
+              s.id !== session.id &&
+              (s.status === "active" || s.status === "paused") &&
+              s.table?.id,
+          )
+          .map((s) => s.table.id),
+      );
+
       const availableTables = tables.filter(
-        (table) => table.id !== session.table.id,
+        (table) =>
+          table.id !== session.table?.id && !occupiedTableIds.has(table.id),
       );
 
       setSwitchState({
@@ -184,17 +224,50 @@ export default function SessionsPage() {
   async function submitSwitchTable() {
     if (!switchState?.selectedTableId) return;
 
+    const targetTableId = switchState.selectedTableId;
+    const targetTable = switchState.tables.find((t) => t.id === targetTableId);
+    const sessionId = switchState.session.id;
+    const previousTableId = switchState.session.table?.id;
+    const branchId = switchState.session.branch?.id || selectedBranchId;
+
     setSwitchState((current) =>
       current ? { ...current, submitting: true, error: "" } : current,
     );
 
+    // Optimistically update session in local items list
+    if (targetTable) {
+      setItems((current) =>
+        current.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                table: {
+                  ...s.table,
+                  id: targetTable.id,
+                  tableNumber: targetTable.tableNumber,
+                  defaultHourlyRate: targetTable.defaultHourlyRate,
+                  currency: targetTable.currency ?? s.table.currency,
+                },
+              }
+            : s,
+        ),
+      );
+    }
+
     try {
-      await sessionApi.switchTable(
-        switchState.session.id,
-        switchState.selectedTableId,
+      const result = await sessionApi.switchTable(
+        sessionId,
+        targetTableId,
+        previousTableId,
+        branchId,
       );
       setSwitchState(null);
-      await load();
+      if (!isOnline || ("offlineQueued" in (result as any))) {
+        toast.info("Saved offline. Table switch queued for sync.");
+      } else {
+        toast.success("Table switched successfully");
+        await load();
+      }
     } catch (e) {
       setSwitchState((current) => {
         if (!current) return current;
@@ -424,7 +497,6 @@ export default function SessionsPage() {
                 disabled={
                   switchState.loading ||
                   switchState.submitting ||
-                  !isOnline ||
                   !switchState.selectedTableId
                 }
               >

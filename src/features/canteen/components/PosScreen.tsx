@@ -24,6 +24,7 @@ import { toast } from "react-toastify";
 import { sessionApi } from "@/features/sessions/session-api";
 import type { ActiveSession } from "@/features/sessions/types";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
 
 interface CartItem extends MenuItem {
   cartQuantity: number;
@@ -32,6 +33,7 @@ interface CartItem extends MenuItem {
 
 export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) {
   const { user } = useAuth();
+  const isOnline = useOnlineStatus();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -52,6 +54,9 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
     propSessionId || ""
   );
 
+  // Orders on current session
+  const [sessionOrders, setSessionOrders] = useState<any[]>([]);
+
   // Barcode scanner buffer
   const [barcodeBuffer, setBarcodeBuffer] = useState("");
 
@@ -66,7 +71,17 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
       setCategories(cats.filter((c) => c.isActive));
       setItems(itms.filter((i) => i.isActive && i.isAvailable));
     } catch (err: any) {
-      setError(err.message || "Failed to load POS data");
+      console.warn("Failed to load POS data from server, falling back to local cache:", err);
+      try {
+        const [cats, itms] = await Promise.all([
+          CanteenApi.getCategories(),
+          CanteenApi.getMenuItems(undefined, true),
+        ]);
+        setCategories(cats.filter((c) => c.isActive));
+        setItems(itms.filter((i) => i.isActive && i.isAvailable));
+      } catch (fallbackErr: any) {
+        setError(fallbackErr.message || "Failed to load POS data");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -88,12 +103,55 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
     }
   };
 
+  const loadSessionOrders = async (sId: string) => {
+    if (!sId) {
+      setSessionOrders([]);
+      return;
+    }
+    try {
+      const orders = await CanteenApi.getSessionOrders(sId);
+      setSessionOrders(orders || []);
+    } catch (err) {
+      console.warn("Failed to load session orders:", err);
+    }
+  };
+
   useEffect(() => {
     loadData();
     if (!propSessionId) {
       loadActiveSessions();
     }
   }, [user?.branchId]);
+
+  useEffect(() => {
+    const sId = propSessionId || (destinationMode === "session" ? selectedSessionId : "");
+    if (sId) {
+      loadSessionOrders(sId);
+    } else {
+      setSessionOrders([]);
+    }
+  }, [propSessionId, destinationMode, selectedSessionId]);
+
+  useEffect(() => {
+    const handleSyncUpdate = () => {
+      loadData();
+      if (!propSessionId) {
+        loadActiveSessions();
+      }
+      const sId = propSessionId || (destinationMode === "session" ? selectedSessionId : "");
+      if (sId) {
+        loadSessionOrders(sId);
+      }
+    };
+    window.addEventListener("cuecloud:offline-queue-changed", handleSyncUpdate);
+    window.addEventListener("cuecloud:canteen-order-created", handleSyncUpdate);
+    window.addEventListener("online", handleSyncUpdate);
+    return () => {
+      window.removeEventListener("cuecloud:offline-queue-changed", handleSyncUpdate);
+      window.removeEventListener("cuecloud:canteen-order-created", handleSyncUpdate);
+      window.removeEventListener("online", handleSyncUpdate);
+    };
+  }, [propSessionId, destinationMode, selectedSessionId]);
 
   // HID Barcode Scanner Listener
   useEffect(() => {
@@ -192,6 +250,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
           ? `Table ${targetSession.table.tableNumber}`
           : "session";
         toast.success(`Items successfully added to ${sessionLabel}!`);
+        loadSessionOrders(finalSessionId);
       } else {
         await CanteenApi.createStandaloneOrder(payload);
         toast.success("Direct walk-in order completed successfully!");
@@ -247,8 +306,18 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
   const totalQuantity = cart.reduce((sum, item) => sum + item.cartQuantity, 0);
 
   return (
-    <div className="flex flex-col lg:flex-row h-full min-h-[78vh] gap-6">
-      {/* LEFT SECTION: Search, Category Filters & Products Grid */}
+    <div className="flex flex-col h-full min-h-[78vh] gap-4">
+      {!isOnline && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-medium">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+            <span>Offline Mode — Menu and orders are operational locally and will sync automatically when reconnected.</span>
+          </div>
+          <span className="text-amber-800 font-bold px-2 py-0.5 rounded bg-amber-100 border border-amber-200">Local POS Active</span>
+        </div>
+      )}
+      <div className="flex flex-col lg:flex-row h-full gap-6">
+        {/* LEFT SECTION: Search, Category Filters & Products Grid */}
       <div className="flex-1 flex flex-col gap-4">
         {/* Search Bar & Scanner Status */}
         <div className="flex items-center gap-3">
@@ -461,6 +530,24 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                     ))}
                   </select>
                 )}
+                {selectedSessionId && sessionOrders.length > 0 && (
+                  <div className="mt-2 p-2 rounded-lg bg-white border border-slate-200">
+                    <div className="flex justify-between items-center text-[11px] font-semibold text-slate-700 mb-1">
+                      <span>Existing Table Orders:</span>
+                      <span className="font-mono text-brand-700">
+                        Rs. {sessionOrders.reduce((sum, ord) => sum + (ord.items || []).reduce((s: number, it: any) => s + (it.lineTotal || 0), 0), 0).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="space-y-1 max-h-20 overflow-y-auto pr-1">
+                      {sessionOrders.flatMap((ord) => ord.items || []).map((it: any, idx: number) => (
+                        <div key={it.id || idx} className="flex justify-between items-center text-[10px] text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded">
+                          <span className="truncate max-w-[170px]">{it.quantity}x {it.menuItem?.name || "Item"}</span>
+                          <span className="font-mono font-medium">Rs. {Number(it.lineTotal || 0).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -468,12 +555,32 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
 
         {/* If locked to a specific sessionId prop */}
         {propSessionId && targetSession && (
-          <div className="p-3 border-b border-slate-100 bg-brand-50 text-xs text-brand-700 font-medium flex items-center gap-2">
-            <Armchair className="w-4 h-4" />
-            <span>
-              Issuing to Table {targetSession.table.tableNumber} (
-              {targetSession.customer?.fullName || "Walk-in"})
-            </span>
+          <div className="p-3 border-b border-slate-100 bg-brand-50 text-xs text-brand-700 font-medium">
+            <div className="flex items-center gap-2">
+              <Armchair className="w-4 h-4" />
+              <span>
+                Issuing to Table {targetSession.table.tableNumber} (
+                {targetSession.customer?.fullName || "Walk-in"})
+              </span>
+            </div>
+            {sessionOrders.length > 0 && (
+              <div className="mt-2 p-2 rounded-lg bg-white/80 border border-brand-200 text-slate-700">
+                <div className="flex justify-between items-center text-[11px] font-semibold mb-1">
+                  <span>Current Orders:</span>
+                  <span className="font-mono text-brand-700">
+                    Rs. {sessionOrders.reduce((sum, ord) => sum + (ord.items || []).reduce((s: number, it: any) => s + (it.lineTotal || 0), 0), 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="space-y-0.5 max-h-20 overflow-y-auto">
+                  {sessionOrders.flatMap((ord) => ord.items || []).map((it: any, idx: number) => (
+                    <div key={it.id || idx} className="flex justify-between text-[10px]">
+                      <span>{it.quantity}x {it.menuItem?.name || "Item"}</span>
+                      <span className="font-mono">Rs. {Number(it.lineTotal || 0).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -613,5 +720,6 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
         </div>
       </div>
     </div>
+  </div>
   );
 }
