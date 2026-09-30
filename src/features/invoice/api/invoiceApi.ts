@@ -83,7 +83,7 @@ export async function settleInvoice(invoiceId: string, payload: SettleInvoicePay
 export interface ApplyDiscountPayload {
   discountAmount: number;
   discountReasonCode: string;
-  managerPin?: string;
+  ownerPassword?: string;
 }
 
 export async function applyDiscount(invoiceId: string, payload: ApplyDiscountPayload) {

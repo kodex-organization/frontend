@@ -5,10 +5,10 @@ import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { ApiError } from "@/lib/api/client";
 import { getActiveOfflineBranchId } from "@/lib/sync/offline-db";
 import { useAuth } from "@/lib/auth/auth-context";
-import { getNotificationPreferences, getNotifications, markAllNotificationsRead as apiMarkAllNotificationsRead, markNotificationRead, registerFcmToken, revokeFcmToken, saveNotificationPreferences, type NotificationPreference } from "./api";
+import { checkFcmTokenRegistration, getNotificationPreferences, getNotifications, markAllNotificationsRead as apiMarkAllNotificationsRead, markNotificationRead, registerFcmToken, revokeFcmToken, saveNotificationPreferences, type NotificationPreference } from "./api";
 import { flushNotificationQueue, queueNotificationPreferences, queueNotificationRead, queueNotificationsReadAll } from "./offline";
 import { isUnread, type Notification } from "./types";
-import { listenForForegroundMessages, requestPushPermission, revokePushToken, type PushSetupResult } from "./firebase";
+import { getExistingPushToken, listenForForegroundMessages, requestPushPermission, revokePushToken, type PushSetupResult } from "./firebase";
 import { toast } from "react-toastify";
 
 interface NotificationContextValue {
@@ -111,6 +111,29 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [isOwner, online]);
 
   useEffect(() => { void loadPreferences(); }, [loadPreferences]);
+
+  useEffect(() => {
+    let active = true;
+    setPushToken(null);
+    setPushState("idle");
+    setPushMessage(null);
+    if (!isOwner || !online) return () => { active = false; };
+
+    void getExistingPushToken().then(async (token) => {
+      if (!active || !token) return;
+      const result = await checkFcmTokenRegistration(token);
+      if (!active) return;
+      if (result.registered) {
+        setPushToken(token);
+        setPushState("registered");
+        setPushMessage("Push notifications are registered for this browser.");
+      }
+    }).catch(() => {
+      if (active) setPushState("idle");
+    });
+
+    return () => { active = false; };
+  }, [authScope, isOwner, online]);
 
   const resetForBranch = useCallback(async () => {
     branchScopeVersion.current += 1;

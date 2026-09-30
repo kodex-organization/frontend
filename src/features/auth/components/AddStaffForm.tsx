@@ -14,13 +14,11 @@ import type { BranchItem } from "@/types/branch";
 
 const ALL_ROLES: CreateStaffInput["role"][] = ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"];
 
-// Fix (privilege escalation): a Manager must never be able to mint a new
-// Owner account. Only an Owner can assign the OWNER role. Manager still sees
-// Manager/Accountant/Cashier. Backend enforces the same rule independently —
-// this is defence-in-depth, not the only guard.
 function assignableRoles(actingRoles: string[] | undefined): CreateStaffInput["role"][] {
-  if (actingRoles?.includes("OWNER")) return ALL_ROLES;
-  return ALL_ROLES.filter((role) => role !== "OWNER");
+  const roles = (actingRoles ?? []).map((r) => r.toUpperCase());
+  if (roles.includes("OWNER")) return ALL_ROLES;
+  // Managers can only create operational counter staff
+  return ["CASHIER"];
 }
 
 const addStaffSchema = z.object({
@@ -52,22 +50,39 @@ const initialForm: FormState = {
 
 export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const { user } = useAuth();
-  const [form, setForm] = useState<FormState>(() => ({ ...initialForm, branchId: user?.branchId ?? "" }));
+
+  const isOwner = Boolean(user?.roles.some((r) => r.toUpperCase() === "OWNER"));
+  const isManager = Boolean(user?.roles.some((r) => r.toUpperCase() === "MANAGER"));
+  const canManageStaff = isOwner || isManager;
+
+  const [form, setForm] = useState<FormState>(() => ({
+    ...initialForm,
+    role: isOwner ? "CASHIER" : "CASHIER",
+    branchId: isOwner ? "" : (user?.branchId ?? ""),
+  }));
+
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [branches, setBranches] = useState<BranchItem[]>([]);
 
-  const canManageStaff = user?.roles.some((r) => r === "OWNER" || r === "MANAGER");
-  const isOwner = Boolean(user?.roles.includes("OWNER"));
-  const isCrossBranch = !isOwner && Boolean(form.branchId) && form.branchId !== user?.branchId;
   const roleOptions = assignableRoles(user?.roles);
-  const canAssignAnyBranch = user?.roles.some((role) => role === "OWNER" || role === "MANAGER");
 
   useEffect(() => {
     void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches));
   }, []);
+
+  // Keep non-owner locked to their current branch and role
+  useEffect(() => {
+    if (!isOwner) {
+      setForm((prev) => ({
+        ...prev,
+        role: "CASHIER",
+        branchId: user?.branchId ?? prev.branchId,
+      }));
+    }
+  }, [isOwner, user?.branchId]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -89,21 +104,22 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
     }
     setFieldErrors({});
 
-    if (parsed.data.role === "CASHIER" && !parsed.data.branchId) {
+    // Enforce branch and role constraints
+    const targetRole = isOwner ? parsed.data.role : "CASHIER";
+    const targetBranchId = isOwner ? parsed.data.branchId : (user?.branchId || parsed.data.branchId);
+
+    if (targetRole === "CASHIER" && !targetBranchId) {
       setFieldErrors({ branchId: "Branch is required for cashiers" });
       return;
     }
 
-    if (!roleOptions.includes(parsed.data.role)) {
-      // Defence-in-depth: a Manager should never be able to submit OWNER
-      // even if the select were tampered with client-side. Backend rejects
-      // this too, but fail fast here with a clear message.
-      setFieldErrors({ role: "You are not allowed to assign this role." });
+    if (!isOwner && parsed.data.role !== "CASHIER") {
+      setFieldErrors({ role: "Managers can only onboard Cashiers." });
       return;
     }
 
-    if (!user?.branchId && !parsed.data.branchId) {
-      setFormError("Could not determine your branch. Please sign in again.");
+    if (!user?.branchId && !targetBranchId) {
+      setFormError("Could not determine branch. Please sign in again.");
       return;
     }
 
@@ -113,17 +129,23 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         fullName: parsed.data.fullName,
         email: parsed.data.email,
         phone: parsed.data.phone || undefined,
-        role: parsed.data.role,
-        ...(parsed.data.branchId ? { branchId: parsed.data.branchId } : {}),
+        role: targetRole,
+        ...(targetBranchId ? { branchId: targetBranchId } : {}),
         password: parsed.data.password,
         pin: parsed.data.pin || undefined,
       });
+
       if (staff.requiresApproval) {
         setSuccessMessage(staff.message || "Staff creation request submitted for Owner approval.");
       } else {
-        setSuccessMessage(`${staff.fullName ?? "Staff member"} was added as ${staff.roles?.join(", ") ?? "staff"}.`);
+        setSuccessMessage(`${staff.fullName ?? "Staff member"} was added as ${staff.roles?.join(", ") ?? targetRole}.`);
       }
-      setForm({ ...initialForm, branchId: user?.branchId ?? "" });
+
+      setForm({
+        ...initialForm,
+        role: "CASHIER",
+        branchId: isOwner ? "" : (user?.branchId ?? ""),
+      });
       onSuccess?.();
     } catch (err) {
       setFormError(
@@ -135,7 +157,6 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   }
 
   if (!canManageStaff) {
-    // Error state: role-gated, not a public page.
     return (
       <Alert variant="error">
         Only an Owner or Manager can add staff accounts.
@@ -143,12 +164,10 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
     );
   }
 
+  const assignedBranchName =
+    branches.find((b) => b.id === (user?.branchId || form.branchId))?.name ?? "Current Branch";
+
   return (
-    // Issue 4 fix: autoComplete="off" on the form + autoComplete="new-password"
-    // on the password field stop the browser's saved-credentials manager from
-    // auto-filling this "create a NEW staff member" form with the currently
-    // logged-in Owner/Manager's own saved email + password (which was making
-    // it look like the form was showing "my profile" with the wrong role).
     <form
       onSubmit={handleSubmit}
       className="flex max-w-lg flex-col gap-4"
@@ -190,21 +209,44 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
       </FormField>
 
       <FormField label="Role" htmlFor="role" error={fieldErrors.role}>
-        <Select id="role" value={form.role} onChange={(e) => update("role", e.target.value as FormState["role"])}>
-          {roleOptions.map((role) => (
-            <option key={role} value={role}>
-              {role.charAt(0) + role.slice(1).toLowerCase()}
-            </option>
-          ))}
-        </Select>
+        {isOwner ? (
+          <Select id="role" value={form.role} onChange={(e) => update("role", e.target.value as FormState["role"])}>
+            {roleOptions.map((role) => (
+              <option key={role} value={role}>
+                {role.charAt(0) + role.slice(1).toLowerCase()}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <Input
+            id="role"
+            readOnly
+            disabled
+            value="Cashier"
+            className="bg-slate-100 text-slate-600 font-medium cursor-not-allowed"
+          />
+        )}
       </FormField>
 
       <FormField label="Branch" htmlFor="branchId" error={fieldErrors.branchId}>
-        <Select id="branchId" value={form.branchId} onChange={(e) => update("branchId", e.target.value)}>
-          {canAssignAnyBranch && <option value="">All Branches</option>}
-          {!canAssignAnyBranch && <option value="">Select a branch</option>}
-          {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
-        </Select>
+        {isOwner ? (
+          <Select id="branchId" value={form.branchId} onChange={(e) => update("branchId", e.target.value)}>
+            <option value="">All Branches</option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name ?? "Unnamed branch"}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <Input
+            id="branchId"
+            readOnly
+            disabled
+            value={assignedBranchName}
+            className="bg-slate-100 text-slate-600 font-medium cursor-not-allowed"
+          />
+        )}
       </FormField>
 
       <FormField label="Temporary password" htmlFor="password" error={fieldErrors.password}>
@@ -217,7 +259,7 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         />
       </FormField>
 
-      {form.role === "CASHIER" && (
+      {(isOwner ? form.role === "CASHIER" : true) && (
         <FormField label="PIN (for shift login)" htmlFor="pin" error={fieldErrors.pin}>
           <Input
             id="pin"
@@ -231,18 +273,8 @@ export function AddStaffForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         </FormField>
       )}
 
-      {isCrossBranch && (
-        <Alert variant="info">
-          Creating a staff account for another branch requires explicit Owner approval. Your request will be submitted to the owner for review.
-        </Alert>
-      )}
-
       <Button type="submit" isLoading={isSubmitting}>
-        {isSubmitting
-          ? "Processing…"
-          : isCrossBranch
-          ? "Submit for Owner Approval"
-          : "Add staff member"}
+        {isSubmitting ? "Processing…" : "Add staff member"}
       </Button>
     </form>
   );

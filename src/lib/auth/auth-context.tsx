@@ -1,8 +1,20 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
-import { loginWithPassword, loginWithPin, logoutRequest, updateLanguage } from "@/features/auth";
+import {
+  loginWithPassword,
+  loginWithPin,
+  logoutRequest,
+  updateLanguage,
+} from "@/features/auth";
 import {
   AUTH_SESSION_CLEARED_EVENT,
   AUTH_SESSION_REPLACED_EVENT,
@@ -34,39 +46,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
+  const syncSessionFromStorage = useCallback(() => {
+    try {
+      const storedTokens = tokenStorage.get();
+      const storedUser = tokenStorage.getUser();
+
+      if (!storedTokens?.accessToken || !storedUser) {
+        setUser(null);
+        return;
+      }
+
+      const context = tokenStorage.getAccessContext();
+
+      // Verify token user identity against stored profile if context exists
+      if (context) {
+        const tokenUserId =
+          (context as Record<string, unknown>).userId ??
+          (context as Record<string, unknown>).sub ??
+          (context as Record<string, unknown>).id;
+
+        if (tokenUserId && tokenUserId !== storedUser.id) {
+          // Token belongs to another user; clear session
+          tokenStorage.clear();
+          setUser(null);
+          return;
+        }
+      }
+
+      // Session is valid; persist user profile to state
+      setUser(storedUser);
+    } catch (err) {
+      console.error("[Auth] Session restoration error:", err);
+      setUser(null);
+    }
+  }, []);
+
   useEffect(() => {
     const clearSession = () => {
       setUser(null);
       setIsLoading(false);
     };
 
-    const syncSessionFromStorage = () => {
-      const storedUser = tokenStorage.getUser();
-      const storedTokens = tokenStorage.get();
-
-      const context = tokenStorage.getAccessContext();
-      if (storedUser && storedTokens?.accessToken &&
-        context?.userId === storedUser.id && context.branchId === storedUser.branchId) {
-        setUser(storedUser);
-        return;
-      }
-
-      // Reading another tab's session must never mutate shared storage.
-      setUser(null);
-    };
-
     const onStorage = (event: StorageEvent) => {
       if (event.storageArea && event.storageArea !== window.localStorage) return;
-      // replaceSession/clear publish version last. Earlier per-field events
-      // can arrive while another tab is still writing the session.
+
       if (event.key === null || event.key === AUTH_STORAGE_KEYS.version) {
         syncSessionFromStorage();
       } else if (event.key === AUTH_STORAGE_KEYS.user) {
-        // Language/profile updates do not replace the session version.
-        const storedUser = tokenStorage.getUser();
-        const context = tokenStorage.getAccessContext();
-        if (storedUser && context?.userId === storedUser.id &&
-          context.branchId === storedUser.branchId) setUser(storedUser);
+        try {
+          const storedUser = tokenStorage.getUser();
+          const storedTokens = tokenStorage.get();
+          if (storedUser && storedTokens?.accessToken) {
+            setUser(storedUser);
+          }
+        } catch {
+          // Ignore transient parsing errors during multi-tab write
+        }
       }
     };
 
@@ -74,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener(AUTH_SESSION_REPLACED_EVENT, syncSessionFromStorage);
     window.addEventListener("storage", onStorage);
 
-    // A user record without an access token is not an authenticated session.
+    // Initial session hydration
     syncSessionFromStorage();
     setIsLoading(false);
 
@@ -83,12 +118,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener(AUTH_SESSION_REPLACED_EVENT, syncSessionFromStorage);
       window.removeEventListener("storage", onStorage);
     };
-  }, [router]);
+  }, [syncSessionFromStorage]);
 
   const applySession = useCallback(
-    (sessionUser: SessionUser, tokens: { accessToken: string; refreshToken?: string; expiresIn: string }) => {
-      tokenStorage.replaceSession(tokens, sessionUser);
-      setUser(sessionUser);
+    (
+      sessionUser: SessionUser,
+      tokens: { accessToken: string; refreshToken?: string; expiresIn: string },
+    ) => {
+      try {
+        tokenStorage.replaceSession(tokens, sessionUser);
+        setUser(sessionUser);
+      } catch (err) {
+        console.error("[Auth] Failed to apply session:", err);
+      }
     },
     [],
   );
@@ -96,10 +138,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updateUserLanguage = useCallback(
     async (language: "en" | "ur") => {
       if (!user) return;
-      const updated = await updateLanguage(language);
-      const nextUser = { ...user, language: updated.language };
-      tokenStorage.setUser(nextUser);
-      setUser(nextUser);
+      try {
+        const updated = await updateLanguage(language);
+        const nextUser = { ...user, language: updated.language };
+        tokenStorage.setUser(nextUser);
+        setUser(nextUser);
+      } catch (err) {
+        console.error("[Auth] Language update failed:", err);
+        throw err;
+      }
     },
     [user],
   );
@@ -129,7 +176,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Best-effort — clear local session regardless of server response.
     } finally {
-      if (tokenStorage.getSessionVersion() !== version && tokenStorage.get()?.accessToken) return;
+      if (tokenStorage.getSessionVersion() !== version && tokenStorage.get()?.accessToken) {
+        return;
+      }
       tokenStorage.clear();
       setUser(null);
       router.push("/login");
@@ -147,13 +196,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateUserLanguage,
       replaceSession: applySession,
     }),
-    [user, isLoading, loginPassword, loginPin, logout, updateUserLanguage, applySession],
+    [
+      user,
+      isLoading,
+      loginPassword,
+      loginPin,
+      logout,
+      updateUserLanguage,
+      applySession,
+    ],
   );
 
   if (isLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-slate-900 text-slate-400">
-        <span>Loading session...</span>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-500" />
+          <span className="text-xs uppercase tracking-wider">Loading session...</span>
+        </div>
       </div>
     );
   }

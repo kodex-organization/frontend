@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Building2, X, AlertCircle } from "lucide-react";
+import { Building2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { FormField } from "@/components/ui/input";
@@ -34,7 +34,7 @@ export function RequestBranchAccessModal({
     if (!isOpen) return;
     setError(null);
     void fetchBranches({ limit: 100 }).then((res) => {
-      // Filter out user's current active branch
+      // Filter out user's current branch
       const otherBranches = (res.branches || []).filter(
         (b) => b.id !== user?.branchId
       );
@@ -57,9 +57,10 @@ export function RequestBranchAccessModal({
     setIsSubmitting(true);
     setError(null);
     try {
-      await apiFetch("/governance/request-branch-access", {
+      // Points directly to our new branch-access module
+      await apiFetch("/branch-access/requests", {
         method: "POST",
-        body: JSON.stringify({ targetBranchId, reason }),
+        body: JSON.stringify({ branchId: targetBranchId, reason }),
       });
       toast.success("Branch access request submitted for Owner approval.");
       setReason("");
@@ -75,7 +76,7 @@ export function RequestBranchAccessModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
       <div className="w-full max-w-md rounded-xl bg-white shadow-xl border border-slate-200 overflow-hidden">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
           <div className="flex items-center gap-2">
