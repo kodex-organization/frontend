@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sessionApi } from "@/features/sessions/session-api";
+import { invoiceService } from "@/features/invoice/services/invoiceService";
 import { offlineDB } from "@/lib/sync/offline-db";
 import { tokenStorage } from "@/lib/auth/session";
 import type { FloorViewTable, FloorViewSession } from "@/app/floor-view/types";
@@ -644,6 +645,93 @@ test("offline table state synchronization", async (t) => {
       assert.equal(onlineActive.length, 1);
       assert.equal(onlineActive[0].id, started.id);
       assert.equal(onlineActive[0].appliedHourlyRate, "50");
+    });
+  });
+
+  await t.test("ending a session offline synthesizes cached invoice and persists ended state across queries", async () => {
+    await withMockBrowser(async () => {
+      tokenStorage.replaceSession(
+        { accessToken: tenantToken() },
+        mockUser,
+      );
+
+      const cachedTableStore = new Map<string, any>();
+      const cachedInvoiceStore = new Map<string, any>();
+      const sessionId = "offline_session_end_test_1";
+
+      const sessionObj: ActiveSession = {
+        id: sessionId,
+        status: "active",
+        startedAt: new Date(Date.now() - 3600000).toISOString(),
+        endedAt: null,
+        appliedHourlyRate: "600.00",
+        customer: { id: "cust-1", fullName: "Jane Doe", phone: "03001234567", cnic: null },
+        table: { id: TABLE_1_ID, tableNumber: "T-01", defaultHourlyRate: "600.00", currency: "PKR" },
+        branch: { id: BRANCH_ID, name: "Main Branch", currency: "PKR" },
+        pauses: [],
+      };
+
+      cachedTableStore.set(sessionId, {
+        id: sessionId,
+        branchId: BRANCH_ID,
+        cachedAt: sessionObj.startedAt,
+        data: sessionObj,
+      });
+
+      t.mock.method(offlineDB.cachedTables, "get", async (id: string) => cachedTableStore.get(id));
+      t.mock.method(offlineDB.cachedTables, "delete", async (id: string) => {
+        cachedTableStore.delete(id);
+      });
+      t.mock.method(offlineDB.cachedTables, "toArray", async () => Array.from(cachedTableStore.values()));
+      t.mock.method(offlineDB.cachedTables, "where", () => ({
+        equals: () => ({
+          toArray: async () => Array.from(cachedTableStore.values()),
+        }),
+      }));
+
+      t.mock.method(offlineDB.cachedInvoices, "put", async (inv: any) => {
+        cachedInvoiceStore.set(inv.id, inv);
+        return inv.id;
+      });
+      t.mock.method(offlineDB.cachedInvoices, "get", async (id: string) => cachedInvoiceStore.get(id));
+      t.mock.method(offlineDB.cachedInvoices, "toArray", async () => Array.from(cachedInvoiceStore.values()));
+
+      // 1. App is offline
+      Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
+
+      // Active session should be visible before ending
+      const activeBefore = await sessionApi.active(BRANCH_ID);
+      assert.equal(activeBefore.length, 1);
+      assert.equal(activeBefore[0].id, sessionId);
+
+      // 2. End session offline
+      const endResult = await sessionApi.action(sessionId, "end");
+      assert.equal(endResult.offlineQueued, true);
+
+      // 3. Verify invoice was synthesized into cachedInvoices
+      assert.equal(cachedInvoiceStore.size, 1);
+      const synthesizedInvoice = Array.from(cachedInvoiceStore.values())[0].data;
+      assert.equal(synthesizedInvoice.sessionId, sessionId);
+      assert.equal(synthesizedInvoice.customer?.fullName, "Jane Doe");
+      assert.equal(synthesizedInvoice.status, "open");
+      assert.ok(synthesizedInvoice.total > 0);
+      assert.equal(synthesizedInvoice.remainingAmount, synthesizedInvoice.total);
+
+      // 4. Verify invoiceService.getInvoices returns the invoice offline
+      const invoicesResult = await invoiceService.getInvoices();
+      assert.equal(invoicesResult.items.length, 1);
+      assert.equal(invoicesResult.items[0].sessionId, sessionId);
+
+      // 5. Navigate away and come back: active sessions query should NOT resurrect the ended session
+      const activeAfter = await sessionApi.active(BRANCH_ID);
+      assert.equal(activeAfter.length, 0);
+
+      const pausedAfter = await sessionApi.paused(BRANCH_ID);
+      assert.equal(pausedAfter.length, 0);
+
+      // 6. Available tables should now have TABLE_1 available again
+      const availableTables = await sessionApi.tables(BRANCH_ID);
+      assert.ok(availableTables.some((t) => t.id === TABLE_1_ID));
     });
   });
 });

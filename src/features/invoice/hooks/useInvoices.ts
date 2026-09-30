@@ -91,6 +91,24 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
     void fetchInvoices();
   }, [fetchInvoices]);
 
+  useEffect(() => {
+    const handleEvents = () => {
+      void fetchInvoices();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("cuecloud:offline-queue-changed", handleEvents);
+      window.addEventListener("cuecloud:invoice-created", handleEvents);
+      window.addEventListener("cuecloud:invoice-voided", handleEvents);
+      window.addEventListener("cuecloud:payment-recorded", handleEvents);
+      return () => {
+        window.removeEventListener("cuecloud:offline-queue-changed", handleEvents);
+        window.removeEventListener("cuecloud:invoice-created", handleEvents);
+        window.removeEventListener("cuecloud:invoice-voided", handleEvents);
+        window.removeEventListener("cuecloud:payment-recorded", handleEvents);
+      };
+    }
+  }, [fetchInvoices]);
+
   return {
     invoices,
     pagination,

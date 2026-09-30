@@ -68,6 +68,7 @@ import {
   queuePaymentChange,
 } from "@/lib/sync/offline-db";
 import { tokenStorage } from "@/lib/auth/session";
+import { isAppOffline } from "@/lib/connectivity/online-status";
 
 export interface SettleInvoicePayload {
   tenders: Array<{
@@ -144,7 +145,7 @@ async function recordSettleOffline(invoiceId: string, payload: SettleInvoicePayl
 }
 
 export async function settleInvoice(invoiceId: string, payload: SettleInvoicePayload) {
-  if (typeof navigator !== "undefined" && !navigator.onLine) {
+  if (isAppOffline()) {
     return recordSettleOffline(invoiceId, payload);
   }
 
@@ -154,7 +155,7 @@ export async function settleInvoice(invoiceId: string, payload: SettleInvoicePay
       body: JSON.stringify(payload),
     });
   } catch (err: any) {
-    if (err?.code === "NETWORK_ERROR" || err?.status === 0 || !navigator.onLine) {
+    if (err?.code === "NETWORK_ERROR" || err?.status === 0 || isAppOffline()) {
       return recordSettleOffline(invoiceId, payload);
     }
     throw err;

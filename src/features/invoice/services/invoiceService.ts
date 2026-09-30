@@ -1,4 +1,5 @@
 import { apiFetch, ApiError } from "@/lib/api/client";
+import { isAppOffline } from "@/lib/connectivity/online-status";
 import {
   offlineDB,
   getActiveOfflineBranchId,
@@ -85,7 +86,7 @@ async function recordPaymentOffline(invoiceId: string, input: RecordPaymentInput
 
 export const invoiceService = {
   async getInvoices(filters: InvoiceListFilters = {}): Promise<Paginated<Invoice>> {
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
+    if (isAppOffline()) {
       try {
         const cached = await offlineDB.cachedInvoices.toArray();
         const items = cached.map((c) => c.data).filter(Boolean) as Invoice[];
@@ -127,27 +128,46 @@ export const invoiceService = {
 
       return response;
     } catch (err: any) {
-      if (err?.code === "NETWORK_ERROR" || err?.status === 0 || !navigator.onLine) {
-        const cached = await offlineDB.cachedInvoices.toArray();
-        const items = cached.map((c) => c.data).filter(Boolean) as Invoice[];
-        return {
-          items,
-          pagination: {
-            page: 1,
-            pageSize: items.length || 25,
-            total: items.length,
-            totalPages: 1,
-          },
-        };
+      if (
+        isAppOffline() ||
+        err?.code === "NETWORK_ERROR" ||
+        err?.status === 0 ||
+        err?.message?.includes("reach the server") ||
+        err?.message?.includes("fetch")
+      ) {
+        try {
+          const cached = await offlineDB.cachedInvoices.toArray();
+          const items = cached.map((c) => c.data).filter(Boolean) as Invoice[];
+          return {
+            items,
+            pagination: {
+              page: 1,
+              pageSize: items.length || 25,
+              total: items.length,
+              totalPages: 1,
+            },
+          };
+        } catch {}
       }
       throw err;
     }
   },
 
   async getInvoice(id: string): Promise<Invoice> {
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      const cached = await offlineDB.cachedInvoices.get(id);
-      if (cached?.data) return cached.data as Invoice;
+    const findInCache = async () => {
+      const direct = await offlineDB.cachedInvoices.get(id);
+      if (direct?.data) return direct.data as Invoice;
+      const all = await offlineDB.cachedInvoices.toArray();
+      const match = all.find(
+        (c) => c.id === id || c.data?.id === id || c.data?.sessionId === id,
+      );
+      if (match?.data) return match.data as Invoice;
+      return null;
+    };
+
+    if (isAppOffline()) {
+      const cached = await findInCache();
+      if (cached) return cached;
       throw new Error("Invoice details unavailable offline.");
     }
 
@@ -167,9 +187,15 @@ export const invoiceService = {
 
       return invoice;
     } catch (err: any) {
-      if (err?.code === "NETWORK_ERROR" || err?.status === 0 || !navigator.onLine) {
-        const cached = await offlineDB.cachedInvoices.get(id);
-        if (cached?.data) return cached.data as Invoice;
+      if (
+        isAppOffline() ||
+        err?.code === "NETWORK_ERROR" ||
+        err?.status === 0 ||
+        err?.message?.includes("reach the server") ||
+        err?.message?.includes("fetch")
+      ) {
+        const cached = await findInCache();
+        if (cached) return cached;
       }
       throw err;
     }
@@ -208,7 +234,7 @@ export const invoiceService = {
   },
 
   async addPayment(invoiceId: string, input: RecordPaymentInput): Promise<PaymentResult> {
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
+    if (isAppOffline()) {
       return recordPaymentOffline(invoiceId, input);
     }
 
@@ -234,7 +260,7 @@ export const invoiceService = {
         },
       );
     } catch (err: any) {
-      if (err?.code === "NETWORK_ERROR" || err?.status === 0 || !navigator.onLine) {
+      if (err?.code === "NETWORK_ERROR" || err?.status === 0 || isAppOffline()) {
         return recordPaymentOffline(invoiceId, input);
       }
       throw err;
