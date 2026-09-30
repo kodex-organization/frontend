@@ -47,13 +47,7 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
       return;
     }
 
-    if (!isOnline) {
-      setError(
-        "Reconnect to load current billing data. Transactional billing actions are unavailable offline.",
-      );
-      setLoading(false);
-      return;
-    }
+    // When offline, invoiceService loads from offlineDB.cachedInvoices automatically
 
     setLoading(true);
     setError(null);
