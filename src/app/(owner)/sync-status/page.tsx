@@ -226,18 +226,22 @@ export default function SyncStatusPage() {
       const time = await getServerTime();
       setServerTime(time.serverTime);
 
-      if (!isAuthenticated || !syncDeviceId || !syncBranchId) {
+      const currentContext = tokenStorage.getAccessContext();
+      const effectiveDeviceId = currentContext?.deviceId || syncDeviceId;
+      const effectiveBranchId = user?.branchId || currentContext?.branchId || syncBranchId;
+
+      if (!isAuthenticated || !effectiveDeviceId || !effectiveBranchId) {
         throw new Error("Sign in again to establish device sync context.");
       }
 
-      const heartbeat = await sendHeartbeat(syncDeviceId, syncBranchId);
+      const heartbeat = await sendHeartbeat(effectiveDeviceId, effectiveBranchId);
       setLastHeartbeat(heartbeat.lastHeartbeatAt);
     } catch (connectionError) {
       setError(getErrorMessage(connectionError, "The sync service could not be reached."));
     } finally {
       if (showProgress) setActiveAction(null);
     }
-  }, [authLoading, isAuthenticated, syncBranchId, syncDeviceId]);
+  }, [authLoading, isAuthenticated, syncBranchId, syncDeviceId, user?.branchId]);
 
   const handlePush = async () => {
     setActiveAction("push");
@@ -246,7 +250,9 @@ export default function SyncStatusPage() {
 
     try {
       if (await checkServerConnection() !== 'online') throw new Error('The sync server is unreachable. Operations remain stored locally.');
-      if (!syncDeviceId) throw new Error("This device is not configured for synchronization.");
+      const currentContext = tokenStorage.getAccessContext();
+      const effectiveDeviceId = currentContext?.deviceId || syncDeviceId;
+      if (!effectiveDeviceId) throw new Error("This device is not configured for synchronization.");
 
       let totalPushed = 0;
 
@@ -261,7 +267,7 @@ export default function SyncStatusPage() {
       const pushable = items.filter((i) => i.status === "pending" || i.status === "failed");
       if (pushable.length > 0) {
         const response = await pushSyncChanges(
-          syncDeviceId,
+          effectiveDeviceId,
           pushable.map((item) => ({
             idempotencyKey: item.idempotencyKey,
             entityType: item.entity,
@@ -326,9 +332,11 @@ export default function SyncStatusPage() {
 
     try {
       if (await checkServerConnection() !== 'online') throw new Error('Reconnect to retrieve latest server changes.');
-      if (!syncDeviceId) throw new Error("This device is not configured for synchronization.");
+      const currentContext = tokenStorage.getAccessContext();
+      const effectiveDeviceId = currentContext?.deviceId || syncDeviceId;
+      if (!effectiveDeviceId) throw new Error("This device is not configured for synchronization.");
 
-      const response = await pullSyncChanges(syncDeviceId, lastSynced ?? undefined);
+      const response = await pullSyncChanges(effectiveDeviceId, lastSynced ?? undefined);
       setPulledChanges(response.changeCount);
       setLastSynced(response.serverTime);
       setNotice(

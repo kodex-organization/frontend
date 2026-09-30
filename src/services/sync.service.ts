@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api/client";
+import { tokenStorage } from "@/lib/auth/session";
 
 type ServerTimeResponse = {
   serverTime: string;
@@ -55,42 +56,50 @@ export async function getServerTime() {
 }
 
 export async function sendHeartbeat(
-  deviceId: string,
-  branchId: string,
+  deviceId?: string,
+  branchId?: string,
   signal?: AbortSignal,
 ) {
+  const context = tokenStorage.getAccessContext();
+  const effectiveDeviceId = context?.deviceId || deviceId;
+  const effectiveBranchId = context?.branchId || branchId;
+
   return apiFetch<HeartbeatResponse>("/sync/heartbeat", {
     method: "POST",
     signal,
     body: JSON.stringify({
-      deviceId,
-      branchId,
+      deviceId: effectiveDeviceId,
+      branchId: effectiveBranchId,
     }),
   });
 }
 
 export async function pushSyncChanges(
-  deviceId: string,
-  changes: SyncPushChange[],
+  deviceId?: string,
+  changes: SyncPushChange[] = [],
 ) {
+  const context = tokenStorage.getAccessContext();
+  const effectiveDeviceId = context?.deviceId || deviceId;
+
   return apiFetch<SyncPushResponse>("/sync/push", {
     method: "POST",
     body: JSON.stringify({
-      deviceId,
+      deviceId: effectiveDeviceId,
       changes,
     }),
   });
 }
 
 export async function pullSyncChanges(
-  deviceId: string,
+  deviceId?: string,
   since?: string,
 ) {
+  const context = tokenStorage.getAccessContext();
+  const effectiveDeviceId = context?.deviceId || deviceId;
+
   const query = since
-    ? `/sync/pull?deviceId=${encodeURIComponent(
-        deviceId,
-      )}&since=${encodeURIComponent(since)}`
-    : `/sync/pull?deviceId=${encodeURIComponent(deviceId)}`;
+    ? `/sync/pull?${effectiveDeviceId ? `deviceId=${encodeURIComponent(effectiveDeviceId)}&` : ""}since=${encodeURIComponent(since)}`
+    : `/sync/pull${effectiveDeviceId ? `?deviceId=${encodeURIComponent(effectiveDeviceId)}` : ""}`;
 
   return apiFetch<SyncPullResponse>(query);
 }

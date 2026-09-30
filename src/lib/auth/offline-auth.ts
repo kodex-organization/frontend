@@ -4,6 +4,7 @@
 
 import {
   tokenStorage,
+  decodeAccessContext,
   type SessionTokens,
   type SessionUser,
   type UserRole,
@@ -16,6 +17,7 @@ export interface OfflineAuthRecord {
   roles: UserRole[];
   branchId: string;
   tenantId: string;
+  deviceId?: string;
   branchName?: string;
   pin?: string;
   pinHash?: string;
@@ -61,6 +63,7 @@ const DEFAULT_OFFLINE_PROFILES: OfflineAuthRecord[] = [
     roles: ["CASHIER"],
     tenantId: "00000000-0000-0000-0000-000000000001",
     branchId: "00000000-0000-0000-0000-000000000002",
+    deviceId: "da679bc1-4de6-489b-8d97-22ba025b43a5",
     branchName: "Main Branch",
     passwordPlain: "Password@123",
     pin: "1234",
@@ -126,13 +129,21 @@ export function saveOfflineAuthProfile(params: {
 
   const existing = existingIdx >= 0 ? vault[existingIdx] : null;
   const accessContext = tokenStorage.getAccessContext();
+  const tokenContext = params.tokens?.accessToken ? decodeAccessContext(params.tokens.accessToken) : null;
   const tenantId =
     params.tenantId ||
     (params.user as any).tenantId ||
+    tokenContext?.tenantId ||
     accessContext?.tenantId ||
     existing?.tenantId ||
     "00000000-0000-0000-0000-000000000001";
   const branchName = (params.user as any).branchName || existing?.branchName || "Current Branch";
+  const deviceId =
+    tokenContext?.deviceId ||
+    accessContext?.deviceId ||
+    existing?.deviceId ||
+    (typeof window !== "undefined" ? window.localStorage.getItem("cuecloud_device_id") : null) ||
+    undefined;
 
   const updatedRecord: OfflineAuthRecord = {
     id: params.user.id,
@@ -141,6 +152,7 @@ export function saveOfflineAuthProfile(params: {
     roles: params.user.roles,
     branchId: params.user.branchId,
     tenantId,
+    deviceId,
     branchName,
     passwordPlain: params.password || existing?.passwordPlain || "Password@123",
     pin: params.pin || existing?.pin || "1234",
@@ -163,6 +175,7 @@ export function saveOfflineAuthProfile(params: {
  */
 export function createOfflineAccessToken(record: OfflineAuthRecord): string {
   const deviceId =
+    record.deviceId ||
     (typeof window !== "undefined" ? window.localStorage.getItem("cuecloud_device_id") : null) ||
     "00000000-0000-0000-0000-000000000099";
 
