@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "react-toastify";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
 
 interface CategoryFormData {
   name: string;
@@ -38,6 +39,7 @@ interface MenuItemFormData {
 
 export function MenuManager() {
   const { user } = useAuth();
+  const isOnline = useOnlineStatus();
   const isManagement = user?.roles.some(
     (role) => role === "OWNER" || role === "MANAGER"
   );
@@ -77,10 +79,6 @@ export function MenuManager() {
   const [itemToDelete, setItemToDelete] = useState<MenuItem | null>(null);
   const [isDeletingItem, setIsDeletingItem] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const loadData = async () => {
     try {
       setIsLoading(true);
@@ -92,11 +90,37 @@ export function MenuManager() {
       setCategories(cats);
       setItems(itms);
     } catch (err: any) {
-      setError(err.message || "Failed to load menu data");
+      console.warn("Failed to load menu data from server, falling back to local cache:", err);
+      try {
+        const [cats, itms] = await Promise.all([
+          CanteenApi.getCategories(),
+          CanteenApi.getMenuItems(),
+        ]);
+        setCategories(cats);
+        setItems(itms);
+      } catch (fallbackErr: any) {
+        setError(fallbackErr.message || "Failed to load menu data");
+      }
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    const handleSyncUpdate = () => {
+      loadData();
+    };
+    window.addEventListener("cuecloud:offline-queue-changed", handleSyncUpdate);
+    window.addEventListener("online", handleSyncUpdate);
+    return () => {
+      window.removeEventListener("cuecloud:offline-queue-changed", handleSyncUpdate);
+      window.removeEventListener("online", handleSyncUpdate);
+    };
+  }, []);
 
   // --- Category Actions ---
   const handleOpenCategoryModal = (cat?: Category) => {
@@ -310,6 +334,15 @@ export function MenuManager() {
 
   return (
     <div className="space-y-6">
+      {!isOnline && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-medium">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+            <span>Offline Mode — Products and catalog changes are saved locally and queued for synchronization.</span>
+          </div>
+          <span className="text-amber-800 font-bold px-2 py-0.5 rounded bg-amber-100 border border-amber-200">Local Catalog</span>
+        </div>
+      )}
       {/* Top Header & Global Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
         <div>

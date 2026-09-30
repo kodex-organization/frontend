@@ -170,7 +170,7 @@ export const sessionApi = {
 
       return cached
         .map((c) => c.data as ActiveSession)
-        .filter((session) => session && (session.status === "active" || !session.status) && session.status !== "ended" && !pendingEndIds.has(session.id));
+        .filter((session) => session && (session.status === "active" || !session.status) && (session.status as string) !== "ended" && !pendingEndIds.has(session.id));
     }
   },
 
@@ -215,7 +215,7 @@ export const sessionApi = {
 
       return cached
         .map((item) => item.data as ActiveSession)
-        .filter((session) => session && session.status === "paused" && session.status !== "ended" && !pendingEndIds.has(session.id));
+        .filter((session) => session && session.status === "paused" && (session.status as string) !== "ended" && !pendingEndIds.has(session.id));
     }
   },
 
@@ -249,7 +249,7 @@ export const sessionApi = {
         const occupiedTableIds = new Set(
           cachedSessions
             .map((item) => item.data as ActiveSession)
-            .filter((session) => session && (session.status === "active" || session.status === "paused") && session.status !== "ended" && !pendingEndIds.has(session.id))
+            .filter((session) => session && (session.status === "active" || session.status === "paused") && (session.status as string) !== "ended" && !pendingEndIds.has(session.id))
             .map((session) => session.table?.id)
             .filter(Boolean),
         );
@@ -441,6 +441,38 @@ export const sessionApi = {
         const subtotal = Number((durationHours * hourlyRate).toFixed(2));
         const invoiceNumber = `INV-${now.getTime().toString().slice(-6)}`;
 
+        let canteenSubtotal = 0;
+        const canteenInvoiceItems: any[] = [];
+        try {
+          const canteenOrders = await offlineDB.cachedCanteenOrders
+            .filter((o) => o.data?.sessionId === id || (o as any).sessionId === id)
+            .toArray();
+          for (const wrapper of canteenOrders) {
+            const orderData = wrapper.data || wrapper;
+            for (const it of (orderData.items || [])) {
+              if (it.voided) continue;
+              const unitPrice = Number(it.unitPrice || 0);
+              const qty = Number(it.quantity || 1);
+              const lineTotal = Number(it.lineTotal ?? (unitPrice * qty));
+              canteenSubtotal += lineTotal;
+              canteenInvoiceItems.push({
+                id: crypto.randomUUID(),
+                itemType: "canteen" as const,
+                sourceSessionId: id,
+                sourceOrderItemId: it.id || null,
+                itemName: it.menuItem?.name || it.name || "Canteen Item",
+                quantity: qty,
+                unitPrice,
+                lineTotal,
+              });
+            }
+          }
+        } catch (canteenErr) {
+          console.warn("Could not load canteen items for session invoice:", canteenErr);
+        }
+
+        const grandSubtotal = Number((subtotal + canteenSubtotal).toFixed(2));
+
         const offlineInvoice = {
           id: invoiceId,
           invoiceNumber,
@@ -468,14 +500,14 @@ export const sessionApi = {
                 phone: sess.customer.phone || null,
               }
             : null,
-          subtotal,
+          subtotal: grandSubtotal,
           discountAmount: 0,
           discountReasonCode: null,
           taxAmount: 0,
           serviceCharge: 0,
-          total: subtotal,
+          total: grandSubtotal,
           paidAmount: 0,
-          remainingAmount: subtotal,
+          remainingAmount: grandSubtotal,
           status: "open" as const,
           voidReason: null,
           voidedAt: null,
@@ -494,6 +526,7 @@ export const sessionApi = {
               unitPrice: hourlyRate,
               lineTotal: subtotal,
             },
+            ...canteenInvoiceItems,
           ],
           payments: [],
         };
@@ -511,13 +544,13 @@ export const sessionApi = {
           invoiceNumber,
           sessionId: id,
           customerId: offlineInvoice.customerId,
-          subtotal: String(subtotal),
+          subtotal: String(grandSubtotal),
           discountAmount: "0",
           discountReasonCode: null,
           discountApprovedById: null,
           taxAmount: "0",
           serviceCharge: "0",
-          total: String(subtotal),
+          total: String(grandSubtotal),
           paidAmount: "0",
           status: "open",
           voidedInvoiceId: null,
