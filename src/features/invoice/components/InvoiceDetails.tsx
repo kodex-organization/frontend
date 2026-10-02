@@ -26,7 +26,7 @@ function findJwtToken(): string | null {
         if (m) return m[0];
       }
     }
-  } catch { }
+  } catch {}
   return null;
 }
 
@@ -79,6 +79,12 @@ export default function InvoiceDetails({
     );
   }
 
+  // --- ROLE CHECKS ---
+  const userRoles: string[] = (user?.roles || []).map((r: string) => String(r).toUpperCase());
+  const isReadOnly =
+    userRoles.includes("ACCOUNTANT") &&
+    !userRoles.some((r) => ["OWNER", "MANAGER", "CASHIER"].includes(r));
+
   // --- DYNAMIC TAX & TOTAL CALCULATIONS ---
   const subtotal = Number(invoice.subtotal ?? 0);
   const discountAmount = Number(invoice.discountAmount ?? 0);
@@ -98,13 +104,19 @@ export default function InvoiceDetails({
     paymentsList.every((p) => String(p.tenderType).toLowerCase() === "card");
 
   // Display saved DB total if paid, or dynamic projected total if open
-  const displayTax = invoice.status === "paid"
-    ? Number(invoice.taxAmount ?? 0)
-    : (isFullyPaidByCard ? cardTax : standardTax);
+  const displayTax =
+    invoice.status === "paid"
+      ? Number(invoice.taxAmount ?? 0)
+      : isFullyPaidByCard
+      ? cardTax
+      : standardTax;
 
-  const displayTotal = invoice.status === "paid"
-    ? Number(invoice.total ?? 0)
-    : (isFullyPaidByCard ? cardTotal : standardTotal);
+  const displayTotal =
+    invoice.status === "paid"
+      ? Number(invoice.total ?? 0)
+      : isFullyPaidByCard
+      ? cardTotal
+      : standardTotal;
 
   const paidAmount = paymentsList.reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
   const remainingAmount = Math.max(0, displayTotal - paidAmount);
@@ -117,10 +129,10 @@ export default function InvoiceDetails({
   const canVoid =
     currentStatus !== "void" &&
     currentStatus !== "voided" &&
-    !!user?.roles?.some((role: string) => ["OWNER", "MANAGER"].includes(role));
+    userRoles.some((role) => ["OWNER", "MANAGER"].includes(role));
 
   const canPay =
-    !!user?.roles?.some((role: string) => ["OWNER", "MANAGER", "CASHIER"].includes(role)) &&
+    userRoles.some((role) => ["OWNER", "MANAGER", "CASHIER"].includes(role)) &&
     remainingAmount > 0 &&
     ["open", "draft", "partially_paid"].includes(currentStatus);
 
@@ -128,31 +140,42 @@ export default function InvoiceDetails({
     currentStatus !== "void" &&
     currentStatus !== "voided" &&
     currentStatus !== "paid" &&
-    !!user?.roles?.some((role: string) => ["OWNER", "MANAGER", "CASHIER"].includes(role));
+    userRoles.some((role) => ["OWNER", "MANAGER", "CASHIER"].includes(role));
 
   return (
     <main className="mx-auto w-full max-w-6xl pb-12">
-
-      <Link href={backHref} className="text-sm font-semibold text-slate-600 hover:text-emerald-700">
+      <Link
+        href={backHref}
+        className="text-sm font-semibold text-slate-600 hover:text-emerald-700"
+      >
         ← Back to billing
       </Link>
 
       <header className="mt-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Billing</p>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">
+            Billing
+          </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
             {invoice.invoiceNumber ?? "Invoice details"}
           </h1>
           <p className="mt-2 text-sm text-slate-600">
             Created{" "}
-            {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-              new Date(invoice.createdAt)
-            )}{" "}
+            {new Intl.DateTimeFormat(undefined, {
+              dateStyle: "medium",
+              timeStyle: "short",
+            }).format(new Date(invoice.createdAt))}{" "}
             · {invoice.branch?.name ?? "Current branch"}
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {isReadOnly && (
+            <span className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+              Read Only · Audit Mode
+            </span>
+          )}
+
           {invoice.receiptId && (
             <Link
               href={`/receipts/${invoice.receiptId}`}
@@ -161,6 +184,7 @@ export default function InvoiceDetails({
               View receipt
             </Link>
           )}
+
           {canApplyDiscount && (
             <button
               type="button"
@@ -171,6 +195,7 @@ export default function InvoiceDetails({
               Discount
             </button>
           )}
+
           {canPay && (
             <button
               type="button"
@@ -181,6 +206,7 @@ export default function InvoiceDetails({
               Record payment
             </button>
           )}
+
           {canVoid && (
             <button
               type="button"
@@ -217,9 +243,12 @@ export default function InvoiceDetails({
               <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
                 100% Card Payment (5% Tax)
               </span>
-              <p className="mt-2 text-xl font-bold text-slate-900">{formatAmount(cardTotal)}</p>
+              <p className="mt-2 text-xl font-bold text-slate-900">
+                {formatAmount(cardTotal)}
+              </p>
               <p className="text-xs text-slate-500">
-                Tax: {formatAmount(cardTax)} · Save {formatAmount(standardTax - cardTax)}
+                Tax: {formatAmount(cardTax)} · Save{" "}
+                {formatAmount(standardTax - cardTax)}
               </p>
             </div>
 
@@ -227,8 +256,12 @@ export default function InvoiceDetails({
               <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">
                 Cash / Udhaar / Wallet (16% Tax)
               </span>
-              <p className="mt-2 text-xl font-bold text-slate-900">{formatAmount(standardTotal)}</p>
-              <p className="text-xs text-slate-500">Tax: {formatAmount(standardTax)}</p>
+              <p className="mt-2 text-xl font-bold text-slate-900">
+                {formatAmount(standardTotal)}
+              </p>
+              <p className="text-xs text-slate-500">
+                Tax: {formatAmount(standardTax)}
+              </p>
             </div>
           </div>
         </section>
@@ -238,8 +271,18 @@ export default function InvoiceDetails({
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="font-semibold text-slate-950">Session context</h2>
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            <Detail label="Table" value={invoice.session?.table?.tableNumber ? `Table ${invoice.session.table.tableNumber}` : "Not linked"} />
-            <Detail label="Session" value={invoice.sessionId ? invoice.sessionId : "Not linked"} />
+            <Detail
+              label="Table"
+              value={
+                invoice.session?.table?.tableNumber
+                  ? `Table ${invoice.session.table.tableNumber}`
+                  : "Not linked"
+              }
+            />
+            <Detail
+              label="Session"
+              value={invoice.sessionId ? invoice.sessionId : "Not linked"}
+            />
           </dl>
         </article>
 
@@ -252,14 +295,17 @@ export default function InvoiceDetails({
                 <span className="flex items-center gap-2">
                   <span>{invoice.customer?.fullName ?? "Walk-in customer"}</span>
                   {invoice.customer?.isBlocked && (
-                    <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-700 border border-rose-200">
+                    <span className="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-700">
                       Blocked
                     </span>
                   )}
                 </span>
               }
             />
-            <Detail label="Phone" value={invoice.customer?.phone ?? "Not recorded"} />
+            <Detail
+              label="Phone"
+              value={invoice.customer?.phone ?? "Not recorded"}
+            />
           </dl>
         </article>
       </section>
@@ -281,15 +327,24 @@ export default function InvoiceDetails({
       <div className="mt-5 space-y-5">
         <InvoiceItems items={invoice.items} currency={currency} />
 
-        {remainingAmount > 0 && invoice.status !== "paid" && invoice.status !== "void" ? (
-          <SplitPaymentPanel
-            invoiceId={invoice.id}
-            standardTotal={standardTotal}
-            cardTotal={cardTotal}
-            onSuccess={() => void refresh()}
-            isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
-            customerName={invoice.customer?.fullName ?? null}
-          />
+        {/* SplitPaymentPanel guarded so only staff with payment rights can interact */}
+        {remainingAmount > 0 &&
+        invoice.status !== "paid" &&
+        invoice.status !== "void" ? (
+          canPay ? (
+            <SplitPaymentPanel
+              invoiceId={invoice.id}
+              standardTotal={standardTotal}
+              cardTotal={cardTotal}
+              onSuccess={() => void refresh()}
+              isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
+              customerName={invoice.customer?.fullName ?? null}
+            />
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
+              Outstanding balance of {formatAmount(remainingAmount)}. Payment processing is restricted for your role.
+            </div>
+          )
         ) : (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
             No additional tender allocation is needed because this invoice is fully covered.
@@ -380,8 +435,8 @@ function ApplyDiscountModal({
     const nextAmountError = !amount.trim()
       ? "Discount amount is required."
       : !Number.isFinite(numericAmount) || numericAmount <= 0
-        ? "Enter a discount amount greater than zero."
-        : null;
+      ? "Enter a discount amount greater than zero."
+      : null;
     const nextPasswordError =
       !isOwnerOrManager && !ownerPassword.trim()
         ? "Owner password is required."
@@ -405,7 +460,9 @@ function ApplyDiscountModal({
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const rawBase = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/api\/v1\/?$/, "").replace(/\/$/, "");
+      const rawBase = (process.env.NEXT_PUBLIC_API_URL || "")
+        .replace(/\/api\/v1\/?$/, "")
+        .replace(/\/$/, "");
       const res = await fetch(`${rawBase}/api/v1/billing/invoices/${invoiceId}/discount`, {
         method: "POST",
         headers,
@@ -436,7 +493,9 @@ function ApplyDiscountModal({
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <h2 className="text-xl font-bold text-slate-900">Apply Invoice Discount</h2>
         <p className="mt-1 text-xs text-slate-500">
-          {isOwnerOrManager ? "Auto-authorized under your Owner/Manager account." : "Requires reason code and owner password approval."}
+          {isOwnerOrManager
+            ? "Auto-authorized under your Owner/Manager account."
+            : "Requires reason code and owner password approval."}
         </p>
 
         {error && (
@@ -447,21 +506,29 @@ function ApplyDiscountModal({
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700">Discount Type</label>
+            <label className="block text-xs font-semibold text-slate-700">
+              Discount Type
+            </label>
             <div className="mt-1.5 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setDiscountType("fixed")}
-                className={`rounded-xl border py-2 text-xs font-semibold ${discountType === "fixed" ? "border-emerald-600 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
+                className={`rounded-xl border py-2 text-xs font-semibold ${
+                  discountType === "fixed"
+                    ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
               >
                 Fixed PKR
               </button>
               <button
                 type="button"
                 onClick={() => setDiscountType("percentage")}
-                className={`rounded-xl border py-2 text-xs font-semibold ${discountType === "percentage" ? "border-emerald-600 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
+                className={`rounded-xl border py-2 text-xs font-semibold ${
+                  discountType === "percentage"
+                    ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
               >
                 Percentage %
               </button>
@@ -469,7 +536,9 @@ function ApplyDiscountModal({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700">Discount Value ({discountType === "fixed" ? "PKR" : "%"})</label>
+            <label className="block text-xs font-semibold text-slate-700">
+              Discount Value ({discountType === "fixed" ? "PKR" : "%"})
+            </label>
             <input
               type="number"
               step="any"
@@ -482,17 +551,27 @@ function ApplyDiscountModal({
               }}
               aria-invalid={!!amountError}
               aria-describedby={amountError ? "discount-amount-error" : undefined}
-              className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none ${amountError ? "border-red-400 focus:border-red-500" : "border-slate-300 focus:border-emerald-600"}`}
+              className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none ${
+                amountError
+                  ? "border-red-400 focus:border-red-500"
+                  : "border-slate-300 focus:border-emerald-600"
+              }`}
             />
             {amountError && (
-              <p id="discount-amount-error" className="mt-1 text-xs font-medium text-red-600" role="alert">
+              <p
+                id="discount-amount-error"
+                className="mt-1 text-xs font-medium text-red-600"
+                role="alert"
+              >
                 {amountError}
               </p>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700">Reason Code / Note *</label>
+            <label className="block text-xs font-semibold text-slate-700">
+              Reason Code / Note *
+            </label>
             <select
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -509,7 +588,9 @@ function ApplyDiscountModal({
 
           {!isOwnerOrManager && (
             <div>
-              <label className="block text-xs font-semibold text-slate-700">Owner Authorization Password *</label>
+              <label className="block text-xs font-semibold text-slate-700">
+                Owner Authorization Password *
+              </label>
               <input
                 type="password"
                 autoComplete="current-password"
@@ -521,10 +602,18 @@ function ApplyDiscountModal({
                 }}
                 aria-invalid={!!passwordError}
                 aria-describedby={passwordError ? "owner-password-error" : undefined}
-                className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none ${passwordError ? "border-red-400 focus:border-red-500" : "border-slate-300 focus:border-emerald-600"}`}
+                className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none ${
+                  passwordError
+                    ? "border-red-400 focus:border-red-500"
+                    : "border-slate-300 focus:border-emerald-600"
+                }`}
               />
               {passwordError && (
-                <p id="owner-password-error" className="mt-1 text-xs font-medium text-red-600" role="alert">
+                <p
+                  id="owner-password-error"
+                  className="mt-1 text-xs font-medium text-red-600"
+                  role="alert"
+                >
                   {passwordError}
                 </p>
               )}
@@ -558,7 +647,9 @@ function Summary({ label, value }: { label: string; value: string }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-sm font-medium text-slate-500">{label}</p>
-      <p className="mt-3 text-2xl font-bold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-3 text-2xl font-bold tracking-tight text-slate-950">
+        {value}
+      </p>
     </article>
   );
 }
@@ -566,7 +657,9 @@ function Summary({ label, value }: { label: string; value: string }) {
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</dt>
+      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </dt>
       <dd className="mt-1 break-words font-medium text-slate-800">{value}</dd>
     </div>
   );

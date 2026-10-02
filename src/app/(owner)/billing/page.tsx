@@ -3,7 +3,7 @@ import BillingWorkspace from "@/features/invoice/components/BillingWorkspace";
 
 export default function BillingPage() {
   return (
-    <ProtectedRoute allowedRoles={["OWNER", "MANAGER", "CASHIER"]}>
+    <ProtectedRoute allowedRoles={["OWNER", "MANAGER", "CASHIER", "ACCOUNTANT"]}>
       <BillingWorkspace />
     </ProtectedRoute>
   );
