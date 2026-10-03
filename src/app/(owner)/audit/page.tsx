@@ -243,7 +243,7 @@ export default function AuditPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={handleOpenRetention}
             className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors"
@@ -269,10 +269,10 @@ export default function AuditPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))]">
         {/* Total Immutable Logs */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Total Immutable Logs
             </span>
@@ -286,7 +286,7 @@ export default function AuditPage() {
             <div className="text-3xl font-black text-slate-900 tracking-tight">
               {kpis?.totalLogs ?? 0}
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Cryptographically verified</span>
               <span className="px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-semibold border border-brand-200 text-[10px]">
                 Append-Only
@@ -296,8 +296,8 @@ export default function AuditPage() {
         </div>
 
         {/* Anomalies (Today) */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Anomalies (Today)
             </span>
@@ -311,7 +311,7 @@ export default function AuditPage() {
             <div className="text-3xl font-black text-slate-900 tracking-tight">
               {kpis?.anomaliesToday ?? 0}
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Shift & void pattern alerts</span>
               <span
                 className={`px-2 py-0.5 rounded-full font-semibold border text-[10px] ${
@@ -327,8 +327,8 @@ export default function AuditPage() {
         </div>
 
         {/* Clock Tamper Alerts */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Clock Tamper Alerts
             </span>
@@ -342,7 +342,7 @@ export default function AuditPage() {
             <div className="text-3xl font-black text-slate-900 tracking-tight">
               {kpis?.tamperCount ?? 0}
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Server skew checks</span>
               <span
                 className={`px-2 py-0.5 rounded-full font-semibold border text-[10px] ${
@@ -358,8 +358,8 @@ export default function AuditPage() {
         </div>
 
         {/* Receipt Reprints */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Receipt Reprints
             </span>
@@ -373,7 +373,7 @@ export default function AuditPage() {
             <div className="text-3xl font-black text-slate-900 tracking-tight">
               {kpis?.reprintCount ?? 0}
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Logged reprint actions</span>
               <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200 text-[10px]">
                 Monitored
@@ -542,7 +542,7 @@ export default function AuditPage() {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              className="px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 w-56"
+              className="w-56 max-w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
             />
 
             <select
@@ -563,7 +563,7 @@ export default function AuditPage() {
 
         {/* Audit Logs Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-600">
+          <table className="min-w-[900px] w-full text-left text-xs text-slate-600">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
               <tr>
                 <th className="py-3 px-4">Timestamp</th>
@@ -641,7 +641,7 @@ export default function AuditPage() {
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
           <span>
             Showing {logs.length} of {totalLogs} total events (Page {page})
           </span>
