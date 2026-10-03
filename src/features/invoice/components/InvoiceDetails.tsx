@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { useInvoice } from "../hooks/useInvoice";
+import type { Invoice } from "../types/invoice";
 import { formatCurrency } from "../utils/formatCurrency";
 import InvoiceItems from "./InvoiceItems";
 import InvoicePayments from "./InvoicePayments";
@@ -378,9 +379,9 @@ export default function InvoiceDetails({
         <ApplyDiscountModal
           invoiceId={invoice.id}
           onClose={() => setShowDiscountModal(false)}
-          onSuccess={() => {
+          onSuccess={(updatedInvoice) => {
+            setInvoice(updatedInvoice);
             setShowDiscountModal(false);
-            void refresh();
             toast.success("Invoice discount applied successfully.");
           }}
         />
@@ -409,7 +410,7 @@ function ApplyDiscountModal({
 }: {
   invoiceId: string;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (updatedInvoice: Invoice) => void;
 }) {
   const { user } = useAuth() as any;
   const isOwnerOrManager =
@@ -480,7 +481,8 @@ function ApplyDiscountModal({
         throw new Error(parseErrorMessage(errData));
       }
 
-      onSuccess();
+      const result = (await res.json()) as { data?: Invoice };
+      onSuccess(result.data ?? (result as unknown as Invoice));
     } catch (err: any) {
       setError(parseErrorMessage(err));
     } finally {

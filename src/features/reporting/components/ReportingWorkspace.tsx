@@ -875,7 +875,7 @@ export default function ReportingWorkspace() {
             </div>
 
             {loading && (
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 min-[900px]:grid-cols-2 2xl:grid-cols-3">
                 <div className="h-28 animate-pulse rounded-xl bg-slate-200" />
                 <div className="h-28 animate-pulse rounded-xl bg-slate-200" />
                 <div className="h-28 animate-pulse rounded-xl bg-slate-200" />
@@ -904,7 +904,7 @@ export default function ReportingWorkspace() {
             {/* Z-REPORT */}
             {!loading && !error && data && tab === "z-report" && (
               <div className="space-y-6">
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))]">
                   {[
                     ["Revenue", money(zReport?.revenue)],
                     ["Sessions", zReport?.sessionCount ?? 0],
@@ -919,12 +919,12 @@ export default function ReportingWorkspace() {
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                      className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
                     >
                       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                         {label}
                       </p>
-                      <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                      <p className="mt-2 whitespace-nowrap text-base font-bold tracking-tight text-slate-900 2xl:text-2xl">
                         {value}
                       </p>
                     </div>
@@ -1011,7 +1011,7 @@ export default function ReportingWorkspace() {
             {/* CASH RECONCILIATION */}
             {!loading && !error && data && tab === "cash-reconciliation" && (
               <div className="space-y-6">
-                <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-5">
+                <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))]">
                   {[
                     ["Opening Cash", money(cashRecon?.openingCash)],
                     ["Cash Collected", money(cashRecon?.cashTenderTotal)],
@@ -1021,12 +1021,12 @@ export default function ReportingWorkspace() {
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                      className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
                     >
                       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                         {label}
                       </p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+                      <p className="mt-2 whitespace-nowrap text-base font-bold text-slate-900 2xl:text-2xl">{value}</p>
                     </div>
                   ))}
                 </div>
@@ -1037,8 +1037,8 @@ export default function ReportingWorkspace() {
                   </div>
                 )}
 
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <table className="w-full text-left text-sm">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <table className="min-w-[640px] w-full text-left text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider font-semibold text-slate-500">
                       <tr>
                         <th className="px-5 py-3.5">Time</th>
@@ -1077,8 +1077,8 @@ export default function ReportingWorkspace() {
             {!loading && !error && data && tab === "shift-report" && (
               isManagement ? (
                 shiftReportRows.length > 0 ? (
-                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table className="w-full text-left text-sm">
+                  <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <table className="min-w-[760px] w-full text-left text-sm">
                       <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider font-semibold text-slate-500">
                         <tr>
                           <th className="px-5 py-3.5">Staff</th>
@@ -1116,7 +1116,7 @@ export default function ReportingWorkspace() {
                   <EmptyState message="No shift activity found for this period." />
                 )
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))]">
                   {[
                     ["Sessions", ownShiftReport?.sessionCount ?? 0],
                     ["Invoices", ownShiftReport?.invoiceCount ?? 0],
@@ -1131,12 +1131,12 @@ export default function ReportingWorkspace() {
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                      className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
                     >
                       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                         {label}
                       </p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+                      <p className="mt-2 whitespace-nowrap text-base font-bold text-slate-900 2xl:text-2xl">{value}</p>
                     </div>
                   ))}
                 </div>
@@ -1146,7 +1146,7 @@ export default function ReportingWorkspace() {
             {/* MONTHLY SUMMARY */}
             {!loading && !error && data && tab === "monthly-summary" && (
               <div className="space-y-6">
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))]">
                   {[
                     ["This Month", money(summary?.totalRevenue)],
                     ["Previous Month", money(summary?.previousMonthRevenue)],
@@ -1159,18 +1159,18 @@ export default function ReportingWorkspace() {
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                      className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
                     >
                       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                         {label}
                       </p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+                      <p className="mt-2 whitespace-nowrap text-base font-bold text-slate-900 2xl:text-2xl">{value}</p>
                     </div>
                   ))}
                 </div>
                 {(summary?.revenueByBranch?.length ?? 0) > 0 && (
-                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table className="w-full text-left text-sm">
+                  <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <table className="min-w-[520px] w-full text-left text-sm">
                       <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider font-semibold text-slate-500">
                         <tr>
                           <th className="px-5 py-3.5">Branch UUID</th>
@@ -1198,7 +1198,7 @@ export default function ReportingWorkspace() {
             {/* UDHAAR AGING */}
             {!loading && !error && data && tab === "udhaar-aging" && (
               <div className="space-y-6">
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))]">
                   {[
                     ["Total Outstanding", money(aging?.summary?.totalOutstanding)],
                     ["Overdue (90+ Days)", money(aging?.summary?.overdueBalance)],
@@ -1206,12 +1206,12 @@ export default function ReportingWorkspace() {
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                      className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
                     >
                       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                         {label}
                       </p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+                      <p className="mt-2 whitespace-nowrap text-base font-bold text-slate-900 2xl:text-2xl">{value}</p>
                     </div>
                   ))}
                 </div>
@@ -1269,7 +1269,7 @@ export default function ReportingWorkspace() {
                   </p>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))]">
                   {[
                     ["Invoice Total", money(reconciliation?.invoiceTotal)],
                     ["Payment Total", money(reconciliation?.paymentTotal)],
@@ -1277,12 +1277,12 @@ export default function ReportingWorkspace() {
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                      className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
                     >
                       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                         {label}
                       </p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+                      <p className="mt-2 whitespace-nowrap text-base font-bold text-slate-900 2xl:text-2xl">{value}</p>
                     </div>
                   ))}
                 </div>
@@ -1410,8 +1410,8 @@ export default function ReportingWorkspace() {
             {/* TOP CUSTOMERS */}
             {!loading && !error && data && tab === "top-customers" && (
               rankedRows.length > 0 ? (
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <table className="w-full text-left text-sm">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <table className="min-w-[760px] w-full text-left text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider font-semibold text-slate-500">
                       <tr>
                         <th className="px-5 py-3.5">Customer</th>
@@ -1452,8 +1452,8 @@ export default function ReportingWorkspace() {
             {/* TOP ITEMS */}
             {!loading && !error && data && tab === "top-items" && (
               rankedRows.length > 0 ? (
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <table className="w-full text-left text-sm">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <table className="min-w-[560px] w-full text-left text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider font-semibold text-slate-500">
                       <tr>
                         <th className="px-5 py-3.5">Item Name</th>
@@ -1482,8 +1482,8 @@ export default function ReportingWorkspace() {
             {/* STAFF PERFORMANCE */}
             {!loading && !error && data && tab === "staff-performance" && (
               rankedRows.length > 0 ? (
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <table className="w-full text-left text-sm">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <table className="min-w-[760px] w-full text-left text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider font-semibold text-slate-500">
                       <tr>
                         <th className="px-5 py-3.5">Staff</th>

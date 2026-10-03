@@ -8,22 +8,7 @@ import { cn } from "@/lib/utils/cn";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { KeyRound, Mail, Sparkles } from "lucide-react";
-
-const CueLogo = ({ size = 28, className = "" }: { size?: number; className?: string }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.5"
-    className={className}
-  >
-    <path d="M 18.72 5.28 A 9.5 9.5 0 1 0 18.72 18.72" />
-    <path d="M 15.18 8.82 A 4.5 4.5 0 1 0 15.18 15.18" />
-  </svg>
-);
+import { BrandLogo } from "@/components/branding/brand-logo";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"password" | "pin">("password");
@@ -49,9 +34,7 @@ export default function LoginPage() {
       <div className="relative w-full max-w-md rounded-3xl border border-slate-700/50 bg-white/95 backdrop-blur-xl p-8 sm:p-10 shadow-2xl space-y-6">
         {/* Header Branding */}
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center mx-auto shadow-lg shadow-brand-500/30">
-            <CueLogo size={26} />
-          </div>
+          <BrandLogo className="mx-auto h-16 w-auto" />
           <h1 className="text-2xl font-black tracking-tight text-slate-900">
             Cue<span className="text-brand-600">Cloud</span>
           </h1>

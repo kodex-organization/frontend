@@ -184,7 +184,7 @@ export default function BillingWorkspace({
 
       <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 p-5 sm:p-6">
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+          <div className="flex min-w-0 flex-col gap-4">
             <div>
               <h2 className="font-semibold text-slate-950">Invoices</h2>
               <p className="mt-1 text-sm text-slate-500">
@@ -193,7 +193,7 @@ export default function BillingWorkspace({
             </div>
             <form
               onSubmit={applySearch}
-              className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_160px_160px_160px_auto]"
+              className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(0,1fr)_160px_160px_160px_auto]"
             >
               <label className="sr-only" htmlFor="invoice-search">
                 Search invoice number
@@ -204,7 +204,7 @@ export default function BillingWorkspace({
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
                 placeholder="Invoice number"
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                className="min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               />
               <label className="sr-only" htmlFor="invoice-status">
                 Invoice status
@@ -216,7 +216,7 @@ export default function BillingWorkspace({
                   setInvoicePage(1);
                   setStatus(event.target.value as "" | InvoiceStatus);
                 }}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+                className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
               >
                 {statusOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -234,7 +234,7 @@ export default function BillingWorkspace({
                   setInvoicePage(1);
                   setBranchId(event.target.value);
                 }}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+                className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
               >
                 <option value="">Active branch</option>
                 <option value="all">All branches</option>
@@ -256,12 +256,12 @@ export default function BillingWorkspace({
                   setTransactionPage(1);
                   setDate(event.target.value);
                 }}
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+                className="min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
               >
               </input>
               <button
                 type="submit"
-                className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                className="w-full min-w-0 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 Search
               </button>

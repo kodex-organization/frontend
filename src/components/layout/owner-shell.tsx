@@ -39,22 +39,7 @@ import { NotificationBell } from "@/features/notifications/components/Notificati
 import { useNotifications } from "@/features/notifications/context";
 import { TenantAnnouncementCenter } from "@/features/announcements/components/tenant-announcement-center";
 import { GlobalBranchSelector } from "@/features/tenancy/components/global-branch-selector";
-
-const CueLogo = ({ size = 26, className = "" }: { size?: number; className?: string }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.5"
-    className={className}
-  >
-    <path d="M 18.72 5.28 A 9.5 9.5 0 1 0 18.72 18.72" />
-    <path d="M 15.18 8.82 A 4.5 4.5 0 1 0 15.18 15.18" />
-  </svg>
-);
+import { BrandLogo } from "@/components/branding/brand-logo";
 
 interface NavGroup {
   title?: string;
@@ -304,9 +289,11 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
             href={isOwnerOrManager ? "/dashboard" : redirectPathForRoles(user?.roles || [])}
             className="flex items-center gap-2.5 group cursor-pointer focus:outline-none"
           >
-            <div className="w-10 h-10 rounded-xl bg-brand-600 text-white flex items-center justify-center shadow-md shadow-brand-500/20 group-hover:scale-105 transition-transform shrink-0">
-              <CueLogo size={22} />
-            </div>
+            <BrandLogo
+              className={`h-auto shrink-0 transition-transform group-hover:scale-105 ${
+                isCollapsed ? "w-[46px]" : "w-[76px]"
+              }`}
+            />
             {!isCollapsed && (
               <div>
                 <span className="text-lg font-extrabold tracking-tight text-slate-900">

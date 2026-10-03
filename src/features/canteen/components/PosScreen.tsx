@@ -424,7 +424,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3.5 overflow-y-auto">
+          <div className="grid grid-cols-1 min-[1200px]:grid-cols-2 2xl:grid-cols-4 gap-3.5 overflow-y-auto">
             {filteredItems.map((item) => {
               const inCartItem = cart.find((c) => c.id === item.id);
 
@@ -455,11 +455,11 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                     )}
                   </div>
 
-                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-                    <span className="font-extrabold text-base text-brand-700 font-mono">
+                  <div className="mt-3 flex flex-wrap items-end justify-between gap-x-2 gap-y-1 border-t border-slate-100 pt-2">
+                    <span className="min-w-0 flex-1 whitespace-nowrap font-extrabold text-sm text-brand-700 font-mono 2xl:text-base">
                       Rs. {Number(item.currentPrice).toFixed(2)}
                     </span>
-                    <span className="text-[11px] font-semibold text-slate-400 group-hover:text-brand-600 transition-colors flex items-center gap-0.5">
+                    <span className="shrink-0 whitespace-nowrap text-[11px] font-semibold text-slate-400 group-hover:text-brand-600 transition-colors flex items-center gap-0.5">
                       <Plus className="w-3.5 h-3.5" /> Add
                     </span>
                   </div>
