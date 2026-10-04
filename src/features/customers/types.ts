@@ -62,6 +62,8 @@ export interface CustomerCreateInput {
   phone: string;
   cnic?: string | null;
   tagId?: string | null;
+  /** Tag NAME to assign (works online and offline). */
+  tagName?: string | null;
 }
 
 export interface CustomerUpdateInput {

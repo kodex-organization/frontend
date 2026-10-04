@@ -8,6 +8,8 @@ import { BranchModal } from "../../../components/branches/BranchModal";
 import { BranchConfigModal } from "../../../components/branches/BranchConfigModal";
 import { FeedbackModal } from "@/components/ui/FeedbackModal";
 import { toast } from "@/lib/toast";
+import { isNetworkFailure, loadWithOfflineSnapshot } from "@/lib/sync/offline-reference-cache";
+import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 
 export default function OwnerBranchesPage() {
   const [branches, setBranches] = useState<BranchItem[]>([]);
@@ -19,6 +21,7 @@ export default function OwnerBranchesPage() {
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ title: string; message: string; type: "success" | "error" | "warning" } | null>(null);
 
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
@@ -31,10 +34,18 @@ export default function OwnerBranchesPage() {
     try {
       setIsLoading(true);
       setError(null);
-      const res = await fetchBranches({ limit: 50 });
+      const { data: res, savedAt } = await loadWithOfflineSnapshot("branches:list", () =>
+        fetchBranches({ limit: 50 }),
+      );
       setBranches(res.branches || []);
       setBranchUsage(res.branchUsage);
+      setSnapshotAt(savedAt);
     } catch (err: any) {
+      if (isNetworkFailure(err)) {
+        // Offline and nothing saved yet: explain it calmly instead of showing an error toast.
+        setError("You are offline and no saved branch list exists on this device yet. Open this page once while online.");
+        return;
+      }
       const msg = err.message?.includes("jwt expired")
         ? "Your session has expired. Please log in again."
         : err.message || "Failed to load branches.";
@@ -121,8 +132,8 @@ export default function OwnerBranchesPage() {
 
           <button
             onClick={handleCreateNew}
-            disabled={branchUsage ? !branchUsage.canCreate : false}
-            title={branchUsage && !branchUsage.canCreate ? "Your subscription branch limit has been reached" : undefined}
+            disabled={snapshotAt !== null || (branchUsage ? !branchUsage.canCreate : false)}
+            title={snapshotAt !== null ? "Creating a branch needs an internet connection" : branchUsage && !branchUsage.canCreate ? "Your subscription branch limit has been reached" : undefined}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -132,6 +143,8 @@ export default function OwnerBranchesPage() {
           </button>
         </div>
       </div>
+
+      {snapshotAt && <OfflineSnapshotNotice savedAt={snapshotAt} />}
 
       {/* Error / Session Banner */}
       {error && (

@@ -23,14 +23,31 @@ test("Customer Duplicate Phone Validation and Error Handling", async (t) => {
       "customerApi must import ApiError from @/lib/api/client"
     );
 
-    // Assert create catches onlineError and re-throws if ApiError or HTTP status > 0
-    assert.ok(
-      customerApiContent.includes("onlineError instanceof ApiError"),
-      "customerApi.create must check if onlineError is an ApiError"
+    // The shared helper decides what is a REAL connection failure: an ApiError counts
+    // only when it is the NETWORK_ERROR raised by apiFetch; any other ApiError or
+    // HTTP status > 0 is a real server answer and must never be queued offline.
+    const helperBlock = customerApiContent.slice(
+      customerApiContent.indexOf("function isNetworkFailure"),
+      customerApiContent.indexOf("function isBrowserOffline")
     );
     assert.ok(
-      customerApiContent.includes("(onlineError as any).status > 0"),
-      "customerApi.create must check if onlineError has HTTP status > 0"
+      helperBlock.includes("error instanceof ApiError") && helperBlock.includes('"NETWORK_ERROR"'),
+      "isNetworkFailure must treat only ApiError NETWORK_ERROR as a connection failure"
+    );
+    assert.ok(
+      helperBlock.includes(".status > 0"),
+      "isNetworkFailure must treat any HTTP status > 0 as a real server answer"
+    );
+
+    // create re-throws real API answers (validation 400, conflict 409 ...) to the form
+    const createBlock = customerApiContent.slice(
+      customerApiContent.indexOf("create: async (body: CustomerCreateInput)"),
+      customerApiContent.indexOf("update: async (id: string")
+    );
+    assert.ok(
+      createBlock.includes("if (!isNetworkFailure(onlineError))") &&
+        createBlock.includes("throw onlineError"),
+      "customerApi.create must re-throw real API errors instead of queueing them offline"
     );
   });
 
@@ -52,8 +69,8 @@ test("Customer Duplicate Phone Validation and Error Handling", async (t) => {
     );
     const updateBlock = customerApiContent.slice(customerApiContent.indexOf("update: async (id: string"));
     assert.ok(
-      updateBlock.includes("onlineError instanceof ApiError") &&
-      updateBlock.includes("(onlineError as any).status > 0"),
+      updateBlock.includes("if (!isNetworkFailure(onlineError))") &&
+        updateBlock.includes("throw onlineError"),
       "customerApi.update must re-throw online ApiError without falling back to offline queue"
     );
   });

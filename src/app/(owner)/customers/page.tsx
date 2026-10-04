@@ -26,6 +26,11 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { customerApi } from "@/features/customers/customer-api";
 import type { Customer, CustomerTag } from "@/features/customers/types";
 import { fetchBranches } from "@/lib/api/branch";
+import {
+  readCachedBranches,
+  saveCachedBranches,
+} from "@/features/customers/customer-offline-cache";
+import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
 
 export default function CustomersPage() {
   const router = useRouter();
@@ -87,13 +92,22 @@ export default function CustomersPage() {
   const loadBranches = useCallback(async () => {
     try {
       const result = await fetchBranches({ limit: 100, isActive: true });
-      setBranches(
-        result.branches.map((branch) => ({
-          id: branch.id,
-          name: branch.name || "Unnamed branch",
-        })),
-      );
+      const list = result.branches.map((branch) => ({
+        id: branch.id,
+        name: branch.name || "Unnamed branch",
+      }));
+      setBranches(list);
+      // Remember the branch list so the dropdown still works offline.
+      void saveCachedBranches(list);
     } catch (e: any) {
+      // Offline / server down: use the last branch list saved on this device.
+      const cached = await readCachedBranches();
+      if (cached && cached.length > 0) {
+        setBranches(cached);
+        return;
+      }
+      // Offline and nothing saved yet: stay quiet (no error toast).
+      if (isNetworkFailure(e)) return;
       toast.error(e?.message || "Failed to load branches.");
     }
   }, []);
@@ -171,43 +185,20 @@ export default function CustomersPage() {
           branchId: targetBranchId,
         });
 
-        // Tag management
-        if (form.tag) {
-          const currentTagName = editingCustomer.tagAssignments[0]?.tag.name;
-          if (currentTagName !== form.tag) {
-            for (const a of editingCustomer.tagAssignments) {
-              await customerApi.removeTag(editingCustomer.id, a.tag.id);
-            }
-            const matchingTag = availableTags.find(
-              (t) => t.name?.toLowerCase() === form.tag.toLowerCase(),
-            );
-            if (matchingTag) {
-              await customerApi.addTag(editingCustomer.id, { tagId: matchingTag.id });
-            }
-          }
-        } else if (editingCustomer.tagAssignments.length > 0) {
-          for (const a of editingCustomer.tagAssignments) {
-            await customerApi.removeTag(editingCustomer.id, a.tag.id);
-          }
-        }
+        // Tag management (works online and offline; "" removes the tag)
+        await customerApi.setTag(editingCustomer, form.tag, availableTags);
 
         toast.success("Customer profile updated successfully.");
       } else {
-        const created = await customerApi.create({
+        // The tag is passed into create(): it is saved with the customer
+        // online, or queued together with the customer when offline.
+        await customerApi.create({
           fullName,
           phone,
           cnic: cnic || null,
           branchId: targetBranchId,
+          tagName: form.tag || null,
         });
-
-        if (form.tag) {
-          const matchingTag = availableTags.find(
-            (t) => t.name?.toLowerCase() === form.tag.toLowerCase(),
-          );
-          if (matchingTag) {
-            await customerApi.addTag(created.id, { tagId: matchingTag.id });
-          }
-        }
 
         toast.success("New customer created successfully.");
       }
@@ -267,17 +258,7 @@ export default function CustomersPage() {
       return;
     }
     try {
-      for (const a of customer.tagAssignments) {
-        await customerApi.removeTag(customer.id, a.tag.id);
-      }
-      if (nextTagName) {
-        const matchingTag = availableTags.find(
-          (t) => t.name?.toLowerCase() === nextTagName.toLowerCase(),
-        );
-        if (matchingTag) {
-          await customerApi.addTag(customer.id, { tagId: matchingTag.id });
-        }
-      }
+      await customerApi.setTag(customer, nextTagName, availableTags);
       toast.success("Customer tag updated.");
       await loadCustomers();
     } catch (e: any) {

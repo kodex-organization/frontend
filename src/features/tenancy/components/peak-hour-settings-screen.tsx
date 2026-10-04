@@ -5,6 +5,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 
 import { ApiError } from "@/lib/api/client";
+import { isNetworkFailure, loadWithOfflineSnapshot } from "@/lib/sync/offline-reference-cache";
+import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getAssignedBranches, type AssignedBranch } from "../branch-switching";
 import {
@@ -49,6 +51,7 @@ export function PeakHourSettingsScreen() {
   const [rules, setRules] = useState<PeakHourRule[]>([]);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [rulesError, setRulesError] = useState<string | null>(null);
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
   const [draft, setDraft] = useState<PeakHourRuleDraft>(emptyPeakHourRuleDraft);
   const [validationErrors, setValidationErrors] =
     useState<PeakHourValidationErrors>({});
@@ -65,11 +68,18 @@ export function PeakHourSettingsScreen() {
   const loadBranches = useCallback(async () => {
     setBranchesLoading(true);
     try {
-      const assigned = await getAssignedBranches();
+      const { data: assigned } = await loadWithOfflineSnapshot(
+        `assigned-branches:${user?.id ?? ""}`,
+        () => getAssignedBranches(),
+      );
       setBranches(assigned);
       setBranchesError(null);
     } catch (error) {
-      setBranchesError(errorMessage(error, "Could not load branches."));
+      setBranchesError(
+        isNetworkFailure(error)
+          ? "You are offline. Branch details will appear after the first online visit."
+          : errorMessage(error, "Could not load branches."),
+      );
     } finally {
       setBranchesLoading(false);
     }
@@ -83,9 +93,18 @@ export function PeakHourSettingsScreen() {
     setRulesLoading(true);
     setRulesError(null);
     try {
-      setRules(await getPeakHourRules(branchId));
+      const { data, savedAt } = await loadWithOfflineSnapshot(
+        `peak-rules:${branchId}`,
+        () => getPeakHourRules(branchId),
+      );
+      setRules(data);
+      setSnapshotAt(savedAt);
     } catch (error) {
-      setRulesError(errorMessage(error, "Could not load peak-hour rules."));
+      setRulesError(
+        isNetworkFailure(error)
+          ? "You are offline and no saved peak-hour rules exist on this device yet. Open this page once while online."
+          : errorMessage(error, "Could not load peak-hour rules."),
+      );
     } finally {
       setRulesLoading(false);
     }
@@ -190,6 +209,8 @@ export function PeakHourSettingsScreen() {
           Timezone: {selectedBranch.timezone ?? "Not configured"}
         </p>
       ) : null}
+
+      {snapshotAt ? <div className="mt-5"><OfflineSnapshotNotice savedAt={snapshotAt} /></div> : null}
 
       {branchesError ? (
         <div className="mt-5 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950">
