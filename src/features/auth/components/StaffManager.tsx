@@ -35,12 +35,43 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { fetchBranches } from "@/lib/api/branch";
 import type { BranchItem } from "@/types/branch";
 import { toast } from "@/lib/toast";
+import {
+  cacheScopedJson,
+  isNetworkFailure,
+  readScopedJson,
+} from "@/lib/sync/offline-reference-cache";
+
+/**
+ * Offline copy of the staff list (SRS 3.1 / 3.13). Staff *changes* (create, role,
+ * PIN, password, deactivate) stay online-only: they are security operations that the
+ * server must hash, enforce and audit (SRS 3.12, 5.3), so we never queue credentials
+ * on the device. Only the last server list is kept for reading.
+ */
+function filterSavedStaff(
+  list: DetailedStaffMember[],
+  filters: { search: string; role: string; status: string },
+): DetailedStaffMember[] {
+  // Same rules as the server's listStaff (auth/service.ts).
+  const term = filters.search.trim().toLowerCase();
+  return list.filter((member) => {
+    if (filters.status === "active" && !member.isActive) return false;
+    if (filters.status === "inactive" && member.isActive) return false;
+    if (filters.role !== "ALL" && !member.roles.includes(filters.role)) return false;
+    if (!term) return true;
+    return [member.fullName, member.email, member.phone].some((value) =>
+      (value ?? "").toLowerCase().includes(term),
+    );
+  });
+}
 
 export function StaffManager() {
   const { user } = useAuth();
   const [staff, setStaff] = useState<DetailedStaffMember[]>([]);
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // True while the list comes from the saved copy because the server is unreachable.
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -90,8 +121,35 @@ export function StaffManager() {
       ]);
       setStaff(staffData);
       setBranches(branchData.branches);
+      setOfflineMode(false);
+      setSavedAt(null);
+      // Keep the last full (unfiltered) server list for offline use.
+      if (!search.trim() && roleFilter === "ALL" && statusFilter === "all") {
+        void cacheScopedJson<DetailedStaffMember[]>(
+          `staff-list:${isOwner ? "all" : branchFilter}`,
+          staffData,
+        );
+      }
     } catch (err: any) {
-      toast.error(err.message || "Failed to load staff list");
+      if (isNetworkFailure(err)) {
+        // Offline / server unreachable: show the last list saved while online.
+        const saved = await readScopedJson<DetailedStaffMember[]>(
+          `staff-list:${isOwner ? "all" : branchFilter}`,
+        );
+        setOfflineMode(true);
+        setSavedAt(saved?.savedAt ?? null);
+        setStaff(
+          saved
+            ? filterSavedStaff(saved.data, {
+                search,
+                role: roleFilter,
+                status: statusFilter,
+              })
+            : [],
+        );
+      } else {
+        toast.error(err.message || "Failed to load staff list");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -99,6 +157,15 @@ export function StaffManager() {
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // Connection is back: replace the saved copy with the real list.
+  useEffect(() => {
+    const onBackOnline = () => {
+      void loadData();
+    };
+    window.addEventListener("online", onBackOnline);
+    return () => window.removeEventListener("online", onBackOnline);
   }, [loadData]);
 
   const handleOpenEdit = (member: DetailedStaffMember) => {
@@ -229,12 +296,35 @@ export function StaffManager() {
           </Button>
           <Button
             onClick={() => setShowAddModal(true)}
+            disabled={offlineMode}
+            title={offlineMode ? "Needs an internet connection" : undefined}
             className="w-auto px-4 py-2 gap-1.5 text-xs bg-slate-900 hover:bg-slate-800 text-white"
           >
             <Plus className="h-4 w-4" /> Add Staff Member
           </Button>
         </div>
       </div>
+
+      {offlineMode && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800"
+        >
+          {savedAt ? (
+            <>
+              You are offline. Showing the staff list saved on{" "}
+              <span className="font-semibold">{new Date(savedAt).toLocaleString()}</span>.
+              It refreshes automatically when the connection returns.
+            </>
+          ) : (
+            <>
+              You are offline and the staff list was never saved on this device. Open this page
+              once while online, then it will be available offline.
+            </>
+          )}{" "}
+          Adding or changing staff needs a connection.
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-3 p-4 bg-white border border-slate-200 rounded-2xl shadow-xs">
@@ -364,7 +454,8 @@ export function StaffManager() {
                             <>
                               <button
                                 onClick={() => handleOpenEdit(member)}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                disabled={offlineMode}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 title="Edit Profile & Role"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
@@ -374,7 +465,8 @@ export function StaffManager() {
                                   setPasswordResetStaff(member);
                                   setNewPassword("");
                                 }}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                disabled={offlineMode}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 title="Reset Password"
                               >
                                 <Lock className="h-3.5 w-3.5" />
@@ -384,7 +476,8 @@ export function StaffManager() {
                                   setPinResetStaff(member);
                                   setNewPin("");
                                 }}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                disabled={offlineMode}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 title="Reset Cashier PIN"
                               >
                                 <KeyRound className="h-3.5 w-3.5" />
@@ -392,7 +485,8 @@ export function StaffManager() {
                               {!isSelf && (
                                 <button
                                   onClick={() => setStaffToDeactivate(member)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  disabled={offlineMode}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                   title="Deactivate Staff Member"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />

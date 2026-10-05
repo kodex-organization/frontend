@@ -9,6 +9,8 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { FeedbackModal } from "@/components/ui/FeedbackModal";
 import { FormField, Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/client";
+import { isNetworkFailure, loadWithOfflineSnapshot } from "@/lib/sync/offline-reference-cache";
+import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 import { formatDateTime, toDateTimeInput } from "@/features/platform-admin/format";
 import {
   getAssignedBranches,
@@ -48,6 +50,7 @@ export function SupportAccessScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<TenantImpersonationConsent | null>(null);
   const [revokeReason, setRevokeReason] = useState("Support access is no longer required");
   const [feedbackModal, setFeedbackModal] = useState<{ type: "success" | "warning" | "error"; title: string; message: string } | null>(null);
@@ -56,15 +59,21 @@ export function SupportAccessScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [consentItems, assignedBranches] = await Promise.all([
-        listTenantConsents(),
-        getAssignedBranches(),
-      ]);
-      setConsents(consentItems);
-      setBranches(assignedBranches);
+      const { data: loaded, savedAt } = await loadWithOfflineSnapshot("support-access:state", async () => {
+        const [consentItems, assignedBranches] = await Promise.all([
+          listTenantConsents(),
+          getAssignedBranches(),
+        ]);
+        return { consentItems, assignedBranches };
+      });
+      setConsents(loaded.consentItems);
+      setBranches(loaded.assignedBranches);
+      setSnapshotAt(savedAt);
     } catch (requestError) {
       setError(
-        requestError instanceof ApiError
+        isNetworkFailure(requestError)
+          ? "You are offline. Support consent is recorded on the server, so this page needs an internet connection the first time."
+          : requestError instanceof ApiError
           ? requestError.message
           : "Could not load support access settings.",
       );
@@ -188,6 +197,7 @@ export function SupportAccessScreen() {
         </p>
       </header>
 
+      {snapshotAt && <OfflineSnapshotNotice savedAt={snapshotAt} note="Granting or revoking consent needs an internet connection." />}
       {error ? <Alert variant="error">{error}</Alert> : null}
       {feedback ? <Alert variant="success">{feedback}</Alert> : null}
 

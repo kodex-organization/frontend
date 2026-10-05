@@ -6,6 +6,11 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { tokenStorage } from "@/lib/auth/session";
 import { useNotifications } from "@/features/notifications/context";
 import { reScopeOfflineData } from "@/lib/sync/offline-db";
+import {
+  cacheScopedJson,
+  isNetworkFailure,
+  readScopedJson,
+} from "@/lib/sync/offline-reference-cache";
 import { toast } from "@/lib/toast";
 import {
   ASSIGNED_BRANCHES_CHANGED_EVENT,
@@ -41,13 +46,24 @@ export function GlobalBranchSelector({
       if (version !== loadVersion.current) return;
       setBranches(assigned);
       setError(null);
-    } catch {
-      if (version === loadVersion.current)
+      void cacheScopedJson<AssignedBranch[]>(`assigned-branches:${user?.id ?? ""}`, assigned);
+    } catch (cause) {
+      if (version !== loadVersion.current) return;
+      if (isNetworkFailure(cause)) {
+        // Offline: show the last known branch list instead of an error.
+        const saved = await readScopedJson<AssignedBranch[]>(
+          `assigned-branches:${user?.id ?? ""}`,
+        );
+        if (version !== loadVersion.current) return;
+        if (saved) setBranches(saved.data);
+        setError(null);
+      } else {
         setError("Could not load branches. Retry");
+      }
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     void load();
@@ -82,11 +98,18 @@ export function GlobalBranchSelector({
         );
       else toast.success("Active branch changed across the application.");
     } catch (cause) {
-      toast.error(
-        cause instanceof Error
-          ? cause.message
-          : "Could not switch branch. Your active branch is unchanged."
-      );
+      if (isNetworkFailure(cause)) {
+        // The new branch session is issued by the server, so it cannot be done offline.
+        toast.warning(
+          "You are offline. Switching branch needs an internet connection. You can keep working in your current branch and switch again once the connection returns."
+        );
+      } else {
+        toast.error(
+          cause instanceof Error
+            ? cause.message
+            : "Could not switch branch. Your active branch is unchanged."
+        );
+      }
     } finally {
       inFlight.current = false;
       setSwitching(false);

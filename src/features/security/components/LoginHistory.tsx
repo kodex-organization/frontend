@@ -6,20 +6,26 @@ import {
   type LoginHistoryItem,
 } from "../api";
 import { toast } from "@/lib/toast";
+import { isNetworkFailure, loadWithOfflineSnapshot } from "@/lib/sync/offline-reference-cache";
+import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 
 const ITEMS_PER_PAGE = 10;
 
 export default function LoginHistory() {
   const [loginHistory, setLoginHistory] = useState<LoginHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
 
   const loadHistory = async () => {
     try {
-      const data = await getLoginHistory();
+      const { data, savedAt } = await loadWithOfflineSnapshot("security:login-history", () => getLoginHistory());
       setLoginHistory(data);
+      setSnapshotAt(savedAt);
     } catch (error: any) {
+      // Offline with nothing saved yet: the empty table below is enough, no error toast.
+      if (isNetworkFailure(error)) return;
       toast.error(error.message || "Failed to load login history.");
     } finally {
       setLoading(false);
@@ -62,6 +68,7 @@ const paginatedHistory = loginHistory.slice(
         <h2 className="mb-8 text-2xl font-semibold text-left text-slate-900 border-b-2 border-gray-200 pb-2 ">
             Login History
         </h2>
+      {snapshotAt && <OfflineSnapshotNotice savedAt={snapshotAt} note="This list refreshes automatically when the connection returns." />}
       <div className="overflow-x-auto">
           <table className="min-w-full overflow-hidden rounded-xl">
          {/* <thead className="bg-gray-200 border-b border-gray-400"> */}

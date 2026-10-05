@@ -15,6 +15,10 @@ import {
 } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useConnectionStatus } from "@/lib/connectivity/online-status";
+import { getPendingSyncCount } from "@/lib/sync/offline-db";
+import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
+import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 import {
   fetchAging,
   fetchCashReconciliation,
@@ -35,6 +39,14 @@ import {
   correctSealedReport,
 } from "../api";
 import type { ReportTab, SealedReport, ScheduledReport } from "../types";
+import {
+  describeSavedFilters,
+  readReportSnapshot,
+  readSchedulesSnapshot,
+  saveReportSnapshot,
+  saveSchedulesSnapshot,
+} from "../reports-offline";
+import { prefetchReports } from "../reports-prefetch";
 
 type ReportData = Record<string, unknown> | unknown[] | null;
 
@@ -224,6 +236,10 @@ export default function ReportingWorkspace() {
   const [data, setData] = useState<ReportData>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<{ savedAt: string; scopeNote: string } | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
+  const connection = useConnectionStatus();
+  const serverUnavailable = connection === "offline" || snapshot !== null;
   const [sealing, setSealing] = useState(false);
   const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
@@ -288,6 +304,7 @@ export default function ReportingWorkspace() {
   const loadReport = async () => {
     if (tab === "schedules") return;
     const requestVersionAtStart = ++requestVersion.current;
+    const params = { date, from: fromDate, to: toDate };
     setLoading(true);
     setError(null);
     if (branchId && !uuidPattern.test(branchId)) {
@@ -365,8 +382,35 @@ export default function ReportingWorkspace() {
         );
       }
       setData(result as ReportData);
+      if (requestVersionAtStart === requestVersion.current) setSnapshot(null);
+      void saveReportSnapshot(user?.id ?? "", branchId, tab, params, result);
     } catch (cause) {
       if (requestVersionAtStart !== requestVersion.current) return;
+      if (isNetworkFailure(cause)) {
+        // Offline: show the last saved report, never a fake zero.
+        const saved = await readReportSnapshot(user?.id ?? "", branchId, tab, params);
+        if (requestVersionAtStart !== requestVersion.current) return;
+        if (saved) {
+          setData(saved.data as ReportData);
+          setSnapshot({
+            savedAt: saved.savedAt,
+            scopeNote: saved.exact ? "" : describeSavedFilters(tab, saved.params),
+          });
+          try {
+            setPendingCount(await getPendingSyncCount());
+          } catch {
+            setPendingCount(0);
+          }
+          return;
+        }
+        setSnapshot(null);
+        setData(null);
+        setError(
+          "You are offline and no saved copy of this report exists on this device yet. Open this report once while online, then it will be available offline.",
+        );
+        return;
+      }
+      setSnapshot(null);
       setError(
         cause instanceof ApiError
           ? cause.message
@@ -402,7 +446,28 @@ export default function ReportingWorkspace() {
     try {
       const result = await fetchSchedules();
       setSchedules(result);
+      setSnapshot(null);
+      void saveSchedulesSnapshot(user?.id ?? "", result);
     } catch (cause) {
+      if (isNetworkFailure(cause)) {
+        const saved = await readSchedulesSnapshot(user?.id ?? "");
+        if (saved) {
+          setSchedules(saved.data);
+          setSnapshot({ savedAt: saved.savedAt, scopeNote: "" });
+          try {
+            setPendingCount(await getPendingSyncCount());
+          } catch {
+            setPendingCount(0);
+          }
+        } else {
+          setSnapshot(null);
+          setError(
+            "You are offline and no saved schedules exist on this device yet. Open this tab once while online.",
+          );
+        }
+        return;
+      }
+      setSnapshot(null);
       setError(
         cause instanceof ApiError ? cause.message : "Unable to load schedules.",
       );
@@ -417,6 +482,39 @@ export default function ReportingWorkspace() {
     setData(null);
     void loadSchedules();
   }, [tab]);
+
+  useEffect(() => {
+    if (connection !== "online" || !snapshot) return;
+    if (tab === "schedules") void loadSchedules();
+    else void loadReport();
+  }, [connection]);
+
+  useEffect(() => {
+    if (connection !== "online" || loading || error || snapshot || !user?.id) return;
+    if (branchId && !uuidPattern.test(branchId)) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void prefetchReports({
+        userId: user.id,
+        branchId,
+        tabs: visibleTabs.map((item) => item.id),
+        skip: tab,
+        isManagement,
+        date,
+        cashCount: Number(cashCount),
+        openingCash: openingCashInput ? Number(openingCashInput) : undefined,
+        rangeFor: (target) => {
+          const preset = DEFAULT_PRESET_BY_TAB[target];
+          return preset ? getPresetRange(preset) : { from: fromDate, to: toDate };
+        },
+        isCancelled: () => cancelled,
+      });
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [connection, loading, error, snapshot, user?.id, branchId, date]);
 
   const createSchedule = async () => {
     if (!newScheduleEmail.trim()) return;
@@ -654,6 +752,18 @@ export default function ReportingWorkspace() {
       ? (data as ShiftReportRow)
       : null;
 
+  const snapshotNote = [
+    snapshot?.scopeNote,
+    pendingCount > 0
+      ? `${pendingCount} change${pendingCount === 1 ? "" : "s"} saved on this device ${pendingCount === 1 ? "is" : "are"} not included until ${pendingCount === 1 ? "it syncs" : "they sync"}.`
+      : "",
+    tab === "schedules"
+      ? "Creating a schedule needs an internet connection."
+      : "Exports, sealing and corrections need an internet connection.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <main className="min-h-screen bg-slate-50/60 text-slate-900 pb-16">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -670,9 +780,15 @@ export default function ReportingWorkspace() {
               Daily closure, tender reconciliations, credit aging, and operational staff audit.
             </p>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 w-fit">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /> Live API Connected
-          </div>
+          {serverUnavailable ? (
+            <div className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 w-fit">
+              <span className="h-2 w-2 rounded-full bg-amber-500" /> Offline · saved data only
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 w-fit">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /> Live API Connected
+            </div>
+          )}
         </header>
 
         {/* Global Filter Bar */}
@@ -856,7 +972,8 @@ export default function ReportingWorkspace() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => void download("pdf")}
-                    disabled={exporting !== null || exportingReportId !== null}
+                    disabled={exporting !== null || exportingReportId !== null || serverUnavailable}
+                    title={serverUnavailable ? "Exports are created by the server and need an internet connection" : undefined}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
                   >
                     <Download size={14} />{" "}
@@ -864,7 +981,8 @@ export default function ReportingWorkspace() {
                   </button>
                   <button
                     onClick={() => void download("excel")}
-                    disabled={exporting !== null || exportingReportId !== null}
+                    disabled={exporting !== null || exportingReportId !== null || serverUnavailable}
+                    title={serverUnavailable ? "Exports are created by the server and need an internet connection" : undefined}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
                   >
                     <FileText size={14} />{" "}
@@ -873,6 +991,12 @@ export default function ReportingWorkspace() {
                 </div>
               )}
             </div>
+
+            {snapshot && !loading && (
+              <div className="mb-5">
+                <OfflineSnapshotNotice savedAt={snapshot.savedAt} note={snapshotNote} />
+              </div>
+            )}
 
             {loading && (
               <div className="grid gap-4 min-[900px]:grid-cols-2 2xl:grid-cols-3">
@@ -982,7 +1106,7 @@ export default function ReportingWorkspace() {
                     </div>
                     {!zReport?.isSealed && isManagement && (
                       <button
-                        disabled={sealing}
+                        disabled={sealing || serverUnavailable}
                         onClick={() => void seal()}
                         className="mt-6 w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
                       >
@@ -998,7 +1122,8 @@ export default function ReportingWorkspace() {
                           setCorrectionAmount("");
                           setCorrectionReason("");
                         }}
-                        className="mt-4 w-full flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800 shadow-sm transition hover:bg-amber-100"
+                        disabled={serverUnavailable}
+                        className="mt-4 w-full flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Edit3 size={15} /> Add Report Correction
                       </button>
@@ -1337,7 +1462,7 @@ export default function ReportingWorkspace() {
                                 e.stopPropagation();
                                 void downloadSingleReport(report, "pdf");
                               }}
-                              disabled={exporting !== null || exportingReportId !== null}
+                              disabled={exporting !== null || exportingReportId !== null || serverUnavailable}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 hover:text-indigo-600 disabled:opacity-50"
                               title={`Download PDF for ${reportDateFormatted}`}
                             >
@@ -1349,7 +1474,7 @@ export default function ReportingWorkspace() {
                                 e.stopPropagation();
                                 void downloadSingleReport(report, "excel");
                               }}
-                              disabled={exporting !== null || exportingReportId !== null}
+                              disabled={exporting !== null || exportingReportId !== null || serverUnavailable}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 hover:text-indigo-600 disabled:opacity-50"
                               title={`Download Excel for ${reportDateFormatted}`}
                             >
@@ -1368,7 +1493,8 @@ export default function ReportingWorkspace() {
                                   setCorrectionAmount("");
                                   setCorrectionReason("");
                                 }}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 shadow-xs transition hover:bg-amber-100 hover:border-amber-400"
+                                disabled={serverUnavailable}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 shadow-xs transition hover:bg-amber-100 hover:border-amber-400 disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Add a subsequent correction to this report"
                               >
                                 <Edit3 size={13} /> Add Correction
@@ -1610,7 +1736,7 @@ export default function ReportingWorkspace() {
                     </div>
                   </div>
                   <button
-                    disabled={creatingSchedule}
+                    disabled={creatingSchedule || serverUnavailable}
                     onClick={() => void createSchedule()}
                     className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
                   >

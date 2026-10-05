@@ -1,10 +1,17 @@
 "use client";
 
 import { BarChart3, Filter, LoaderCircle, RefreshCw } from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getAssignedBranches, type AssignedBranch } from "@/features/tenancy/branch-switching";
 import { ApiError } from "@/lib/api/client";
+import { useAuth } from "@/lib/auth/auth-context";
+import { useConnectionStatus } from "@/lib/connectivity/online-status";
+import {
+  cacheScopedJson,
+  isNetworkFailure,
+  readScopedJson,
+} from "@/lib/sync/offline-reference-cache";
 import {
   formatDuration,
   getCrossBranchReport,
@@ -27,6 +34,25 @@ function initialDateRange() {
     to: localDateInput(today),
   };
 }
+
+/**
+ * SRS 3.10 / 4.1: when the cloud cannot be reached, the last successfully
+ * synchronized data is shown (clearly marked as saved data) instead of an error.
+ * 502/503/504 are what a reverse proxy returns when the backend is unreachable.
+ */
+function isServerUnreachable(error: unknown) {
+  return (
+    isNetworkFailure(error) ||
+    (error instanceof ApiError && [502, 503, 504].includes(error.status))
+  );
+}
+
+type SavedReport = {
+  filters: CrossBranchReportFilters;
+  report: CrossBranchReport;
+};
+
+type StaleInfo = { savedAt: string; filters: CrossBranchReportFilters };
 
 function formatMoney(value: number, currency?: string) {
   if (currency) {
@@ -163,6 +189,12 @@ export function CrossBranchReportView({
 }
 
 export function CrossBranchReportsScreen() {
+  const { user } = useAuth();
+  const connection = useConnectionStatus();
+  // A ref keeps the cache key current without changing loadReport/loadBranches
+  // identity (which would re-trigger the fetch effect).
+  const userIdRef = useRef(user?.id ?? "");
+  userIdRef.current = user?.id ?? "";
   const initialDates = useMemo(initialDateRange, []);
   const [from, setFrom] = useState(initialDates.from);
   const [to, setTo] = useState(initialDates.to);
@@ -174,44 +206,90 @@ export function CrossBranchReportsScreen() {
   const [reportLoading, setReportLoading] = useState(true);
   const [reportError, setReportError] = useState<string | null>(null);
   const [filterError, setFilterError] = useState<string | null>(null);
+  const [stale, setStale] = useState<StaleInfo | null>(null);
   const [appliedFilters, setAppliedFilters] = useState<CrossBranchReportFilters>({
     ...initialDates,
     branchIds: [],
   });
 
+  const applyBranches = useCallback((assigned: AssignedBranch[]) => {
+    setBranches(assigned);
+    setSelectedBranchIds((current) =>
+      current.length > 0
+        ? current.filter((id) => assigned.some((branch) => branch.id === id))
+        : assigned.map((branch) => branch.id),
+    );
+  }, []);
+
   const loadBranches = useCallback(async () => {
     setBranchesLoading(true);
     try {
       const assigned = await getAssignedBranches();
-      setBranches(assigned);
-      setSelectedBranchIds((current) =>
-        current.length > 0
-          ? current.filter((id) => assigned.some((branch) => branch.id === id))
-          : assigned.map((branch) => branch.id),
-      );
+      applyBranches(assigned);
       setBranchesError(null);
-    } catch (error) {
-      setBranchesError(
-        error instanceof ApiError
-          ? error.message
-          : "Branch filters could not be loaded.",
+      // Same cache key as the global branch selector, so both stay in step.
+      void cacheScopedJson<AssignedBranch[]>(
+        `assigned-branches:${userIdRef.current}`,
+        assigned,
       );
+    } catch (error) {
+      if (isServerUnreachable(error)) {
+        // Offline: reuse the last known branch list for the filters.
+        const saved = await readScopedJson<AssignedBranch[]>(
+          `assigned-branches:${userIdRef.current}`,
+        );
+        if (saved) {
+          applyBranches(saved.data);
+          setBranchesError(null);
+        } else {
+          setBranchesError(
+            "You are offline and the branch list has not been saved on this device yet.",
+          );
+        }
+      } else {
+        setBranchesError(
+          error instanceof ApiError
+            ? error.message
+            : "Branch filters could not be loaded.",
+        );
+      }
     } finally {
       setBranchesLoading(false);
     }
-  }, []);
+  }, [applyBranches]);
 
   const loadReport = useCallback(async (filters: CrossBranchReportFilters) => {
     setReportLoading(true);
     setReportError(null);
     try {
-      setReport(await getCrossBranchReport(filters));
-    } catch (error) {
-      setReportError(
-        error instanceof ApiError
-          ? error.message
-          : "The cross-branch report could not be loaded.",
+      const fresh = await getCrossBranchReport(filters);
+      setReport(fresh);
+      setStale(null);
+      // Keep the latest successful answer so it can be shown while offline.
+      void cacheScopedJson<SavedReport>(
+        `cross-branch-report:${userIdRef.current}`,
+        { filters, report: fresh },
       );
+    } catch (error) {
+      if (isServerUnreachable(error)) {
+        const saved = await readScopedJson<SavedReport>(
+          `cross-branch-report:${userIdRef.current}`,
+        );
+        if (saved) {
+          setReport(saved.data.report);
+          setStale({ savedAt: saved.savedAt, filters: saved.data.filters });
+        } else {
+          setReportError(
+            "You are offline and no saved report exists on this device yet. Open this page once while online and it will be available offline.",
+          );
+        }
+      } else {
+        setReportError(
+          error instanceof ApiError
+            ? error.message
+            : "The cross-branch report could not be loaded.",
+        );
+      }
     } finally {
       setReportLoading(false);
     }
@@ -221,6 +299,14 @@ export function CrossBranchReportsScreen() {
     void loadBranches();
     void loadReport(appliedFilters);
   }, [appliedFilters, loadBranches, loadReport]);
+
+  // When the connection returns, replace the saved report with fresh data.
+  useEffect(() => {
+    if (connection === "online" && stale) {
+      void loadBranches();
+      void loadReport(appliedFilters);
+    }
+  }, [connection, stale, appliedFilters, loadBranches, loadReport]);
 
   const applyFilters = () => {
     if (!from || !to || from > to) {
@@ -348,6 +434,27 @@ export function CrossBranchReportsScreen() {
           </div>
         ) : null}
       </div>
+
+      {stale ? (
+        <div
+          role="status"
+          className="mt-5 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          You are offline. Showing the last saved report for{" "}
+          <span className="font-semibold">
+            {stale.filters.from} to {stale.filters.to}
+          </span>
+          {stale.filters.branchIds.length > 0
+            ? ` (${stale.filters.branchIds.length} branch${stale.filters.branchIds.length === 1 ? "" : "es"})`
+            : ""}
+          , last synchronized on{" "}
+          <span className="font-semibold">
+            {new Date(stale.savedAt).toLocaleString()}
+          </span>
+          . Changing the dates or branches needs a connection. This page
+          refreshes automatically when the connection returns.
+        </div>
+      ) : null}
 
       {reportError ? (
         <div

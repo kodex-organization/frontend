@@ -10,6 +10,22 @@ import { Alert } from "@/components/ui/alert";
 import { Activity, CreditCard, Users, RefreshCw, AlertTriangle, ChevronRight, TrendingUp } from "lucide-react";
 import { FullPageLoader } from "@/components/ui/loader";
 import { toast } from "@/lib/toast";
+import {
+  cacheScopedJson,
+  isNetworkFailure,
+  readScopedJson,
+} from "@/lib/sync/offline-reference-cache";
+
+interface DashboardSnapshot {
+  liveTables: LiveTableSession[];
+  kpis: RevenueKPIs | null;
+  udhaar: OutstandingUdhaar | null;
+  syncDevices: SyncDeviceStatus[];
+  revenueTrend: RevenueTrend | null;
+  heatmap: TableHeatmap | null;
+  anomalies: AnomalyItem[];
+  staffPerf: Record<string, number>;
+}
 
 export function DashboardView() {
   const { user } = useAuth();
@@ -18,6 +34,8 @@ export function DashboardView() {
   // States
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Set when the screen shows the last saved data because the server is unreachable.
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
   const selectedBranch = user?.branchId ?? "";
 
   // Data States
@@ -49,6 +67,10 @@ export function DashboardView() {
       setLiveTables(tablesData.sessions);
 
       if (isCashier) {
+        setSnapshotAt(null);
+        void cacheScopedJson<Partial<DashboardSnapshot>>(`dashboard:${branchId ?? "default"}`, {
+          liveTables: tablesData.sessions,
+        });
         if (!isSilent) setLoading(false);
         return;
       }
@@ -78,8 +100,46 @@ export function DashboardView() {
       setHeatmap(heatmapData);
       setAnomalies(anomaliesData);
       setStaffPerf(staffData.sessionsHandledByUser);
+      setSnapshotAt(null);
+      void cacheScopedJson<DashboardSnapshot>(`dashboard:${branchId ?? "default"}`, {
+        liveTables: tablesData.sessions,
+        kpis: kpisData,
+        udhaar: udhaarData,
+        syncDevices: syncData,
+        revenueTrend: trendData,
+        heatmap: heatmapData,
+        anomalies: anomaliesData,
+        staffPerf: staffData.sessionsHandledByUser,
+      });
     } catch (err: any) {
-      if (!isSilent) setError(err.message || "Failed to load dashboard metrics.");
+      if (!isSilent) {
+        if (isNetworkFailure(err)) {
+          // Offline: show the last data saved while online instead of an error page.
+          const snapshot = await readScopedJson<Partial<DashboardSnapshot>>(
+            `dashboard:${branchId ?? "default"}`,
+          );
+          if (snapshot) {
+            const saved = snapshot.data;
+            setLiveTables(saved.liveTables ?? []);
+            if (!isCashier) {
+              setKPIs(saved.kpis ?? null);
+              setUdhaar(saved.udhaar ?? null);
+              setSyncDevices(saved.syncDevices ?? []);
+              setRevenueTrend(saved.revenueTrend ?? null);
+              setHeatmap(saved.heatmap ?? null);
+              setAnomalies(saved.anomalies ?? []);
+              setStaffPerf(saved.staffPerf ?? {});
+            }
+            setSnapshotAt(snapshot.savedAt);
+            return;
+          }
+          setError(
+            "You are offline and no saved dashboard data exists on this device yet. Open the dashboard once while online, then it will be available offline.",
+          );
+          return;
+        }
+        setError(err.message || "Failed to load dashboard metrics.");
+      }
     } finally {
       if (!isSilent) setLoading(false);
     }
@@ -147,6 +207,14 @@ export function DashboardView() {
           <p className="text-sm text-slate-500">Overview of table play sessions on shift today.</p>
         </div>
 
+        {snapshotAt && (
+          <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+            You are offline. Showing data from the last successful sync at{" "}
+            <span className="font-semibold">{new Date(snapshotAt).toLocaleString()}</span>.
+            It will refresh automatically when the connection returns.
+          </div>
+        )}
+
         {liveTables.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 p-12 text-center">
             <Activity className="mx-auto h-12 w-12 text-slate-400" />
@@ -205,6 +273,14 @@ export function DashboardView() {
           </Button>
         </div>
       </div>
+
+      {snapshotAt && (
+        <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+          You are offline. Showing data from the last successful sync at{" "}
+          <span className="font-semibold">{new Date(snapshotAt).toLocaleString()}</span>.
+          It will refresh automatically when the connection returns.
+        </div>
+      )}
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

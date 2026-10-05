@@ -21,6 +21,8 @@ import {
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { fetchBranches } from "@/lib/api/branch";
 import type { BranchItem } from "@/types/branch";
+import { isNetworkFailure, loadWithOfflineSnapshot } from "@/lib/sync/offline-reference-cache";
+import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The request failed";
@@ -49,6 +51,7 @@ export default function CatalogPage() {
   const [tables, setTables] = useState<SnookerTable[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
 
   // ── add/edit form state ──────────────────────
   const [showForm, setShowForm] = useState(false);
@@ -74,7 +77,11 @@ export default function CatalogPage() {
   // ── fetch branches and tables (only if authorized) ─
   useEffect(() => {
     if (!isAuthorized) return;
-    void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches));
+    void loadWithOfflineSnapshot("catalog:branches", () => fetchBranches({ limit: 100 }))
+      .then(({ data }) => setBranches(data.branches))
+      .catch(() => {
+        // Offline and never loaded: the table list below still works, branch names fall back to "Unknown".
+      });
   }, [isAuthorized]);
 
   useEffect(() => {
@@ -86,10 +93,18 @@ export default function CatalogPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await getTables(branchId);
+      const { data, savedAt } = await loadWithOfflineSnapshot(
+        `catalog:tables:${branchId ?? "all"}`,
+        () => getTables(branchId),
+      );
       setTables(data);
+      setSnapshotAt(savedAt);
     } catch (err: unknown) {
-      setError(errorMessage(err));
+      setError(
+        isNetworkFailure(err)
+          ? "You are offline and no saved table list exists on this device yet. Open this page once while online."
+          : errorMessage(err),
+      );
     } finally {
       setLoading(false);
     }
@@ -309,11 +324,15 @@ export default function CatalogPage() {
         </div>
         <button
           onClick={handleOpenAdd}
-          className="rounded-md bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 cursor-pointer"
+          disabled={snapshotAt !== null}
+          title={snapshotAt !== null ? "Adding a table needs an internet connection" : undefined}
+          className="rounded-md bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
         >
           + Add Table
         </button>
       </div>
+
+      {snapshotAt && <div className="mb-4"><OfflineSnapshotNotice savedAt={snapshotAt} note="Adding or editing tables needs an internet connection." /></div>}
 
       {/* ── loading ── */}
       {loading && <p className="text-sm text-slate-400">Loading tables...</p>}

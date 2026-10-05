@@ -2,12 +2,7 @@
 
 import { useMemo, useState, useRef, useEffect, type FormEvent } from "react";
 import { useUdhaarLedger } from "@/features/udhaar/hooks/useUdhaarLedger";
-import {
-  recordSettlement,
-  getThresholds,
-  updateThresholds,
-  type UdhaarThresholdSettings,
-} from "@/features/udhaar/api/udhaarApi";
+import { type UdhaarThresholdSettings } from "@/features/udhaar/api/udhaarApi";
 import { useAuth } from "@/lib/auth/auth-context";
 import { toast } from "@/lib/toast";
 import {
@@ -64,6 +59,11 @@ export default function UdhaarPage() {
     aging,
     loading,
     error,
+    snapshotAt,
+    pendingCount,
+    recordLedgerSettlement,
+    loadThresholds,
+    saveThresholds,
     search,
     setSearch,
     status,
@@ -212,14 +212,17 @@ export default function UdhaarPage() {
     }
     try {
       setSettlementSubmitting(true);
-      await recordSettlement({
+      const result = await recordLedgerSettlement({
         customerId: settlementForm.customerId,
         amount,
         reason: settlementForm.reason || "Debt repayment / cash settlement",
       });
-      toast.success(`Settlement of PKR ${amount.toLocaleString()} recorded.`);
+      toast.success(
+        result.mode === "offline"
+          ? `Settlement of PKR ${amount.toLocaleString()} saved on this device. It will sync when the connection returns.`
+          : `Settlement of PKR ${amount.toLocaleString()} recorded.`,
+      );
       setShowSettlement(false);
-      await refresh();
     } catch (err: any) {
       toast.error(err.message || "Failed to record settlement");
     } finally {
@@ -229,7 +232,7 @@ export default function UdhaarPage() {
 
   const openThresholdsModal = async () => {
     try {
-      const current = await getThresholds();
+      const current = await loadThresholds();
       setThresholdsForm(current);
       setShowThresholds(true);
     } catch (err: any) {
@@ -241,7 +244,7 @@ export default function UdhaarPage() {
     e.preventDefault();
     try {
       setThresholdsSubmitting(true);
-      await updateThresholds(thresholdsForm);
+      await saveThresholds(thresholdsForm);
       toast.success("Credit thresholds updated successfully.");
       setShowThresholds(false);
     } catch (err: any) {
@@ -382,6 +385,28 @@ export default function UdhaarPage() {
     <main className="min-h-screen bg-slate-50/60 pb-16 text-slate-900 print:min-h-0 print:bg-white print:p-0 print:pb-0">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6 print:p-0 print:m-0 print:max-w-none">
         <div className="udhaar-non-printable space-y-6 print:hidden">
+          {snapshotAt && (
+            <div
+              role="status"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800"
+            >
+              You are offline. Showing the Udhaar ledger saved on{" "}
+              <span className="font-semibold">{new Date(snapshotAt).toLocaleString()}</span>.
+              It refreshes automatically when the connection returns.
+            </div>
+          )}
+
+          {pendingCount > 0 && (
+            <div
+              role="status"
+              className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-800"
+            >
+              <span className="font-semibold">{pendingCount}</span> Udhaar{" "}
+              {pendingCount === 1 ? "entry is" : "entries are"} saved on this device and waiting to sync.
+              Balances above already include {pendingCount === 1 ? "it" : "them"}.
+            </div>
+          )}
+
           {/* Page Header */}
           <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
             <div>

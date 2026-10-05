@@ -6,6 +6,8 @@ import { getDevices, revokeDevice, type Device } from "../api";
 import { getDeviceInfo } from "@/features/auth/index";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { toast } from "@/lib/toast";
+import { isNetworkFailure, loadWithOfflineSnapshot } from "@/lib/sync/offline-reference-cache";
+import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 
 const ITEMS_PER_PAGE = 6;
 
@@ -55,6 +57,7 @@ export default function DeviceTable() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pendingRevokeDevice, setPendingRevokeDevice] = useState<Device | null>(null);
   const [isRevoking, setIsRevoking] = useState(false);
@@ -62,9 +65,14 @@ export default function DeviceTable() {
   const loadDevices = async (): Promise<void> => {
     setError(null);
     try {
-      const data = await getDevices();
+      const { data, savedAt } = await loadWithOfflineSnapshot("security:devices", () => getDevices());
       setDevices(data);
+      setSnapshotAt(savedAt);
     } catch (error: any) {
+      if (isNetworkFailure(error)) {
+        setError("You are offline and no saved device list exists on this device yet. Open this page once while online.");
+        return;
+      }
       toast.error("Could not load devices. Please try again.");
       setError("Could not load devices. Please try again.");
     } finally {
@@ -156,6 +164,7 @@ export default function DeviceTable() {
 
   return (
     <div>
+    {snapshotAt && <OfflineSnapshotNotice savedAt={snapshotAt} note="Revoking a device needs an internet connection." />}
     <div className="grid gap-3 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
       {paginatedDevices.map((device) => (
         <DeviceCard
