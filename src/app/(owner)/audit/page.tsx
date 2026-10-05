@@ -26,7 +26,7 @@ import {
   readScopedJson,
 } from "@/lib/sync/offline-reference-cache";
 
-// Offline copy of the audit view 
+// Offline copy of the audit view
 const auditCacheName = (name: string) =>
   `audit:${tokenStorage.getAccessContext()?.userId ?? "anon"}:${name}`;
 

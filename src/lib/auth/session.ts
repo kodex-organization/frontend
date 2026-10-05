@@ -66,7 +66,7 @@ export const AUTH_STORAGE_KEYS = {
 export const AUTH_SESSION_CLEARED_EVENT = "cuecloud:session-cleared";
 export const AUTH_SESSION_REPLACED_EVENT = "cuecloud:session-replaced";
 
-function decodeAccessContext(accessToken: string): AccessContext | null {
+export function decodeAccessContext(accessToken: string): AccessContext | null {
   if (typeof window === "undefined") return null;
 
   const encodedPayload = accessToken.split(".")[1];

@@ -56,7 +56,7 @@ export default function CanteenPage() {
                 : "text-slate-500 hover:text-slate-800"
             }`}
           >
-            <Package className="w-4 h-4" /> Menu &amp; Products
+            <Package className="w-4 h-4" /> Menu & Products
           </button>
         </div>
       </div>

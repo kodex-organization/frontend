@@ -30,6 +30,11 @@ const connection = createConnectionStore({
 export const checkServerConnection = connection.check;
 export const getConnectionStatus = connection.getSnapshot;
 
+export function isAppOffline(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return !navigator.onLine || getConnectionStatus() === 'offline';
+}
+
 export function useConnectionStatus() {
   return useSyncExternalStore(connection.subscribe, connection.getSnapshot, () => 'checking' as const);
 }
@@ -37,3 +42,4 @@ export function useConnectionStatus() {
 export function useOnlineStatus() {
   return useConnectionStatus() === 'online';
 }
+

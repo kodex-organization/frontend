@@ -47,13 +47,7 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
       return;
     }
 
-    if (!isOnline) {
-      setError(
-        "Reconnect to load current billing data. Transactional billing actions are unavailable offline.",
-      );
-      setLoading(false);
-      return;
-    }
+    // When offline, invoiceService loads from offlineDB.cachedInvoices automatically
 
     setLoading(true);
     setError(null);
@@ -95,6 +89,24 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
 
   useEffect(() => {
     void fetchInvoices();
+  }, [fetchInvoices]);
+
+  useEffect(() => {
+    const handleEvents = () => {
+      void fetchInvoices();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("cuecloud:offline-queue-changed", handleEvents);
+      window.addEventListener("cuecloud:invoice-created", handleEvents);
+      window.addEventListener("cuecloud:invoice-voided", handleEvents);
+      window.addEventListener("cuecloud:payment-recorded", handleEvents);
+      return () => {
+        window.removeEventListener("cuecloud:offline-queue-changed", handleEvents);
+        window.removeEventListener("cuecloud:invoice-created", handleEvents);
+        window.removeEventListener("cuecloud:invoice-voided", handleEvents);
+        window.removeEventListener("cuecloud:payment-recorded", handleEvents);
+      };
+    }
   }, [fetchInvoices]);
 
   return {

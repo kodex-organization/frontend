@@ -151,7 +151,7 @@ export default function BillingWorkspace({
                 isOnline ? "bg-emerald-500" : "bg-amber-500"
               }`}
             />
-            {isOnline ? "Connected" : "Offline · actions disabled"}
+            {isOnline ? "Connected" : "Offline mode · local actions enabled"}
           </span>
         </div>
       </header>

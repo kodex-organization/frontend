@@ -19,6 +19,7 @@ export function FloorViewDashboard() {
   const { user } = useAuth();
   const selectedBranchId = user?.branchId ?? "";
   const [startSessionModalOpen, setStartSessionModalOpen] = useState(false);
+  const [selectedTableIdForStart, setSelectedTableIdForStart] = useState<string | undefined>(undefined);
   const [pendingEndSessionId, setPendingEndSessionId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -36,6 +37,7 @@ export function FloorViewDashboard() {
     markAllAsRead,
     dismissOvertimeAlert,
     updateSessionOptimistically,
+    startSessionOptimistically,
   } = useFloorView(selectedBranchId || undefined);
 
   const stats: Stats = {
@@ -139,7 +141,10 @@ export function FloorViewDashboard() {
         <div className="flex items-center gap-3 self-end sm:self-auto bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm">
           <button
             type="button"
-            onClick={() => setStartSessionModalOpen(true)}
+            onClick={() => {
+              setSelectedTableIdForStart(undefined);
+              setStartSessionModalOpen(true);
+            }}
             className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3.5 py-2 rounded-md shadow-sm transition-colors"
           >
             + Start Session
@@ -225,7 +230,10 @@ export function FloorViewDashboard() {
             <FloorCard
               key={table.tableId}
               table={table}
-              onStartSession={() => setStartSessionModalOpen(true)}
+              onStartSession={(tableId) => {
+                setSelectedTableIdForStart(tableId);
+                setStartSessionModalOpen(true);
+              }}
               onPauseSession={handlePause}
               onResumeSession={handleResume}
               onEndSession={(sessionId) => setPendingEndSessionId(sessionId)}
@@ -237,8 +245,15 @@ export function FloorViewDashboard() {
       {/* Start Session Modal */}
       <StartSessionModal
         open={startSessionModalOpen}
-        onClose={() => setStartSessionModalOpen(false)}
+        defaultTableId={selectedTableIdForStart}
+        onClose={() => {
+          setStartSessionModalOpen(false);
+          setSelectedTableIdForStart(undefined);
+        }}
         onStarted={async (session) => {
+          if (session) {
+            startSessionOptimistically(session);
+          }
           if (isOnline) await fetchData();
         }}
       />
