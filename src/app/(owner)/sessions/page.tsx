@@ -21,7 +21,13 @@ interface SwitchTableState {
 }
 
 function formatTableRate(table: TableOption) {
-  const amount = Number(table.defaultHourlyRate);
+  const rawAmount =
+    (table as any).hourlyRate ??
+    (table as any).rate ??
+    (table as any).currentRate ??
+    table.defaultHourlyRate;
+
+  const amount = Number(rawAmount);
   if (!Number.isFinite(amount)) return "Rate unavailable";
   if (!table.currency) return `${amount.toFixed(2)}/hr`;
 
@@ -39,7 +45,6 @@ function formatTableRate(table: TableOption) {
 export default function SessionsPage() {
   const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const isOnline = useOnlineStatus();
-  const isOwner = user?.roles?.includes("OWNER") ?? false;
   const [items, setItems] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -53,7 +58,8 @@ export default function SessionsPage() {
       startSession: "Start session",
       loadingSessions: "Loading sessions…",
       failedLoad: "Failed to load sessions.",
-      offlineMessage: "Offline Mode active. Actions are saved locally and will synchronize when connection returns.",
+      offlineMessage:
+        "Offline Mode active. Actions are saved locally and will synchronize when connection returns.",
       noActiveSessions: "No active sessions. The floor is quiet.",
       walkInCustomer: "Walk-in customer",
       pause: "Pause",
@@ -80,7 +86,8 @@ export default function SessionsPage() {
       reconnectStartSession: "سیشن شروع کرنے کے لیے دوبارہ کنیکٹ کریں",
       loadingSessions: "سیشنز لوڈ ہو رہے ہیں…",
       failedLoad: "سیشنز لوڈ کرنے میں ناکامی۔",
-      offlineMessage: "آپ آف لائن ہیں۔ کنکشن واپس آنے تک سیشن کنٹرولز غیر فعال ہیں۔",
+      offlineMessage:
+        "آپ آف لائن ہیں۔ کنکشن واپس آنے تک سیشن کنٹرولز غیر فعال ہیں۔",
       noActiveSessions: "کوئی فعال سیشن نہیں۔ فلور خاموش ہے۔",
       walkInCustomer: "آنے والا کسٹمر",
       pause: "وقفہ",
@@ -137,7 +144,6 @@ export default function SessionsPage() {
       }
     };
     window.addEventListener("cuecloud:offline-queue-changed", handleSyncChange);
-    window.addEventListener("cuecloud:sync-status-changed", handleSyncChange);
     window.addEventListener("online", handleSyncChange);
     return () => {
       window.removeEventListener("cuecloud:offline-queue-changed", handleSyncChange);
@@ -147,6 +153,31 @@ export default function SessionsPage() {
   }, [isOnline, load]);
 
   async function action(id: string, nextAction: "pause" | "resume" | "end") {
+    const previousItems = [...items];
+    const nowIso = new Date().toISOString();
+
+    // 1. Optimistic Update (Immediate UI response: 0ms lag)
+    setItems((current) => {
+      if (nextAction === "end") {
+        return current.filter((session) => session.id !== id);
+      }
+      return current.map((session) => {
+        if (session.id !== id) return session;
+        if (nextAction === "pause") {
+          return {
+            ...session,
+            status: "paused",
+            pausedAt: nowIso,
+          };
+        }
+        return {
+          ...session,
+          status: "active",
+          pausedAt: null as any,
+        };
+      });
+    });
+
     try {
       if (nextAction === "end") {
         setItems((current) => current.filter((session) => session.id !== id));
@@ -163,10 +194,27 @@ export default function SessionsPage() {
         );
       }
       const result = await sessionApi.action(id, nextAction);
-      if (!isOnline || "offlineQueued" in result) toast.info("Saved offline. Action queued for sync.");
-      else await load();
+
+      if (!isOnline || (result && "offlineQueued" in result)) {
+        toast.info("Saved offline. Action queued for sync.");
+        return;
+      }
+
+      // 3. Reconcile with server payload in-place without triggering 2 blocking GET queries
+      if (result && typeof result === "object" && "id" in result) {
+        setItems((current) =>
+          current.map((s) => (s.id === id ? { ...s, ...(result as ActiveSession) } : s))
+        );
+      } else {
+        // Silently sync server state in background without locking UI
+        void load();
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.actionFailed);
+      // 4. Rollback to pristine state if the request fails
+      setItems(previousItems);
+      const msg = e instanceof Error ? e.message : t.actionFailed;
+      setError(msg);
+      toast.error(msg);
     }
   }
 
@@ -231,7 +279,7 @@ export default function SessionsPage() {
     const branchId = switchState.session.branch?.id || selectedBranchId;
 
     setSwitchState((current) =>
-      current ? { ...current, submitting: true, error: "" } : current,
+      current ? { ...current, submitting: true, error: "" } : current
     );
 
     // Optimistically update session in local items list
@@ -243,7 +291,6 @@ export default function SessionsPage() {
                 ...s,
                 table: {
                   ...s.table,
-                  id: targetTable.id,
                   tableNumber: targetTable.tableNumber,
                   defaultHourlyRate: targetTable.defaultHourlyRate,
                   currency: targetTable.currency ?? s.table.currency,
@@ -287,7 +334,7 @@ export default function SessionsPage() {
 
   const noSwitchTables = useMemo(
     () => switchState && !switchState.loading && !switchState.tables.length,
-    [switchState],
+    [switchState]
   );
 
   return (
@@ -295,25 +342,22 @@ export default function SessionsPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">{t.title}</h1>
-          <p className="mt-1 text-slate-500">
-            {t.description}
-          </p>
+          <p className="mt-1 text-slate-500">{t.description}</p>
         </div>
         <button
           onClick={() => setModal(true)}
-          className="rounded-lg bg-brand-600 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-brand-600 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
           {t.startSession}
         </button>
       </div>
-
 
       {loading && <p className="mt-10">{t.loadingSessions}</p>}
 
       {error && (
         <div className="mt-6 rounded-lg bg-red-50 p-4 text-red-700">
           {error}
-          <button className="ml-3 underline" onClick={load}>
+          <button className="ml-3 underline cursor-pointer" onClick={load}>
             {t.retry}
           </button>
         </div>
@@ -372,14 +416,14 @@ export default function SessionsPage() {
               {session.status === "active" ? (
                 <button
                   onClick={() => action(session.id, "pause")}
-                  className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t.pause}
                 </button>
               ) : (
                 <button
                   onClick={() => action(session.id, "resume")}
-                  className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t.resume}
                 </button>
@@ -387,14 +431,14 @@ export default function SessionsPage() {
 
               <button
                 onClick={() => void openSwitchTable(session)}
-                className="rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t.switchTable}
               </button>
 
               <button
                 onClick={() => setPendingEndSessionId(session.id)}
-                className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t.endSession}
               </button>
@@ -430,30 +474,37 @@ export default function SessionsPage() {
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold">{t.switchTableHeading}</h2>
+                <h2 className="text-xl font-semibold">
+                  {t.switchTableHeading}
+                </h2>
                 <p className="mt-1 text-sm text-slate-500">
                   {t.switchTableDescription} {switchState.session.table.tableNumber}
                 </p>
               </div>
-              <button onClick={() => setSwitchState(null)}>✕</button>
+              <button
+                onClick={() => setSwitchState(null)}
+                className="cursor-pointer text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
             </div>
 
             {switchState.loading ? (
               <p className="mt-5 text-sm text-slate-600">
-                Loading available tables…
+                {t.loadingAvailableTables}
               </p>
             ) : (
               <>
                 <label className="mt-5 block text-sm font-medium">
-                  Available tables
+                  {t.availableTables}
                   <select
-                    className="mt-1 w-full rounded-lg border p-3"
+                    className="mt-1 w-full rounded-lg border p-3 bg-white"
                     value={switchState.selectedTableId}
                     onChange={(e) =>
                       setSwitchState((current) =>
                         current
                           ? { ...current, selectedTableId: e.target.value }
-                          : current,
+                          : current
                       )
                     }
                     disabled={noSwitchTables || switchState.submitting}
@@ -486,14 +537,14 @@ export default function SessionsPage() {
             <div className="mt-6 flex justify-end gap-2">
               <button
                 onClick={() => setSwitchState(null)}
-                className="rounded-lg border px-4 py-2 text-sm"
+                className="rounded-lg border px-4 py-2 text-sm cursor-pointer"
                 disabled={switchState.submitting}
               >
                 {t.cancel}
               </button>
               <button
                 onClick={() => void submitSwitchTable()}
-                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40 cursor-pointer"
                 disabled={
                   switchState.loading ||
                   switchState.submitting ||

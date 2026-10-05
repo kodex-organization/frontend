@@ -83,12 +83,22 @@ export type UdhaarOfflinePayload = {
   createdAt: string;
 };
 
+export type TableOfflinePayload = {
+  id: string;
+  /** The branch the table belongs to (can differ from the active branch for owners). */
+  branchId: string;
+  tableNumber: string;
+  defaultHourlyRate: number;
+  createdAt: string;
+};
+
 export type OfflineEntity =
   | "session"
   | "invoice"
   | "customer"
   | "payment"
   | "udhaar"
+  | "table"
   | "notification"
   | "canteen_order"
   | "canteen_category"
@@ -106,6 +116,7 @@ export type PendingSyncItem = {
     | CustomerOfflinePayload
     | PaymentOfflinePayload
     | UdhaarOfflinePayload
+    | TableOfflinePayload
     | Record<string, unknown>;
   status: "pending" | "synced" | "failed";
   idempotencyKey: string;
@@ -394,6 +405,29 @@ export async function queueCanteenItemChange(
     console.warn("Could not queue canteen item change to Dexie pendingQueue:", err);
     return null;
   }
+}
+
+/**
+ * Queues a catalog table change made offline.
+ * The queue item is scoped to the ACTIVE branch (that is what the sync manager
+ * pushes), while payload.branchId says which branch the table belongs to.
+ */
+export async function queueTableChange(
+  payload: TableOfflinePayload,
+  action: "create" | "update" | "delete" = "create",
+) {
+  return offlineDB.pendingQueue.add({
+    branchId: getActiveOfflineBranchId() ?? payload.branchId,
+    entity: "table",
+    entityId: payload.id,
+    action,
+    payload,
+    status: "pending",
+    idempotencyKey: crypto.randomUUID(),
+    originTimestamp: new Date().toISOString(),
+    retryCount: 0,
+    lastError: null,
+  });
 }
 
 export function getActiveOfflineBranchId() {

@@ -19,6 +19,35 @@ import {
 } from "../../../lib/api/audit";
 
 import { toast } from "@/lib/toast";
+import { tokenStorage } from "@/lib/auth/session";
+import {
+  cacheScopedJson,
+  isNetworkFailure,
+  readScopedJson,
+} from "@/lib/sync/offline-reference-cache";
+
+// Offline copy of the audit view
+const auditCacheName = (name: string) =>
+  `audit:${tokenStorage.getAccessContext()?.userId ?? "anon"}:${name}`;
+
+function filterSavedLogs(
+  list: AuditLogItem[],
+  filters: { search: string; severity: string },
+): AuditLogItem[] {
+  const term = filters.search.trim().toLowerCase();
+  return list.filter((log) => {
+    if (filters.severity && log.severity !== filters.severity) return false;
+    if (!term) return true;
+    return [
+      log.actionType,
+      log.entityType,
+      log.ipAddress,
+      log.actorUser?.fullName,
+      log.actorUser?.email,
+      log.branch?.name,
+    ].some((value) => (value ?? "").toLowerCase().includes(term));
+  });
+}
 
 export default function AuditPage() {
   const [kpis, setKpis] = useState<AuditKPIs | null>(null);
@@ -31,6 +60,10 @@ export default function AuditPage() {
   const [activeAlertTab, setActiveAlertTab] = useState<"active" | "resolved">("active");
 
   const [isLoading, setIsLoading] = useState(true);
+  // True while the page shows the saved copy because the server cannot be reached.
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState({ kpis: false, logs: false, alerts: false });
   const [isScanning, setIsScanning] = useState(false);
   const [isVerifyingClock, setIsVerifyingClock] = useState(false);
   const [clockStatus, setClockStatus] = useState<{
@@ -52,28 +85,65 @@ export default function AuditPage() {
   const loadData = useCallback(async (isSilent = false) => {
     try {
       if (!isSilent) setIsLoading(true);
+      // Remember which calls failed, so a failed call is never shown or saved as real data.
+      const status = { kpi: false, logs: false, alerts: false, unreachable: false };
+      const fallbackOnError =
+        <T,>(key: "kpi" | "logs" | "alerts", fallback: T) =>
+        (err: unknown): T => {
+          status[key] = true;
+          if (isNetworkFailure(err)) status.unreachable = true;
+          return fallback;
+        };
       const [kpiRes, logRes, alertRes] = await Promise.all([
-        fetchAuditKPIs().catch(() => null),
+        fetchAuditKPIs().catch(fallbackOnError("kpi", null)),
         fetchAuditLogs({
           page,
           limit: 15,
           search: search || undefined,
           severity: severityFilter ? (severityFilter as any) : undefined,
-        }).catch(() => ({
-          total: 0,
-          page: 1,
-          limit: 15,
-          totalPages: 0,
-          logs: [],
-        })),
-        fetchAnomalyAlerts({ isResolved: activeAlertTab === "resolved" }).catch(() => ({
-          total: 0,
-          page: 1,
-          limit: 15,
-          totalPages: 0,
-          alerts: [],
-        })),
+        }).catch(
+          fallbackOnError("logs", {
+            total: 0,
+            page: 1,
+            limit: 15,
+            totalPages: 0,
+            logs: [],
+          }),
+        ),
+        fetchAnomalyAlerts({ isResolved: activeAlertTab === "resolved" }).catch(
+          fallbackOnError("alerts", {
+            total: 0,
+            page: 1,
+            limit: 15,
+            totalPages: 0,
+            alerts: [],
+          }),
+        ),
       ]);
+
+      if (status.unreachable) {
+        // Offline / server unreachable: show the last copy saved while online.
+        const [savedKpis, savedLogs, savedAlerts] = await Promise.all([
+          readScopedJson<AuditKPIs>(auditCacheName("kpis")),
+          readScopedJson<{ logs: AuditLogItem[]; total: number }>(auditCacheName("logs")),
+          readScopedJson<AnomalyAlertItem[]>(auditCacheName(`alerts-${activeAlertTab}`)),
+        ]);
+        const stamps = [savedKpis, savedLogs, savedAlerts]
+          .flatMap((entry) => (entry ? [entry.savedAt] : []))
+          .sort();
+        setOfflineMode(true);
+        setSavedAt(stamps[0] ?? null);
+        setUnavailable({ kpis: !savedKpis, logs: !savedLogs, alerts: !savedAlerts });
+        setKpis(savedKpis ? savedKpis.data : null);
+        setLogs(
+          savedLogs
+            ? filterSavedLogs(savedLogs.data.logs, { search, severity: severityFilter })
+            : [],
+        );
+        setTotalLogs(savedLogs ? savedLogs.data.total : 0);
+        setAlerts(savedAlerts ? savedAlerts.data : []);
+        return;
+      }
 
       if (kpiRes) setKpis(kpiRes);
       if (logRes) {
@@ -81,6 +151,22 @@ export default function AuditPage() {
         setTotalLogs(logRes.total || 0);
       }
       if (alertRes) setAlerts(alertRes.alerts || []);
+      setOfflineMode(false);
+      setSavedAt(null);
+
+      // Keep the last real server answers for offline use (never the empty fallbacks).
+      if (!status.kpi && kpiRes) {
+        void cacheScopedJson(auditCacheName("kpis"), kpiRes);
+      }
+      if (!status.logs && logRes && page === 1 && !search.trim() && !severityFilter) {
+        void cacheScopedJson(auditCacheName("logs"), {
+          logs: logRes.logs || [],
+          total: logRes.total || 0,
+        });
+      }
+      if (!status.alerts && alertRes) {
+        void cacheScopedJson(auditCacheName(`alerts-${activeAlertTab}`), alertRes.alerts || []);
+      }
     } catch (err) {
       if (!isSilent) toast.error("Failed to load audit data.");
     } finally {
@@ -106,6 +192,7 @@ export default function AuditPage() {
     window.addEventListener("cuecloud:audit-invalidated", handleRevalidate);
     window.addEventListener("cuecloud:invoice-voided", handleRevalidate);
     window.addEventListener("cuecloud:authenticated-heartbeat", handleRevalidate);
+    window.addEventListener("online", handleRevalidate);
 
     // Dynamic polling interval (every 8s) to react to background changes
     const timer = setInterval(handleRevalidate, 8000);
@@ -117,6 +204,7 @@ export default function AuditPage() {
       window.removeEventListener("cuecloud:audit-invalidated", handleRevalidate);
       window.removeEventListener("cuecloud:invoice-voided", handleRevalidate);
       window.removeEventListener("cuecloud:authenticated-heartbeat", handleRevalidate);
+      window.removeEventListener("online", handleRevalidate);
       clearInterval(timer);
     };
   }, [loadData]);
@@ -145,11 +233,16 @@ export default function AuditPage() {
       }
       loadData();
     } catch (err: any) {
-      setClockStatus({
-        message: `Failed to verify clock: ${err.message}`,
-        isTampered: true,
-      });
-      toast.error(`Failed to verify clock: ${err.message}`);
+      if (isNetworkFailure(err)) {
+        // Offline is not tampering: only the server can judge the clock (SRS 3.13).
+        toast.warning("Server clock check needs an internet connection.");
+      } else {
+        setClockStatus({
+          message: `Failed to verify clock: ${err.message}`,
+          isTampered: true,
+        });
+        toast.error(`Failed to verify clock: ${err.message}`);
+      }
     } finally {
       setIsVerifyingClock(false);
     }
@@ -207,7 +300,11 @@ export default function AuditPage() {
       setAutoArchive(policy.autoArchive);
       setIsRetentionModalOpen(true);
     } catch (err: any) {
-      toast.error(err.message || "Failed to load retention policy.");
+      toast.error(
+        isNetworkFailure(err)
+          ? "The retention policy needs an internet connection."
+          : err.message || "Failed to load retention policy.",
+      );
     }
   };
 
@@ -230,6 +327,9 @@ export default function AuditPage() {
     return ip.replace(/^.*:/, ""); // Clean up IPv6 mapped IPv4
   };
 
+  // Offline with no saved copy: show "—" instead of a made-up 0.
+  const kpiText = (value?: number) => (offlineMode && !kpis ? "—" : value ?? 0);
+
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
       {/* Header */}
@@ -243,7 +343,7 @@ export default function AuditPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={handleOpenRetention}
             className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors"
@@ -268,11 +368,32 @@ export default function AuditPage() {
         </div>
       </div>
 
+      {offlineMode && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800"
+        >
+          {savedAt ? (
+            <>
+              You are offline. Showing the audit data saved on{" "}
+              <span className="font-semibold">{new Date(savedAt).toLocaleString()}</span>. It
+              refreshes automatically when the connection returns.
+            </>
+          ) : (
+            <>
+              You are offline and no audit data was saved on this device yet. Open this page once
+              while online, then the last copy will be available offline.
+            </>
+          )}{" "}
+          Newer events, clock verification and alert actions need a connection.
+        </div>
+      )}
+
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,190px),1fr))]">
         {/* Total Immutable Logs */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Total Immutable Logs
             </span>
@@ -284,9 +405,9 @@ export default function AuditPage() {
           </div>
           <div className="mt-4">
             <div className="text-3xl font-black text-slate-900 tracking-tight">
-              {kpis?.totalLogs ?? 0}
+              {kpiText(kpis?.totalLogs)}
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Cryptographically verified</span>
               <span className="px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-semibold border border-brand-200 text-[10px]">
                 Append-Only
@@ -296,8 +417,8 @@ export default function AuditPage() {
         </div>
 
         {/* Anomalies (Today) */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Anomalies (Today)
             </span>
@@ -309,9 +430,9 @@ export default function AuditPage() {
           </div>
           <div className="mt-4">
             <div className="text-3xl font-black text-slate-900 tracking-tight">
-              {kpis?.anomaliesToday ?? 0}
+              {kpiText(kpis?.anomaliesToday)}
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Shift & void pattern alerts</span>
               <span
                 className={`px-2 py-0.5 rounded-full font-semibold border text-[10px] ${
@@ -320,15 +441,15 @@ export default function AuditPage() {
                     : "bg-slate-100 text-slate-600 border-slate-200"
                 }`}
               >
-                {(kpis?.anomaliesToday ?? 0) > 0 ? "Action Required" : "Normal"}
+                {offlineMode && !kpis ? "Unavailable" : (kpis?.anomaliesToday ?? 0) > 0 ? "Action Required" : "Normal"}
               </span>
             </div>
           </div>
         </div>
 
         {/* Clock Tamper Alerts */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Clock Tamper Alerts
             </span>
@@ -340,9 +461,9 @@ export default function AuditPage() {
           </div>
           <div className="mt-4">
             <div className="text-3xl font-black text-slate-900 tracking-tight">
-              {kpis?.tamperCount ?? 0}
+              {kpiText(kpis?.tamperCount)}
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Server skew checks</span>
               <span
                 className={`px-2 py-0.5 rounded-full font-semibold border text-[10px] ${
@@ -351,15 +472,15 @@ export default function AuditPage() {
                     : "bg-brand-50 text-brand-700 border-brand-200"
                 }`}
               >
-                {(kpis?.tamperCount ?? 0) > 0 ? "Alerts Recorded" : "Synchronized"}
+                {offlineMode && !kpis ? "Unavailable" : (kpis?.tamperCount ?? 0) > 0 ? "Alerts Recorded" : "Synchronized"}
               </span>
             </div>
           </div>
         </div>
 
         {/* Receipt Reprints */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Receipt Reprints
             </span>
@@ -371,9 +492,9 @@ export default function AuditPage() {
           </div>
           <div className="mt-4">
             <div className="text-3xl font-black text-slate-900 tracking-tight">
-              {kpis?.reprintCount ?? 0}
+              {kpiText(kpis?.reprintCount)}
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Logged reprint actions</span>
               <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200 text-[10px]">
                 Monitored
@@ -388,20 +509,24 @@ export default function AuditPage() {
         <div className="flex items-center gap-3">
           <div
             className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-              clockStatus?.isTampered
+              offlineMode
+                ? "bg-amber-400"
+                : clockStatus?.isTampered
                 ? "bg-rose-500 animate-ping"
                 : "bg-brand-500 animate-pulse"
             }`}
           />
           <span className="text-xs font-medium text-slate-700">
-            {clockStatus?.message ||
-              "Server Authoritative Clock Sync is active (drift tolerance: ±5m)."}
+            {offlineMode
+              ? "Offline: the server clock check is unavailable. This device's time is reconciled with the server when the connection returns."
+              : clockStatus?.message ||
+                "Server Authoritative Clock Sync is active (drift tolerance: ±5m)."}
           </span>
         </div>
 
         <button
           onClick={handleVerifyClock}
-          disabled={isVerifyingClock}
+          disabled={isVerifyingClock || offlineMode}
           className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition-colors shrink-0 disabled:opacity-50"
         >
           {isVerifyingClock ? "Verifying..." : "Verify Clock Skew"}
@@ -423,7 +548,11 @@ export default function AuditPage() {
                     : "bg-slate-100 text-slate-600 border-slate-200"
                 }`}
               >
-                {activeAlertTab === "active" ? `${alerts.length} Unresolved` : `${alerts.length} History`}
+                {offlineMode && unavailable.alerts
+                  ? "Unavailable"
+                  : activeAlertTab === "active"
+                  ? `${alerts.length} Unresolved`
+                  : `${alerts.length} History`}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -458,7 +587,17 @@ export default function AuditPage() {
           </div>
         </div>
 
-        {alerts.length === 0 ? (
+        {offlineMode && unavailable.alerts ? (
+          <div className="p-8 text-center bg-amber-50 border border-amber-100 rounded-xl">
+            <h4 className="text-sm font-semibold text-slate-900">
+              Alerts are not available offline
+            </h4>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Anomaly alerts are checked on the server and no saved copy exists on this device.
+              Connect once to load them.
+            </p>
+          </div>
+        ) : alerts.length === 0 ? (
           <div className="p-8 text-center bg-slate-50 border border-slate-100 rounded-xl">
             <div className="w-10 h-10 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-2 border border-brand-100">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -510,7 +649,9 @@ export default function AuditPage() {
                 {!alert.isResolved && (
                   <button
                     onClick={() => handleOpenResolveModal(alert)}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors shadow-2xs shrink-0 cursor-pointer"
+                    disabled={offlineMode}
+                    title={offlineMode ? "Needs an internet connection" : undefined}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors shadow-2xs shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Resolve Alert
                   </button>
@@ -542,7 +683,7 @@ export default function AuditPage() {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              className="px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 w-56"
+              className="w-56 max-w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
             />
 
             <select
@@ -563,7 +704,7 @@ export default function AuditPage() {
 
         {/* Audit Logs Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-600">
+          <table className="min-w-[900px] w-full text-left text-xs text-slate-600">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
               <tr>
                 <th className="py-3 px-4">Timestamp</th>
@@ -578,7 +719,9 @@ export default function AuditPage() {
               {logs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-slate-400">
-                    No log events recorded.
+                    {offlineMode && unavailable.logs
+                      ? "The audit trail is not available offline. Open this page once while online to save a copy."
+                      : "No log events recorded."}
                   </td>
                 </tr>
               ) : (
@@ -641,20 +784,22 @@ export default function AuditPage() {
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
           <span>
-            Showing {logs.length} of {totalLogs} total events (Page {page})
+            {offlineMode
+              ? `Showing ${logs.length} saved events (latest entries only)`
+              : `Showing ${logs.length} of ${totalLogs} total events (Page ${page})`}
           </span>
           <div className="flex items-center gap-2">
             <button
-              disabled={page <= 1}
+              disabled={page <= 1 || offlineMode}
               onClick={() => setPage((p) => p - 1)}
               className="px-3 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
             >
               Previous
             </button>
             <button
-              disabled={logs.length < 15 || page * 15 >= totalLogs}
+              disabled={offlineMode || logs.length < 15 || page * 15 >= totalLogs}
               onClick={() => setPage((p) => p + 1)}
               className="px-3 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
             >

@@ -47,6 +47,30 @@ export interface Order {
   status: string;
   items: OrderItem[];
   createdAt?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
+}
+
+export interface PaymentTender {
+  method: string;
+  amount: number;
+  reference?: string;
+}
+
+export interface StandaloneOrderItemInput {
+  menuItemId: string;
+  quantity: number;
+  unitPrice?: number;
+  notes?: string;
+}
+
+export interface StandaloneOrderPayload {
+  items: StandaloneOrderItemInput[];
+  payments?: PaymentTender[];
+  totalAmount?: number;
+  amountTendered?: number;
+  changeDue?: number;
+  customerId?: string | null;
 }
 
 const DEFAULT_CATEGORIES: Category[] = [
@@ -632,8 +656,11 @@ export const CanteenApi = {
   },
 
   createStandaloneOrder: async (
-    items: Array<{ menuItemId: string; quantity: number; notes?: string }>
+    payload: StandaloneOrderPayload | StandaloneOrderItemInput[]
   ): Promise<Order> => {
+    const body = Array.isArray(payload) ? { items: payload } : payload;
+    const items = body.items;
+
     const executeOffline = async (): Promise<Order> => {
       const allMenuItems = await getStoredMenuItems();
       const itemsMap = new Map(allMenuItems.map((mi) => [mi.id, mi]));
@@ -641,7 +668,7 @@ export const CanteenApi = {
       const orderId = crypto.randomUUID();
       const orderItems: OrderItem[] = items.map((it) => {
         const mi = itemsMap.get(it.menuItemId);
-        const unitPrice = Number(mi?.currentPrice || 0);
+        const unitPrice = Number(it.unitPrice ?? mi?.currentPrice ?? 0);
         return {
           id: crypto.randomUUID(),
           menuItemId: it.menuItemId,
@@ -666,7 +693,7 @@ export const CanteenApi = {
       await persistOrder(order);
 
       const branchId = getActiveOfflineBranchId() || "default";
-      const orderTotal = orderItems.reduce((sum, it) => sum + it.lineTotal, 0);
+      const orderTotal = body.totalAmount ?? orderItems.reduce((sum, it) => sum + it.lineTotal, 0);
 
       // Create an invoice for this direct sale so Billing sees it
       const invoiceId = crypto.randomUUID();
@@ -676,7 +703,7 @@ export const CanteenApi = {
         id: invoiceId,
         branchId,
         sessionId: null,
-        customerId: null,
+        customerId: body.customerId ?? null,
         customer: null,
         invoiceNumber,
         table: null,
@@ -705,16 +732,17 @@ export const CanteenApi = {
           unitPrice: oi.unitPrice,
           lineTotal: oi.lineTotal,
         })),
-        payments: [
-          {
+        payments: (body.payments?.length
+          ? body.payments
+          : [{ method: "CASH", amount: orderTotal }]
+        ).map((payment) => ({
             id: crypto.randomUUID(),
             invoiceId,
-            tenderType: "cash",
-            amount: orderTotal,
-            paymentReference: "Offline Canteen Direct Sale",
+            tenderType: payment.method === "WALLET" ? "online" : payment.method.toLowerCase(),
+            amount: payment.amount,
+            paymentReference: payment.reference ?? "Offline Canteen Direct Sale",
             createdAt: now.toISOString(),
-          },
-        ],
+          })),
       };
 
       try {
@@ -734,6 +762,9 @@ export const CanteenApi = {
           items,
           status: "served",
           total: orderTotal,
+          payments: body.payments,
+          amountTendered: body.amountTendered,
+          changeDue: body.changeDue,
           invoiceId,
           createdAt: now.toISOString(),
         },
@@ -760,7 +791,7 @@ export const CanteenApi = {
     try {
       const order = await apiFetch<Order>("/canteen-pos/standalone-orders", {
         method: "POST",
-        body: JSON.stringify({ items }),
+        body: JSON.stringify(body),
       });
       if (order) {
         await persistOrder(order);

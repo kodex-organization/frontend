@@ -91,6 +91,13 @@ export function registerFcmToken(token: string) {
   });
 }
 
+export function checkFcmTokenRegistration(token: string) {
+  return apiFetch<{ registered: boolean }>("/notifications/fcm-token/status", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
 export function revokeFcmToken(token: string) {
   return apiFetch<{ revoked: boolean }>("/notifications/fcm-token", {
     method: "DELETE",

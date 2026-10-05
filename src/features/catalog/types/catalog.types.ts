@@ -14,6 +14,12 @@ export interface SnookerTable {
   status: TableStatus;
   isActive: boolean;
   deletedAt: string | null;
+  /** True while this table only exists on this device and is waiting to sync. */
+  pendingSync?: boolean;
+  /** Reason the server refused a pending table (shown to the user). */
+  syncError?: string | null;
+  /** Row id in the local offline queue (used to discard a pending table). */
+  pendingQueueId?: number;
 }
 
 export interface CreateTableInput {

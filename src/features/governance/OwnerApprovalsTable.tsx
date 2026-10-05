@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   CheckCircle2,
-  XCircle,
   Clock,
   User,
   Building2,
@@ -34,11 +34,12 @@ export interface OwnerApprovalItem {
 }
 
 export function OwnerApprovalsTable() {
+  const [mounted, setMounted] = useState(false);
   const [approvals, setApprovals] = useState<OwnerApprovalItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"staff_creation" | "branch_access">(
-    "staff_creation"
+    "branch_access"
   );
   const [processingId, setProcessingId] = useState<string | null>(null);
 
@@ -46,12 +47,60 @@ export function OwnerApprovalsTable() {
   const [rejectingItem, setRejectingItem] = useState<OwnerApprovalItem | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const loadApprovals = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch<OwnerApprovalItem[]>("/governance/owner-approvals");
-      setApprovals(Array.isArray(data) ? data : []);
+      // 1. Load staff creation requests (from legacy governance endpoint)
+      let staffItems: OwnerApprovalItem[] = [];
+      try {
+        const staffData = await apiFetch<any>("/governance/owner-approvals");
+        const list = Array.isArray(staffData)
+          ? staffData
+          : Array.isArray(staffData?.data)
+          ? staffData.data
+          : [];
+        staffItems = list.filter((i: any) => i.requestType === "staff_creation");
+      } catch {
+        staffItems = [];
+      }
+
+      // 2. Load branch access requests from our new branch-access API
+      let branchItems: OwnerApprovalItem[] = [];
+      try {
+        const branchRes = await apiFetch<any>("/branch-access/requests?status=pending");
+        const list = Array.isArray(branchRes)
+          ? branchRes
+          : Array.isArray(branchRes?.data)
+          ? branchRes.data
+          : [];
+
+        branchItems = list
+          .filter((r: any) => r.status === "pending")
+          .map((r: any) => ({
+            id: r.id,
+            requestType: "branch_access" as const,
+            status: r.status,
+            createdAt: r.createdAt,
+            branchId: r.branch?.id || null,
+            branchName: r.branch?.name || null,
+            requestedById: r.user?.id || null,
+            requestedByName: r.user?.fullName || r.user?.email || "Manager",
+            requestedByEmail: r.user?.email || null,
+            payload: {
+              userReason: r.reason,
+              targetBranchId: r.branch?.id,
+            },
+          }));
+      } catch (err) {
+        console.error("Failed to load branch access requests", err);
+      }
+
+      setApprovals([...staffItems, ...branchItems]);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -69,18 +118,30 @@ export function OwnerApprovalsTable() {
 
   const handleReview = async (
     id: string,
+    requestType: "staff_creation" | "branch_access",
     status: "approved" | "rejected",
     reviewReason?: string
   ) => {
     setProcessingId(id);
     try {
-      await apiFetch(`/governance/owner-approvals/${id}/review`, {
-        method: "POST",
-        body: JSON.stringify({ status, reviewReason }),
-      });
+      if (requestType === "branch_access") {
+        // Points to our new branch-access decision endpoint
+        await apiFetch(`/branch-access/requests/${id}/decide`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status, reason: reviewReason }),
+        });
+      } else {
+        // Staff creation approval
+        await apiFetch(`/governance/owner-approvals/${id}/review`, {
+          method: "POST",
+          body: JSON.stringify({ status, reviewReason }),
+        });
+      }
+
       toast.success(
         status === "approved"
-          ? "Request approved successfully! Action has been executed."
+          ? "Branch access granted successfully!"
           : "Request rejected."
       );
       setRejectingItem(null);
@@ -126,7 +187,7 @@ export function OwnerApprovalsTable() {
           size="sm"
           onClick={() => void loadApprovals()}
           isLoading={loading}
-          className="self-start sm:self-auto"
+          className="self-start sm:self-auto cursor-pointer"
         >
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
           Refresh
@@ -138,7 +199,7 @@ export function OwnerApprovalsTable() {
         <button
           type="button"
           onClick={() => setActiveTab("staff_creation")}
-          className={`flex items-center gap-2 py-3 px-4 text-xs font-medium border-b-2 transition-colors ${
+          className={`flex items-center gap-2 py-3 px-4 text-xs font-medium border-b-2 transition-colors cursor-pointer ${
             activeTab === "staff_creation"
               ? "border-brand-600 text-brand-700 font-semibold"
               : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
@@ -159,7 +220,7 @@ export function OwnerApprovalsTable() {
         <button
           type="button"
           onClick={() => setActiveTab("branch_access")}
-          className={`flex items-center gap-2 py-3 px-4 text-xs font-medium border-b-2 transition-colors ${
+          className={`flex items-center gap-2 py-3 px-4 text-xs font-medium border-b-2 transition-colors cursor-pointer ${
             activeTab === "branch_access"
               ? "border-brand-600 text-brand-700 font-semibold"
               : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
@@ -254,15 +315,14 @@ export function OwnerApprovalsTable() {
                       </div>
                     </div>
 
-                    {/* Actions */}
                     <div className="flex items-center gap-2 shrink-0">
                       <Button
                         size="sm"
                         variant="primary"
                         isLoading={isProcessing}
                         disabled={isProcessing}
-                        onClick={() => handleReview(item.id, "approved")}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => handleReview(item.id, "staff_creation", "approved")}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                       >
                         <Check className="mr-1 h-3.5 w-3.5" />
                         Approve & Create
@@ -273,7 +333,7 @@ export function OwnerApprovalsTable() {
                         variant="outline"
                         disabled={isProcessing}
                         onClick={() => setRejectingItem(item)}
-                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 border-rose-200"
+                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 border-rose-200 cursor-pointer"
                       >
                         <X className="mr-1 h-3.5 w-3.5" />
                         Reject
@@ -316,7 +376,7 @@ export function OwnerApprovalsTable() {
                         <span className="font-semibold text-slate-900 text-sm">
                           {item.requestedByName}
                         </span>
-                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800">
+                        <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
                           Branch Access Request
                         </span>
                       </div>
@@ -329,7 +389,7 @@ export function OwnerApprovalsTable() {
                           </span>
                         </div>
                         {p.userReason && (
-                          <div className="bg-slate-50 p-2 rounded border border-slate-100 text-slate-700 italic">
+                          <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 text-slate-700 italic">
                             &ldquo;{p.userReason}&rdquo;
                           </div>
                         )}
@@ -343,15 +403,14 @@ export function OwnerApprovalsTable() {
                       </div>
                     </div>
 
-                    {/* Actions */}
                     <div className="flex items-center gap-2 shrink-0">
                       <Button
                         size="sm"
                         variant="primary"
                         isLoading={isProcessing}
                         disabled={isProcessing}
-                        onClick={() => handleReview(item.id, "approved")}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => handleReview(item.id, "branch_access", "approved")}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                       >
                         <Check className="mr-1 h-3.5 w-3.5" />
                         Grant Access
@@ -362,7 +421,7 @@ export function OwnerApprovalsTable() {
                         variant="outline"
                         disabled={isProcessing}
                         onClick={() => setRejectingItem(item)}
-                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 border-rose-200"
+                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 border-rose-200 cursor-pointer"
                       >
                         <X className="mr-1 h-3.5 w-3.5" />
                         Reject
@@ -376,61 +435,71 @@ export function OwnerApprovalsTable() {
         </div>
       )}
 
-      {/* Reject Modal */}
-      {rejectingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
-            <div className="flex items-center gap-2 text-rose-700 font-semibold mb-2">
-              <AlertCircle className="h-5 w-5" />
-              <span>Reject Request</span>
-            </div>
-            <p className="text-xs text-slate-600 mb-4">
-              Are you sure you want to reject this request for{" "}
-              <strong>
-                {rejectingItem.requestType === "staff_creation"
-                  ? rejectingItem.payload?.fullName || "staff member"
-                  : rejectingItem.requestedByName}
-              </strong>
-              ?
-            </p>
+      {/* Reject Modal using Portal */}
+      {rejectingItem && mounted &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
+              <div className="flex items-center gap-2 text-rose-700 font-semibold mb-2">
+                <AlertCircle className="h-5 w-5" />
+                <span>Reject Request</span>
+              </div>
+              <p className="text-xs text-slate-600 mb-4">
+                Are you sure you want to reject this request for{" "}
+                <strong>
+                  {rejectingItem.requestType === "staff_creation"
+                    ? rejectingItem.payload?.fullName || "staff member"
+                    : rejectingItem.requestedByName}
+                </strong>
+                ?
+              </p>
 
-            <label htmlFor="rejectReason" className="block text-xs font-medium text-slate-700 mb-1">
-              Reason for rejection (optional):
-            </label>
-            <textarea
-              id="rejectReason"
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="e.g. Branch already has adequate staffing"
-              className="w-full text-xs rounded-lg border border-slate-300 p-2.5 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 mb-4"
-              rows={3}
-            />
+              <label
+                htmlFor="rejectReason"
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
+                Reason for rejection (optional):
+              </label>
+              <textarea
+                id="rejectReason"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="e.g. Access not required at this time"
+                className="w-full text-xs rounded-xl border border-slate-300 p-2.5 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 mb-4"
+                rows={3}
+              />
 
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setRejectingItem(null);
-                  setRejectReason("");
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                className="bg-rose-600 hover:bg-rose-700 text-white"
-                onClick={() =>
-                  handleReview(rejectingItem.id, "rejected", rejectReason)
-                }
-              >
-                Confirm Rejection
-              </Button>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setRejectingItem(null);
+                    setRejectReason("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="bg-rose-600 hover:bg-rose-700 text-white"
+                  onClick={() =>
+                    handleReview(
+                      rejectingItem.id,
+                      rejectingItem.requestType,
+                      "rejected",
+                      rejectReason
+                    )
+                  }
+                >
+                  Confirm Rejection
+                </Button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

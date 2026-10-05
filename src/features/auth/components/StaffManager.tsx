@@ -35,12 +35,43 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { fetchBranches } from "@/lib/api/branch";
 import type { BranchItem } from "@/types/branch";
 import { toast } from "@/lib/toast";
+import {
+  cacheScopedJson,
+  isNetworkFailure,
+  readScopedJson,
+} from "@/lib/sync/offline-reference-cache";
+
+/**
+ * Offline copy of the staff list (SRS 3.1 / 3.13). Staff *changes* (create, role,
+ * PIN, password, deactivate) stay online-only: they are security operations that the
+ * server must hash, enforce and audit (SRS 3.12, 5.3), so we never queue credentials
+ * on the device. Only the last server list is kept for reading.
+ */
+function filterSavedStaff(
+  list: DetailedStaffMember[],
+  filters: { search: string; role: string; status: string },
+): DetailedStaffMember[] {
+  // Same rules as the server's listStaff (auth/service.ts).
+  const term = filters.search.trim().toLowerCase();
+  return list.filter((member) => {
+    if (filters.status === "active" && !member.isActive) return false;
+    if (filters.status === "inactive" && member.isActive) return false;
+    if (filters.role !== "ALL" && !member.roles.includes(filters.role)) return false;
+    if (!term) return true;
+    return [member.fullName, member.email, member.phone].some((value) =>
+      (value ?? "").toLowerCase().includes(term),
+    );
+  });
+}
 
 export function StaffManager() {
   const { user } = useAuth();
   const [staff, setStaff] = useState<DetailedStaffMember[]>([]);
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // True while the list comes from the saved copy because the server is unreachable.
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -74,7 +105,7 @@ export function StaffManager() {
   const [staffToDeactivate, setStaffToDeactivate] = useState<DetailedStaffMember | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isOwner = user?.roles.includes("OWNER");
+  const isOwner = user?.roles?.some((r) => r.toUpperCase() === "OWNER");
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -83,22 +114,58 @@ export function StaffManager() {
         listStaff({
           search: search || undefined,
           role: roleFilter !== "ALL" ? roleFilter : undefined,
-          branchId: branchFilter || undefined,
+          branchId: isOwner ? undefined : branchFilter || undefined,
           status: statusFilter !== "all" ? statusFilter : undefined,
         }),
         fetchBranches({ limit: 100 }),
       ]);
       setStaff(staffData);
       setBranches(branchData.branches);
+      setOfflineMode(false);
+      setSavedAt(null);
+      // Keep the last full (unfiltered) server list for offline use.
+      if (!search.trim() && roleFilter === "ALL" && statusFilter === "all") {
+        void cacheScopedJson<DetailedStaffMember[]>(
+          `staff-list:${isOwner ? "all" : branchFilter}`,
+          staffData,
+        );
+      }
     } catch (err: any) {
-      toast.error(err.message || "Failed to load staff list");
+      if (isNetworkFailure(err)) {
+        // Offline / server unreachable: show the last list saved while online.
+        const saved = await readScopedJson<DetailedStaffMember[]>(
+          `staff-list:${isOwner ? "all" : branchFilter}`,
+        );
+        setOfflineMode(true);
+        setSavedAt(saved?.savedAt ?? null);
+        setStaff(
+          saved
+            ? filterSavedStaff(saved.data, {
+                search,
+                role: roleFilter,
+                status: statusFilter,
+              })
+            : [],
+        );
+      } else {
+        toast.error(err.message || "Failed to load staff list");
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [search, roleFilter, branchFilter, statusFilter]);
+  }, [search, roleFilter, branchFilter, statusFilter, isOwner]);
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // Connection is back: replace the saved copy with the real list.
+  useEffect(() => {
+    const onBackOnline = () => {
+      void loadData();
+    };
+    window.addEventListener("online", onBackOnline);
+    return () => window.removeEventListener("online", onBackOnline);
   }, [loadData]);
 
   const handleOpenEdit = (member: DetailedStaffMember) => {
@@ -107,7 +174,7 @@ export function StaffManager() {
       fullName: member.fullName || "",
       phone: member.phone || "",
       role: (member.roles[0] as any) || (member.isOwner ? "OWNER" : "CASHIER"),
-      branchId: member.branchId || "",
+      branchId: member.branchId || (isOwner ? "" : user?.branchId || ""),
       isActive: member.isActive,
     });
   };
@@ -120,8 +187,8 @@ export function StaffManager() {
       await updateStaff(editingStaff.id, {
         fullName: editForm.fullName,
         phone: editForm.phone || null,
-        role: editForm.role,
-        branchId: editForm.branchId || null,
+        role: isOwner ? editForm.role : "CASHIER", // Managers cannot assign peer roles
+        branchId: isOwner ? (editForm.branchId || null) : user?.branchId || null,
         isActive: editForm.isActive,
       });
       toast.success(`Updated ${editForm.fullName || "staff member"} successfully.`);
@@ -229,12 +296,35 @@ export function StaffManager() {
           </Button>
           <Button
             onClick={() => setShowAddModal(true)}
+            disabled={offlineMode}
+            title={offlineMode ? "Needs an internet connection" : undefined}
             className="w-auto px-4 py-2 gap-1.5 text-xs bg-slate-900 hover:bg-slate-800 text-white"
           >
             <Plus className="h-4 w-4" /> Add Staff Member
           </Button>
         </div>
       </div>
+
+      {offlineMode && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800"
+        >
+          {savedAt ? (
+            <>
+              You are offline. Showing the staff list saved on{" "}
+              <span className="font-semibold">{new Date(savedAt).toLocaleString()}</span>.
+              It refreshes automatically when the connection returns.
+            </>
+          ) : (
+            <>
+              You are offline and the staff list was never saved on this device. Open this page
+              once while online, then it will be available offline.
+            </>
+          )}{" "}
+          Adding or changing staff needs a connection.
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-3 p-4 bg-white border border-slate-200 rounded-2xl shadow-xs">
@@ -255,12 +345,11 @@ export function StaffManager() {
           className="px-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
         >
           <option value="ALL">All Roles</option>
-          <option value="OWNER">Owner</option>
+          {isOwner && <option value="OWNER">Owner</option>}
           <option value="MANAGER">Manager</option>
           <option value="ACCOUNTANT">Accountant</option>
           <option value="CASHIER">Cashier</option>
         </select>
-
 
         <select
           value={statusFilter}
@@ -304,7 +393,14 @@ export function StaffManager() {
                 {staff.map((member) => {
                   const isSelf = member.id === user?.id;
                   const isTargetOwner = member.isOwner || member.roles.includes("OWNER");
-                  const canModify = isOwner || !isTargetOwner;
+                  const isTargetManager = member.roles.includes("MANAGER");
+                  const isTargetAccountant = member.roles.includes("ACCOUNTANT");
+
+                  // Role-based action authority:
+                  // Owners can modify anyone except self-deactivation.
+                  // Managers can ONLY modify Cashiers at their branch.
+                  const canModify =
+                    isOwner || (!isTargetOwner && !isTargetManager && !isTargetAccountant);
 
                   return (
                     <tr key={member.id} className="hover:bg-slate-50/70 transition-colors">
@@ -319,7 +415,7 @@ export function StaffManager() {
                         </div>
                         <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
                           <span>{member.email}</span>
-                          {member.phone && <span>• {member.phone}</span>}
+                          {member.phone && <span>· {member.phone}</span>}
                         </div>
                       </td>
                       <td className="py-3 px-4">{getRoleBadge(member.roles, member.isOwner)}</td>
@@ -358,7 +454,8 @@ export function StaffManager() {
                             <>
                               <button
                                 onClick={() => handleOpenEdit(member)}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                disabled={offlineMode}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 title="Edit Profile & Role"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
@@ -368,7 +465,8 @@ export function StaffManager() {
                                   setPasswordResetStaff(member);
                                   setNewPassword("");
                                 }}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                disabled={offlineMode}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 title="Reset Password"
                               >
                                 <Lock className="h-3.5 w-3.5" />
@@ -378,7 +476,8 @@ export function StaffManager() {
                                   setPinResetStaff(member);
                                   setNewPin("");
                                 }}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                disabled={offlineMode}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 title="Reset Cashier PIN"
                               >
                                 <KeyRound className="h-3.5 w-3.5" />
@@ -386,7 +485,8 @@ export function StaffManager() {
                               {!isSelf && (
                                 <button
                                   onClick={() => setStaffToDeactivate(member)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  disabled={offlineMode}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                   title="Deactivate Staff Member"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -461,32 +561,50 @@ export function StaffManager() {
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Role</label>
-                <select
-                  value={editForm.role}
-                  disabled={!isOwner && editForm.role === "OWNER"}
-                  onChange={(e) => setEditForm({ ...editForm, role: e.target.value as any })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
-                >
-                  {isOwner && <option value="OWNER">Owner</option>}
-                  <option value="MANAGER">Manager</option>
-                  <option value="ACCOUNTANT">Accountant</option>
-                  <option value="CASHIER">Cashier</option>
-                </select>
+                {isOwner ? (
+                  <select
+                    value={editForm.role}
+                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value as any })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+                  >
+                    <option value="OWNER">Owner</option>
+                    <option value="MANAGER">Manager</option>
+                    <option value="ACCOUNTANT">Accountant</option>
+                    <option value="CASHIER">Cashier</option>
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    readOnly
+                    value="Cashier"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"
+                  />
+                )}
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Assigned Branch</label>
-                <select
-                  value={editForm.branchId}
-                  onChange={(e) => setEditForm({ ...editForm, branchId: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
-                >
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
+                {isOwner ? (
+                  <select
+                    value={editForm.branchId}
+                    onChange={(e) => setEditForm({ ...editForm, branchId: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+                  >
+                    <option value="">All Branches</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    readOnly
+                    value={branches.find((b) => b.id === user?.branchId)?.name ?? "Current Branch"}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"
+                  />
+                )}
               </div>
 
               <div className="flex items-center gap-2 pt-1">

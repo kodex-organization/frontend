@@ -21,7 +21,7 @@ export function useInvoiceCheckout(invoiceId: string) {
   // Discount state
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountReason, setDiscountReason] = useState("");
-  const [discountManagerPin, setDiscountManagerPin] = useState("");
+  const [discountOwnerPassword, setDiscountOwnerPassword] = useState("");
   const [discountingState, setDiscountingState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [discountError, setDiscountError] = useState<string | null>(null);
 
@@ -102,7 +102,7 @@ export function useInvoiceCheckout(invoiceId: string) {
     }
   };
 
-  const performDiscount = async (amount: number, reason: string, managerPin?: string) => {
+  const performDiscount = async (amount: number, reason: string, ownerPassword?: string) => {
     if (!invoice) return false;
 
     setDiscountingState("loading");
@@ -112,7 +112,7 @@ export function useInvoiceCheckout(invoiceId: string) {
       const payload: ApplyDiscountPayload = {
         discountAmount: amount,
         discountReasonCode: reason,
-        managerPin,
+        ownerPassword,
       };
 
       await applyDiscount(invoiceId, payload);
@@ -120,7 +120,7 @@ export function useInvoiceCheckout(invoiceId: string) {
       await loadInvoice();
       setDiscountAmount(0);
       setDiscountReason("");
-      setDiscountManagerPin("");
+      setDiscountOwnerPassword("");
       return true;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to apply discount";
@@ -182,8 +182,8 @@ export function useInvoiceCheckout(invoiceId: string) {
     setDiscountAmount,
     discountReason,
     setDiscountReason,
-    discountManagerPin,
-    setDiscountManagerPin,
+    discountOwnerPassword,
+    setDiscountOwnerPassword,
     discountingState,
     discountError,
     performDiscount,

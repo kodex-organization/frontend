@@ -6,12 +6,27 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { tokenStorage } from "@/lib/auth/session";
 import { useNotifications } from "@/features/notifications/context";
 import { reScopeOfflineData } from "@/lib/sync/offline-db";
+import {
+  cacheScopedJson,
+  isNetworkFailure,
+  readScopedJson,
+} from "@/lib/sync/offline-reference-cache";
 import { toast } from "@/lib/toast";
-import { ASSIGNED_BRANCHES_CHANGED_EVENT, completeBranchSwitch, getAssignedBranches, type AssignedBranch } from "../branch-switching";
+import {
+  ASSIGNED_BRANCHES_CHANGED_EVENT,
+  completeBranchSwitch,
+  getAssignedBranches,
+  type AssignedBranch,
+} from "../branch-switching";
 import { BranchSelector } from "./branch-selector";
 import { RequestBranchAccessModal } from "./request-branch-access-modal";
+import { ManageBranchAccessModal } from "./manage-branch-access-modal";
 
-export function GlobalBranchSelector({ onSwitching }: { onSwitching: (value: boolean) => void }) {
+export function GlobalBranchSelector({
+  onSwitching,
+}: {
+  onSwitching: (value: boolean) => void;
+}) {
   const { user, replaceSession } = useAuth();
   const { resetForBranch } = useNotifications();
   const router = useRouter();
@@ -31,12 +46,24 @@ export function GlobalBranchSelector({ onSwitching }: { onSwitching: (value: boo
       if (version !== loadVersion.current) return;
       setBranches(assigned);
       setError(null);
-    } catch {
-      if (version === loadVersion.current) setError("Could not load branches. Retry");
+      void cacheScopedJson<AssignedBranch[]>(`assigned-branches:${user?.id ?? ""}`, assigned);
+    } catch (cause) {
+      if (version !== loadVersion.current) return;
+      if (isNetworkFailure(cause)) {
+        // Offline: show the last known branch list instead of an error.
+        const saved = await readScopedJson<AssignedBranch[]>(
+          `assigned-branches:${user?.id ?? ""}`,
+        );
+        if (version !== loadVersion.current) return;
+        if (saved) setBranches(saved.data);
+        setError(null);
+      } else {
+        setError("Could not load branches. Retry");
+      }
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     void load();
@@ -63,13 +90,26 @@ export function GlobalBranchSelector({ onSwitching }: { onSwitching: (value: boo
         refreshBranchState: resetForBranch,
         navigate: (path) => router.replace(path),
       });
-      // Do not navigate or report completion for a session replaced in another tab.
       if (tokenStorage.getSessionVersion() !== switchedVersion.current) return;
       router.refresh();
-      if (result.maintenanceErrors.length) toast.warning("Branch changed. Some local data could not be refreshed.");
+      if (result.maintenanceErrors.length)
+        toast.warning(
+          "Branch changed. Some local data could not be refreshed."
+        );
       else toast.success("Active branch changed across the application.");
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Could not switch branch. Your active branch is unchanged.");
+      if (isNetworkFailure(cause)) {
+        // The new branch session is issued by the server, so it cannot be done offline.
+        toast.warning(
+          "You are offline. Switching branch needs an internet connection. You can keep working in your current branch and switch again once the connection returns."
+        );
+      } else {
+        toast.error(
+          cause instanceof Error
+            ? cause.message
+            : "Could not switch branch. Your active branch is unchanged."
+        );
+      }
     } finally {
       inFlight.current = false;
       setSwitching(false);
@@ -77,27 +117,79 @@ export function GlobalBranchSelector({ onSwitching }: { onSwitching: (value: boo
     }
   };
 
-  const isManager = Boolean(user?.roles.includes("MANAGER") && !user?.roles.includes("OWNER"));
-  const [showRequestAccess, setShowRequestAccess] = useState(false);
+  const isOwner = Boolean(user?.roles.includes("OWNER"));
+  const isManager = Boolean(
+    user?.roles.includes("MANAGER") && !user?.roles.includes("OWNER")
+  );
 
-  return <div className="w-48 min-w-0 max-w-full sm:w-56">
-    {loading && branches.length === 0 ? <span role="status" className="flex h-12 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-500">Loading branches...</span> :
-      <BranchSelector branches={branches} activeBranchId={user?.branchId ?? ""} switching={switching || loading} onSwitch={switchTo} showSingle />}
-    {error ? <button type="button" onClick={() => void load()} className="mt-1 block text-left text-xs text-rose-700 hover:underline">{error}</button> : null}
-    {isManager && (
-      <button
-        type="button"
-        onClick={() => setShowRequestAccess(true)}
-        className="mt-1 block text-left text-[11px] font-medium text-brand-600 hover:text-brand-800 hover:underline"
-      >
-        + Request branch access
-      </button>
-    )}
-    {isManager && (
-      <RequestBranchAccessModal
-        isOpen={showRequestAccess}
-        onClose={() => setShowRequestAccess(false)}
-      />
-    )}
-  </div>;
+  const [showRequestAccess, setShowRequestAccess] = useState(false);
+  const [showManageAccess, setShowManageAccess] = useState(false);
+
+  return (
+    <div className="w-48 min-w-0 max-w-full sm:w-56">
+      {loading && branches.length === 0 ? (
+        <span
+          role="status"
+          className="flex h-12 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-500"
+        >
+          Loading branches...
+        </span>
+      ) : (
+        <BranchSelector
+          branches={branches}
+          activeBranchId={user?.branchId ?? ""}
+          switching={switching || loading}
+          onSwitch={switchTo}
+          showSingle
+        />
+      )}
+
+      {error ? (
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="mt-1 block text-left text-xs text-rose-700 hover:underline"
+        >
+          {error}
+        </button>
+      ) : null}
+
+      {/* Manager Option: Request Access */}
+      {isManager && (
+        <button
+          type="button"
+          onClick={() => setShowRequestAccess(true)}
+          className="mt-1 block text-left text-[11px] font-medium text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
+        >
+          + Request branch access
+        </button>
+      )}
+
+      {/* Owner Option: Review Requests & Revoke Access */}
+      {isOwner && (
+        <button
+          type="button"
+          onClick={() => setShowManageAccess(true)}
+          className="mt-1 block text-left text-[11px] font-medium text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
+        >
+          + Manage branch access
+        </button>
+      )}
+
+      {/* Modals */}
+      {isManager && (
+        <RequestBranchAccessModal
+          isOpen={showRequestAccess}
+          onClose={() => setShowRequestAccess(false)}
+        />
+      )}
+
+      {isOwner && (
+        <ManageBranchAccessModal
+          isOpen={showManageAccess}
+          onClose={() => setShowManageAccess(false)}
+        />
+      )}
+    </div>
+  );
 }

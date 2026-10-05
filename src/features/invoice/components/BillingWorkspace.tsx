@@ -1,7 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { useInvoices } from "../hooks/useInvoices";
@@ -12,19 +11,17 @@ import InvoiceTable from "./InvoiceTable";
 import TransactionTable from "./TransactionTable";
 import { fetchBranches } from "@/lib/api/branch";
 import type { BranchItem } from "@/types/branch";
-import { useEffect } from "react";
 
 const statusOptions: Array<{
   value: "" | InvoiceStatus;
   label: string;
 }> = [
-    { value: "", label: "All statuses" },
-    { value: "open", label: "Open" },
-    { value: "partially_paid", label: "Partially paid" },
-    { value: "paid", label: "Paid" },
-    { value: "void", label: "Voided" },
-    { value: "draft", label: "Draft" },
-  ];
+  { value: "", label: "All statuses" },
+  { value: "open", label: "Open" },
+  { value: "paid", label: "Paid" },
+  { value: "void", label: "Voided" },
+  { value: "draft", label: "Draft" },
+];
 
 function dateRange(date: string) {
   if (!date) return {};
@@ -44,6 +41,13 @@ export default function BillingWorkspace({
 }) {
   const isOnline = useOnlineStatus();
   const { user } = useAuth();
+
+  // Role check: pure accountant without cashier/manager/owner permissions
+  const isReadOnly = Boolean(
+    user?.roles?.includes("ACCOUNTANT") &&
+      !user?.roles?.some((r) => ["OWNER", "MANAGER", "CASHIER"].includes(r))
+  );
+
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | InvoiceStatus>("");
@@ -52,8 +56,16 @@ export default function BillingWorkspace({
   const [transactionPage, setTransactionPage] = useState(1);
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [branchId, setBranchId] = useState("");
-  useEffect(() => { void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches)); }, []);
-  useEffect(() => { setBranchId(""); setInvoicePage(1); }, [user?.branchId]);
+
+  useEffect(() => {
+    void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches));
+  }, []);
+
+  useEffect(() => {
+    setBranchId("");
+    setInvoicePage(1);
+  }, [user?.branchId]);
+
   const range = useMemo(() => dateRange(date), [date]);
 
   const {
@@ -70,6 +82,7 @@ export default function BillingWorkspace({
     ...range,
     branchId: branchId || undefined,
   });
+
   const transactionState = useTransactions({
     page: transactionPage,
     pageSize: 25,
@@ -115,22 +128,32 @@ export default function BillingWorkspace({
             Billing and transactions
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-            Review branch-scoped invoices, balances, payment
-            transactions, and receipt links backed by PostgreSQL data.
+            Review branch-scoped invoices, balances, payment transactions, and receipt links backed by PostgreSQL data.
           </p>
         </div>
-        <span
-          className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${isOnline
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-amber-50 text-amber-800"
-            }`}
-        >
+
+        <div className="flex flex-wrap items-center gap-2">
+          {isReadOnly && (
+            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              Read Only · Audit Mode
+            </span>
+          )}
+
           <span
-            className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"
+            className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
+              isOnline
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-amber-50 text-amber-800"
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                isOnline ? "bg-emerald-500" : "bg-amber-500"
               }`}
-          />
-          {isOnline ? "Connected" : "Offline mode · local actions enabled"}
-        </span>
+            />
+            {isOnline ? "Connected" : "Offline mode · local actions enabled"}
+          </span>
+        </div>
       </header>
 
       <section
@@ -161,18 +184,16 @@ export default function BillingWorkspace({
 
       <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 p-5 sm:p-6">
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+          <div className="flex min-w-0 flex-col gap-4">
             <div>
-              <h2 className="font-semibold text-slate-950">
-                Invoices
-              </h2>
+              <h2 className="font-semibold text-slate-950">Invoices</h2>
               <p className="mt-1 text-sm text-slate-500">
                 Search by invoice number or narrow the real result set.
               </p>
             </div>
             <form
               onSubmit={applySearch}
-              className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_160px_160px_160px_auto]"
+              className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(0,1fr)_160px_160px_160px_auto]"
             >
               <label className="sr-only" htmlFor="invoice-search">
                 Search invoice number
@@ -181,11 +202,9 @@ export default function BillingWorkspace({
                 id="invoice-search"
                 type="search"
                 value={searchInput}
-                onChange={(event) =>
-                  setSearchInput(event.target.value)
-                }
+                onChange={(event) => setSearchInput(event.target.value)}
                 placeholder="Invoice number"
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                className="min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               />
               <label className="sr-only" htmlFor="invoice-status">
                 Invoice status
@@ -195,11 +214,9 @@ export default function BillingWorkspace({
                 value={status}
                 onChange={(event) => {
                   setInvoicePage(1);
-                  setStatus(
-                    event.target.value as "" | InvoiceStatus,
-                  );
+                  setStatus(event.target.value as "" | InvoiceStatus);
                 }}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+                className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
               >
                 {statusOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -207,11 +224,25 @@ export default function BillingWorkspace({
                   </option>
                 ))}
               </select>
-              <label className="sr-only" htmlFor="invoice-branch">Invoice branch</label>
-              <select id="invoice-branch" value={branchId} onChange={(event) => { setInvoicePage(1); setBranchId(event.target.value); }} className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500">
+              <label className="sr-only" htmlFor="invoice-branch">
+                Invoice branch
+              </label>
+              <select
+                id="invoice-branch"
+                value={branchId}
+                onChange={(event) => {
+                  setInvoicePage(1);
+                  setBranchId(event.target.value);
+                }}
+                className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+              >
                 <option value="">Active branch</option>
                 <option value="all">All branches</option>
-                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name ?? "Unnamed branch"}
+                  </option>
+                ))}
               </select>
               <label className="sr-only" htmlFor="invoice-date">
                 Invoice date
@@ -225,11 +256,12 @@ export default function BillingWorkspace({
                   setTransactionPage(1);
                   setDate(event.target.value);
                 }}
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
-              />
+                className="min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+              >
+              </input>
               <button
                 type="submit"
-                className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                className="w-full min-w-0 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 Search
               </button>
@@ -260,9 +292,7 @@ export default function BillingWorkspace({
 
       <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="p-5 sm:p-6">
-          <h2 className="font-semibold text-slate-950">
-            Payment transactions
-          </h2>
+          <h2 className="font-semibold text-slate-950">Payment transactions</h2>
           <p className="mt-1 text-sm text-slate-500">
             Invoice-specific payment records from the current branch.
           </p>
@@ -282,7 +312,7 @@ export default function BillingWorkspace({
             />
             <PaginationControls
               page={transactionState?.pagination?.page ?? 1}
-  totalPages={transactionState?.pagination?.totalPages ?? 1}
+              totalPages={transactionState?.pagination?.totalPages ?? 1}
               onPage={setTransactionPage}
             />
           </>

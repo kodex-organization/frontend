@@ -2,12 +2,7 @@
 
 import { useMemo, useState, useRef, useEffect, type FormEvent } from "react";
 import { useUdhaarLedger } from "@/features/udhaar/hooks/useUdhaarLedger";
-import {
-  recordSettlement,
-  getThresholds,
-  updateThresholds,
-  type UdhaarThresholdSettings,
-} from "@/features/udhaar/api/udhaarApi";
+import { type UdhaarThresholdSettings } from "@/features/udhaar/api/udhaarApi";
 import { useAuth } from "@/lib/auth/auth-context";
 import { toast } from "@/lib/toast";
 import {
@@ -27,8 +22,9 @@ import {
 
 const statusOptions = ["all", "pending", "cleared", "overdue"] as const;
 
-function formatCurrency(value: number) {
-  return `PKR ${Number(value ?? 0).toLocaleString("en-PK", { maximumFractionDigits: 2 })}`;
+function formatCurrency(value: unknown) {
+  const num = typeof value === "number" ? value : Number(value ?? 0);
+  return `PKR ${Number.isFinite(num) ? num.toLocaleString("en-PK", { maximumFractionDigits: 2 }) : "0"}`;
 }
 
 function getInitials(name?: string) {
@@ -43,13 +39,31 @@ function getInitials(name?: string) {
 
 export default function UdhaarPage() {
   const { user } = useAuth();
-  const isOwner = user?.roles.includes("OWNER");
+
+  // Role permissions
+  const userRoles = useMemo(
+    () => (user?.roles ?? []).map((r) => r.toUpperCase()),
+    [user?.roles]
+  );
+  const isOwner = userRoles.includes("OWNER");
+  const isManager = userRoles.includes("MANAGER");
+  const isCashier = userRoles.includes("CASHIER");
+
+  // Only management can modify ledger balances manually
+  const canAdjustLedger = isOwner || isManager;
+  // Counter roles that physically collect customer payments
+  const canSettleDebt = isOwner || isManager || isCashier;
 
   const {
     filteredCustomers,
     aging,
     loading,
     error,
+    snapshotAt,
+    pendingCount,
+    recordLedgerSettlement,
+    loadThresholds,
+    saveThresholds,
     search,
     setSearch,
     status,
@@ -139,6 +153,10 @@ export default function UdhaarPage() {
   };
 
   const openAdjustmentModal = (customerId?: string) => {
+    if (!canAdjustLedger) {
+      toast.error("Access denied: Only managers and owners can make manual adjustments.");
+      return;
+    }
     if (customerId) {
       const customer = filteredCustomers.find((c) => c.id === customerId);
       setAdjustmentForm((current) => ({ ...current, customerId }));
@@ -153,6 +171,10 @@ export default function UdhaarPage() {
   };
 
   const openSettlementModal = (customerId?: string) => {
+    if (!canSettleDebt) {
+      toast.error("Access denied: Accountants cannot process debt settlements.");
+      return;
+    }
     if (customerId) {
       const customer = filteredCustomers.find((c) => c.id === customerId);
       setSettlementForm({
@@ -175,6 +197,10 @@ export default function UdhaarPage() {
 
   const handleSettlementSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!canSettleDebt) {
+      toast.error("Unauthorized: Settle debt is reserved for cashiers and managers.");
+      return;
+    }
     if (!settlementForm.customerId) {
       toast.error("Please select a customer.");
       return;
@@ -186,14 +212,17 @@ export default function UdhaarPage() {
     }
     try {
       setSettlementSubmitting(true);
-      await recordSettlement({
+      const result = await recordLedgerSettlement({
         customerId: settlementForm.customerId,
         amount,
         reason: settlementForm.reason || "Debt repayment / cash settlement",
       });
-      toast.success(`Settlement of PKR ${amount.toLocaleString()} recorded.`);
+      toast.success(
+        result.mode === "offline"
+          ? `Settlement of PKR ${amount.toLocaleString()} saved on this device. It will sync when the connection returns.`
+          : `Settlement of PKR ${amount.toLocaleString()} recorded.`,
+      );
       setShowSettlement(false);
-      await refresh();
     } catch (err: any) {
       toast.error(err.message || "Failed to record settlement");
     } finally {
@@ -203,7 +232,7 @@ export default function UdhaarPage() {
 
   const openThresholdsModal = async () => {
     try {
-      const current = await getThresholds();
+      const current = await loadThresholds();
       setThresholdsForm(current);
       setShowThresholds(true);
     } catch (err: any) {
@@ -215,7 +244,7 @@ export default function UdhaarPage() {
     e.preventDefault();
     try {
       setThresholdsSubmitting(true);
-      await updateThresholds(thresholdsForm);
+      await saveThresholds(thresholdsForm);
       toast.success("Credit thresholds updated successfully.");
       setShowThresholds(false);
     } catch (err: any) {
@@ -237,6 +266,10 @@ export default function UdhaarPage() {
 
   const handleAdjustmentSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!canAdjustLedger) {
+      toast.error("Unauthorized: Adjustments require manager or owner privileges.");
+      return;
+    }
     if (!adjustmentForm.customerId) {
       setAdjustmentState("error");
       return;
@@ -281,19 +314,25 @@ export default function UdhaarPage() {
     [filteredCustomers, selectedCustomerId]
   );
 
+  // Arithmetic calculation: ensures numeric summing instead of string concatenation
   const statementSummary = useMemo(() => {
     if (!statement) return { totalDebits: 0, totalCredits: 0, netMovement: 0, count: 0 };
     let totalDebits = 0;
     let totalCredits = 0;
+
     for (const entry of statement.entries) {
-      const type = String(entry.entryType ?? "").toLowerCase();
-      const isCredit = type === "credit";
+      const rawAmount = Number(entry.amount ?? 0);
+      const type = String(entry.entryType ?? (entry as any).type ?? "").toLowerCase();
+      const isCredit = type === "credit" || rawAmount < 0;
+      const amount = Math.abs(rawAmount);
+
       if (isCredit) {
-        totalCredits += entry.amount;
+        totalCredits += amount;
       } else {
-        totalDebits += entry.amount;
+        totalDebits += amount;
       }
     }
+
     return {
       totalDebits,
       totalCredits,
@@ -333,7 +372,7 @@ export default function UdhaarPage() {
         <h3 className="font-bold text-base">Failed to load Udhaar Ledger</h3>
         <p className="mt-1 text-sm text-rose-600">{error}</p>
         <button
-          className="mt-4 rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-rose-700"
+          className="mt-4 rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-rose-700 cursor-pointer"
           onClick={() => void refresh()}
         >
           Retry Connection
@@ -346,269 +385,301 @@ export default function UdhaarPage() {
     <main className="min-h-screen bg-slate-50/60 pb-16 text-slate-900 print:min-h-0 print:bg-white print:p-0 print:pb-0">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6 print:p-0 print:m-0 print:max-w-none">
         <div className="udhaar-non-printable space-y-6 print:hidden">
-          {/* Page Header */}
-          <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-indigo-600" />
-              <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">
-                Finance & Credit Control
-              </p>
-            </div>
-            <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              Udhaar Ledger
-            </h1>
-            <p className="mt-0.5 text-xs sm:text-sm text-slate-500">
-              Track outstanding customer debt, aging buckets, and settlement receipts.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {isOwner && (
-              <button
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                onClick={openThresholdsModal}
-              >
-                <SlidersHorizontal size={14} className="text-slate-500" />
-                Credit Limits
-              </button>
-            )}
-            <button
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-              onClick={() => openAdjustmentModal()}
+          {snapshotAt && (
+            <div
+              role="status"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800"
             >
-              <Plus size={14} className="text-slate-500" />
-              Manual Adjustment
-            </button>
-            <button
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700"
-              onClick={() => openSettlementModal()}
-            >
-              <Coins size={14} />
-              Record Settlement
-            </button>
-          </div>
-        </header>
-
-        {/* KPI Cards */}
-        <section className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Total Outstanding
-              </span>
-              <span className="rounded-lg bg-slate-100 p-2 text-slate-600">
-                <CreditCard size={16} />
-              </span>
-            </div>
-            <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              {aging ? formatCurrency(aging.summary.totalOutstanding) : "—"}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-400">Total active credit across all accounts</p>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-600">
-                Overdue (90+ Days)
-              </span>
-              <span className="rounded-lg bg-amber-50 p-2 text-amber-600">
-                <AlertCircle size={16} />
-              </span>
-            </div>
-            <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-amber-700">
-              {aging ? formatCurrency(aging.summary.overdueBalance) : "—"}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-400">Requires collection priority</p>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
-                Active Accounts
-              </span>
-              <span className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
-                <Users size={16} />
-              </span>
-            </div>
-            <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              {aging ? String(aging.summary.activeAccounts) : "—"}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-400">Customers with outstanding balance</p>
-          </div>
-        </section>
-
-        {/* Aging Buckets Overview */}
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Aging Analysis</h2>
-              <p className="text-xs text-slate-500">Unsettled credit broken down by debt duration.</p>
-            </div>
-            <span className="flex items-center gap-1 text-xs font-semibold text-slate-400">
-              <Clock size={13} /> Real-time aging
-            </span>
-          </div>
-
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-            {aging ? (
-              Object.entries(aging.buckets).map(([bucket, value]) => {
-                const label =
-                  bucket === "current"
-                    ? "Current (0-1d)"
-                    : bucket === "days1to30"
-                    ? "1 - 30 Days"
-                    : bucket === "days30to60"
-                    ? "30 - 60 Days"
-                    : bucket === "days60to90"
-                    ? "60 - 90 Days"
-                    : "90+ Days (Overdue)";
-
-                const isOverdue = bucket === "days90plus" && value > 0;
-
-                return (
-                  <div
-                    key={bucket}
-                    className={`rounded-lg border p-3 transition ${
-                      isOverdue
-                        ? "border-amber-200 bg-amber-50/50"
-                        : "border-slate-200/80 bg-slate-50/50"
-                    }`}
-                  >
-                    <p className="text-[11px] font-medium text-slate-500">{label}</p>
-                    <p
-                      className={`mt-1.5 text-base font-bold ${
-                        isOverdue ? "text-amber-700" : "text-slate-900"
-                      }`}
-                    >
-                      {formatCurrency(value)}
-                    </p>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="col-span-full py-4 text-center text-xs text-slate-400">
-                No aging breakdown recorded.
-              </p>
-            )}
-          </div>
-        </section>
-
-        {/* Customer Ledger Table */}
-        <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 bg-slate-50/50">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-slate-900">Customer Accounts</h2>
-              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-700">
-                {filteredCustomers.length}
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center gap-2">
-              <div className="relative w-full sm:w-60">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search name or phone..."
-                  className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-
-              <div className="relative w-full sm:w-auto">
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                >
-                  {statusOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt === "all" ? "All Statuses" : opt.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {filteredCustomers.length === 0 ? (
-            <div className="p-12 text-center">
-              <UserCheck className="mx-auto h-8 w-8 text-slate-300" />
-              <p className="mt-2 text-sm font-semibold text-slate-700">No customer ledgers found</p>
-              <p className="text-xs text-slate-400">Try adjusting your filters or search keywords.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {filteredCustomers.map((customer) => (
-                <div
-                  key={customer.id}
-                  className="flex flex-col gap-3 p-4 transition hover:bg-slate-50/70 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
-                      {getInitials(customer.fullName ?? "")}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900 leading-tight">
-                        {customer.fullName ?? "Walk-in Customer"}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {customer.phone || "No phone"}
-                        {customer.cnic && (
-                          <>
-                            {" "}<span className="text-slate-300">·</span> CNIC: {customer.cnic}
-                          </>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span
-                      className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${
-                        customer.status === "overdue"
-                          ? "bg-rose-50 text-rose-700 border border-rose-200"
-                          : customer.status === "pending"
-                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                          : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                      }`}
-                    >
-                      {customer.status.toUpperCase()}
-                    </span>
-
-                    <span className="min-w-[100px] text-right font-mono text-sm font-bold text-slate-900">
-                      {formatCurrency(customer.outstandingBalance)}
-                    </span>
-
-                    <div className="flex items-center gap-1.5 ml-2">
-                      <button
-                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50"
-                        onClick={() => void handleStatementOpen(customer.id)}
-                      >
-                        Statement
-                      </button>
-
-                      <button
-                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50"
-                        onClick={() => openAdjustmentModal(customer.id)}
-                      >
-                        Adjust
-                      </button>
-
-                      <button
-                        className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700"
-                        onClick={() => openSettlementModal(customer.id)}
-                      >
-                        Settle Debt
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              You are offline. Showing the Udhaar ledger saved on{" "}
+              <span className="font-semibold">{new Date(snapshotAt).toLocaleString()}</span>.
+              It refreshes automatically when the connection returns.
             </div>
           )}
-        </section>
+
+          {pendingCount > 0 && (
+            <div
+              role="status"
+              className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-800"
+            >
+              <span className="font-semibold">{pendingCount}</span> Udhaar{" "}
+              {pendingCount === 1 ? "entry is" : "entries are"} saved on this device and waiting to sync.
+              Balances above already include {pendingCount === 1 ? "it" : "them"}.
+            </div>
+          )}
+
+          {/* Page Header */}
+          <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-indigo-600" />
+                <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                  Finance & Credit Control
+                </p>
+              </div>
+              <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+                Udhaar Ledger
+              </h1>
+              <p className="mt-0.5 text-xs sm:text-sm text-slate-500">
+                Track outstanding customer debt, aging buckets, and settlement receipts.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {isOwner && (
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+                  onClick={openThresholdsModal}
+                >
+                  <SlidersHorizontal size={14} className="text-slate-500" />
+                  Credit Limits
+                </button>
+              )}
+
+              {canAdjustLedger && (
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+                  onClick={() => openAdjustmentModal()}
+                >
+                  <Plus size={14} className="text-slate-500" />
+                  Manual Adjustment
+                </button>
+              )}
+
+              {canSettleDebt && (
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700 cursor-pointer"
+                  onClick={() => openSettlementModal()}
+                >
+                  <Coins size={14} />
+                  Record Settlement
+                </button>
+              )}
+            </div>
+          </header>
+
+          {/* KPI Cards */}
+          <section className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Total Outstanding
+                </span>
+                <span className="rounded-lg bg-slate-100 p-2 text-slate-600">
+                  <CreditCard size={16} />
+                </span>
+              </div>
+              <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+                {aging ? formatCurrency(aging.summary.totalOutstanding) : "—"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">Total active credit across all accounts</p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-600">
+                  Overdue (90+ Days)
+                </span>
+                <span className="rounded-lg bg-amber-50 p-2 text-amber-600">
+                  <AlertCircle size={16} />
+                </span>
+              </div>
+              <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-amber-700">
+                {aging ? formatCurrency(aging.summary.overdueBalance) : "—"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">Requires collection priority</p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                  Active Accounts
+                </span>
+                <span className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
+                  <Users size={16} />
+                </span>
+              </div>
+              <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+                {aging ? String(aging.summary.activeAccounts) : "—"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">Customers with outstanding balance</p>
+            </div>
+          </section>
+
+          {/* Aging Buckets Overview */}
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">Aging Analysis</h2>
+                <p className="text-xs text-slate-500">Unsettled credit broken down by debt duration.</p>
+              </div>
+              <span className="flex items-center gap-1 text-xs font-semibold text-slate-400">
+                <Clock size={13} /> Real-time aging
+              </span>
+            </div>
+
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+              {aging ? (
+                Object.entries(aging.buckets).map(([bucket, value]) => {
+                  const label =
+                    bucket === "current"
+                      ? "Current (0-1d)"
+                      : bucket === "days1to30"
+                      ? "1 - 30 Days"
+                      : bucket === "days30to60"
+                      ? "30 - 60 Days"
+                      : bucket === "days60to90"
+                      ? "60 - 90 Days"
+                      : "90+ Days (Overdue)";
+
+                  const isOverdue = bucket === "days90plus" && value > 0;
+
+                  return (
+                    <div
+                      key={bucket}
+                      className={`rounded-lg border p-3 transition ${
+                        isOverdue
+                          ? "border-amber-200 bg-amber-50/50"
+                          : "border-slate-200/80 bg-slate-50/50"
+                      }`}
+                    >
+                      <p className="text-[11px] font-medium text-slate-500">{label}</p>
+                      <p
+                        className={`mt-1.5 text-base font-bold ${
+                          isOverdue ? "text-amber-700" : "text-slate-900"
+                        }`}
+                      >
+                        {formatCurrency(value)}
+                      </p>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="col-span-full py-4 text-center text-xs text-slate-400">
+                  No aging breakdown recorded.
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* Customer Ledger Table */}
+          <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 bg-slate-50/50">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-slate-900">Customer Accounts</h2>
+                <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold text-slate-700">
+                  {filteredCustomers.length}
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <div className="relative w-full sm:w-60">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search name or phone..."
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+
+                <div className="relative w-full sm:w-auto">
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  >
+                    {statusOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt === "all" ? "All Statuses" : opt.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {filteredCustomers.length === 0 ? (
+              <div className="p-12 text-center">
+                <UserCheck className="mx-auto h-8 w-8 text-slate-300" />
+                <p className="mt-2 text-sm font-semibold text-slate-700">No customer ledgers found</p>
+                <p className="text-xs text-slate-400">Try adjusting your filters or search keywords.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {filteredCustomers.map((customer) => (
+                  <div
+                    key={customer.id}
+                    className="flex flex-col gap-3 p-4 transition hover:bg-slate-50/70 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+                        {getInitials(customer.fullName ?? "")}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-900 leading-tight">
+                          {customer.fullName ?? "Walk-in Customer"}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {customer.phone || "No phone"}
+                          {customer.cnic && (
+                            <>
+                              {" "}<span className="text-slate-300">·</span> CNIC: {customer.cnic}
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span
+                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                          customer.status === "overdue"
+                            ? "bg-rose-50 text-rose-700 border border-rose-200"
+                            : customer.status === "pending"
+                            ? "bg-amber-50 text-amber-700 border border-amber-200"
+                            : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        }`}
+                      >
+                        {customer.status.toUpperCase()}
+                      </span>
+
+                      <span className="min-w-[100px] text-right font-mono text-sm font-bold text-slate-900">
+                        {formatCurrency(customer.outstandingBalance)}
+                      </span>
+
+                      <div className="flex items-center gap-1.5 ml-2">
+                        <button
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 cursor-pointer"
+                          onClick={() => void handleStatementOpen(customer.id)}
+                        >
+                          Statement
+                        </button>
+
+                        {canAdjustLedger && (
+                          <button
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 cursor-pointer"
+                            onClick={() => openAdjustmentModal(customer.id)}
+                          >
+                            Adjust
+                          </button>
+                        )}
+
+                        {canSettleDebt && (
+                          <button
+                            className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700 cursor-pointer"
+                            onClick={() => openSettlementModal(customer.id)}
+                          >
+                            Settle Debt
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
 
         {/* Customer Statement Inspection Drawer */}
@@ -651,7 +722,7 @@ export default function UdhaarPage() {
                   className="h-8.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
                 />
                 <button
-                  className="h-8.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700"
+                  className="h-8.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700 cursor-pointer"
                   onClick={() => void handleStatementView()}
                 >
                   Fetch
@@ -659,13 +730,13 @@ export default function UdhaarPage() {
                 {statement && (
                   <>
                     <button
-                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                       onClick={handlePrintStatement}
                     >
                       <Printer size={13} /> Print
                     </button>
                     <button
-                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      className="h-8.5 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                       onClick={exportStatement}
                     >
                       <Download size={13} /> CSV
@@ -741,8 +812,11 @@ export default function UdhaarPage() {
                       </thead>
                       <tbody className="divide-y divide-slate-100 print:divide-slate-200">
                         {statement.entries.map((entry) => {
-                          const type = String(entry.entryType ?? "").toLowerCase();
-                          const isCredit = type === "credit";
+                          const rawAmount = Number(entry.amount ?? 0);
+                          const type = String(entry.entryType ?? (entry as any).type ?? "").toLowerCase();
+                          const isCredit = type === "credit" || rawAmount < 0;
+                          const absAmount = Math.abs(rawAmount);
+
                           return (
                             <tr key={entry.id} className="text-slate-800">
                               <td className="py-2.5 text-slate-500 print:text-slate-700">
@@ -756,16 +830,18 @@ export default function UdhaarPage() {
                                       : "text-slate-600 bg-slate-200/80 print:bg-transparent print:border print:border-slate-600"
                                   }`}
                                 >
-                                  {entry.entryType ?? "ADJUSTMENT"}
+                                  {entry.entryType ?? (entry as any).type ?? (isCredit ? "credit" : "debit")}
                                 </span>
                               </td>
                               <td className="py-2.5 font-medium">
-                                {entry.reason ?? "No description recorded"}
+                                {entry.reason ?? (entry as any).description ?? "No description recorded"}
                               </td>
-                              <td className={`py-2.5 text-right font-mono font-bold ${
-                                isCredit ? "text-emerald-700" : "text-slate-900"
-                              }`}>
-                                {isCredit ? `- ${formatCurrency(entry.amount)}` : formatCurrency(entry.amount)}
+                              <td
+                                className={`py-2.5 text-right font-mono font-bold ${
+                                  isCredit ? "text-emerald-700" : "text-slate-900"
+                                }`}
+                              >
+                                {isCredit ? `- ${formatCurrency(absAmount)}` : formatCurrency(absAmount)}
                               </td>
                             </tr>
                           );
@@ -774,11 +850,15 @@ export default function UdhaarPage() {
                       <tfoot className="border-t-2 border-slate-300 print:border-slate-800">
                         <tr className="font-semibold text-slate-700">
                           <td colSpan={3} className="pt-3 text-right">Period Total Debits:</td>
-                          <td className="pt-3 text-right font-mono font-bold text-slate-900">{formatCurrency(statementSummary.totalDebits)}</td>
+                          <td className="pt-3 text-right font-mono font-bold text-slate-900">
+                            {formatCurrency(statementSummary.totalDebits)}
+                          </td>
                         </tr>
                         <tr className="font-semibold text-slate-700">
                           <td colSpan={3} className="py-1 text-right">Period Total Credits / Payments:</td>
-                          <td className="py-1 text-right font-mono font-bold text-emerald-700">- {formatCurrency(statementSummary.totalCredits)}</td>
+                          <td className="py-1 text-right font-mono font-bold text-emerald-700">
+                            - {formatCurrency(statementSummary.totalCredits)}
+                          </td>
                         </tr>
                         <tr className="font-bold text-slate-900 border-t border-slate-200 print:border-slate-400">
                           <td colSpan={3} className="py-2 text-right">Net Period Movement:</td>
@@ -816,8 +896,8 @@ export default function UdhaarPage() {
           </section>
         )}
 
-        {/* Manual Adjustment Modal (No Darkened Background) */}
-        {showAdjustment && (
+        {/* Manual Adjustment Modal */}
+        {showAdjustment && canAdjustLedger && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto print:hidden"
             onClick={(e) => {
@@ -833,7 +913,7 @@ export default function UdhaarPage() {
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
                 >
                   <X size={16} />
                 </button>
@@ -874,7 +954,7 @@ export default function UdhaarPage() {
                               setCustomerSearch(`${c.fullName} (${c.phone})`);
                               setShowCustomerDropdown(false);
                             }}
-                            className="w-full px-3 py-2 text-left text-xs transition hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                            className="w-full px-3 py-2 text-left text-xs transition hover:bg-slate-50 border-b border-slate-100 last:border-0 cursor-pointer"
                           >
                             <p className="font-semibold text-slate-900">{c.fullName}</p>
                             <p className="text-[11px] text-slate-500">
@@ -953,14 +1033,14 @@ export default function UdhaarPage() {
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="flex-1 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    className="flex-1 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={adjustmentState === "loading"}
-                    className="flex-1 rounded-lg bg-indigo-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                    className="flex-1 rounded-lg bg-indigo-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
                   >
                     {adjustmentState === "loading" ? "Saving..." : "Save Adjustment"}
                   </button>
@@ -970,8 +1050,8 @@ export default function UdhaarPage() {
           </div>
         )}
 
-        {/* Record Settlement Modal (No Darkened Background) */}
-        {showSettlement && (
+        {/* Record Settlement Modal */}
+        {showSettlement && canSettleDebt && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto print:hidden"
             onClick={(e) => {
@@ -984,7 +1064,7 @@ export default function UdhaarPage() {
                 <button
                   type="button"
                   onClick={() => setShowSettlement(false)}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
                 >
                   <X size={16} />
                 </button>
@@ -1028,7 +1108,7 @@ export default function UdhaarPage() {
                               setSettlementCustomerSearch(`${c.fullName || "Customer"} (${c.phone || "No phone"})`);
                               setShowSettlementDropdown(false);
                             }}
-                            className="w-full px-3 py-2 text-left text-xs transition hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                            className="w-full px-3 py-2 text-left text-xs transition hover:bg-slate-50 border-b border-slate-100 last:border-0 cursor-pointer"
                           >
                             <p className="font-semibold text-slate-900">{c.fullName}</p>
                             <p className="text-[11px] text-slate-500">
@@ -1081,14 +1161,14 @@ export default function UdhaarPage() {
                   <button
                     type="button"
                     onClick={() => setShowSettlement(false)}
-                    className="flex-1 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    className="flex-1 rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={settlementSubmitting || !settlementForm.customerId || !settlementForm.amount}
-                    className="flex-1 rounded-lg bg-indigo-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                    className="flex-1 rounded-lg bg-indigo-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
                   >
                     {settlementSubmitting ? "Processing..." : "Record Payment"}
                   </button>
@@ -1098,8 +1178,8 @@ export default function UdhaarPage() {
           </div>
         )}
 
-        {/* Credit Thresholds Modal (No Darkened Background) */}
-        {showThresholds && (
+        {/* Credit Thresholds Modal */}
+        {showThresholds && isOwner && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto print:hidden"
             onClick={(e) => {
@@ -1112,7 +1192,7 @@ export default function UdhaarPage() {
                 <button
                   type="button"
                   onClick={() => setShowThresholds(false)}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
                 >
                   <X size={16} />
                 </button>
@@ -1170,14 +1250,14 @@ export default function UdhaarPage() {
                   <button
                     type="button"
                     onClick={() => setShowThresholds(false)}
-                    className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={thresholdsSubmitting}
-                    className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
                   >
                     {thresholdsSubmitting ? "Saving..." : "Save Limits"}
                   </button>

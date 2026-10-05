@@ -1,9 +1,15 @@
 // src/app/(owner)/catalog/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
-import { SnookerTable, CreateTableInput } from
-  "@/features/catalog/types/catalog.types";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth/auth-context";
+import { redirectPathForRoles } from "@/lib/auth/session";
+import {
+  SnookerTable,
+  CreateTableInput,
+  RatePlan,
+} from "@/features/catalog/types/catalog.types";
 import {
   getTables,
   createTable,
@@ -12,58 +18,93 @@ import {
   getRateHistory,
   createRatePlan,
 } from "@/services/catalog.service";
-import { RatePlan } from "@/features/catalog/types/catalog.types";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { fetchBranches } from "@/lib/api/branch";
 import type { BranchItem } from "@/types/branch";
+import { isNetworkFailure, loadWithOfflineSnapshot } from "@/lib/sync/offline-reference-cache";
+import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The request failed";
 }
 
 export default function CatalogPage() {
+  const { user, isLoading: authLoading } = useAuth();
+  const router = useRouter();
+
+  // ── role protection guard ────────────────────
+  const isAuthorized = useMemo(() => {
+    if (!user) return false;
+    const roles = (user.roles || []).map((r) => String(r).toUpperCase());
+    return roles.includes("OWNER") || roles.includes("MANAGER");
+  }, [user]);
+
+  useEffect(() => {
+    if (!authLoading && user && !isAuthorized) {
+      // Bounce cashier to their designated workspace (e.g. /floor or /canteen)
+      const targetPath = redirectPathForRoles(user.roles) || "/canteen";
+      router.replace(targetPath);
+    }
+  }, [authLoading, user, isAuthorized, router]);
 
   // ── table state ──────────────────────────────
-  const [tables, setTables]             = useState<SnookerTable[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState<string | null>(null);
+  const [tables, setTables] = useState<SnookerTable[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
 
   // ── add/edit form state ──────────────────────
-  const [showForm, setShowForm]         = useState(false);
+  const [showForm, setShowForm] = useState(false);
   const [editingTable, setEditingTable] = useState<SnookerTable | null>(null);
-  const [tableNumber, setTableNumber]   = useState("");
-  const [hourlyRate, setHourlyRate]     = useState("");
-  const [tableStatus, setTableStatus]   = useState("available");
-  const [saving, setSaving]             = useState(false);
-  const [formError, setFormError]       = useState<string | null>(null);
+  const [tableNumber, setTableNumber] = useState("");
+  const [hourlyRate, setHourlyRate] = useState("");
+  const [tableStatus, setTableStatus] = useState("available");
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SnookerTable | null>(null);
   const [branches, setBranches] = useState<BranchItem[]>([]);
-  const [branchFilter, setBranchFilter] = useState("");
   const [selectedBranchId, setSelectedBranchId] = useState("");
 
   // ── rate modal state ─────────────────────────
-  const [rateTable, setRateTable]       = useState<SnookerTable | null>(null);
-  const [rates, setRates]               = useState<RatePlan[]>([]);
+  const [rateTable, setRateTable] = useState<SnookerTable | null>(null);
+  const [rates, setRates] = useState<RatePlan[]>([]);
   const [ratesLoading, setRatesLoading] = useState(false);
-  const [newRateType, setNewRateType]   = useState("standard");
+  const [newRateType, setNewRateType] = useState("standard");
   const [newRateValue, setNewRateValue] = useState("");
-  const [rateSaving, setRateSaving]     = useState(false);
-  const [rateError, setRateError]       = useState<string | null>(null);
+  const [rateSaving, setRateSaving] = useState(false);
+  const [rateError, setRateError] = useState<string | null>(null);
 
-  // ── fetch tables on load ─────────────────────
+  // ── fetch branches and tables (only if authorized) ─
   useEffect(() => {
-    void fetchBranches({ limit: 100 }).then((result) => setBranches(result.branches));
-  }, []);
-  useEffect(() => { void fetchTables(branchFilter || undefined); }, [branchFilter]);
+    if (!isAuthorized) return;
+    void loadWithOfflineSnapshot("catalog:branches", () => fetchBranches({ limit: 100 }))
+      .then(({ data }) => setBranches(data.branches))
+      .catch(() => {
+        // Offline and never loaded: the table list below still works, branch names fall back to "Unknown".
+      });
+  }, [isAuthorized]);
+
+  useEffect(() => {
+    if (!isAuthorized) return;
+    void fetchTables(user?.branchId);
+  }, [isAuthorized, user?.branchId]);
 
   async function fetchTables(branchId?: string) {
     try {
       setLoading(true);
       setError(null);
-      const data = await getTables(branchId);
+      const { data, savedAt } = await loadWithOfflineSnapshot(
+        `catalog:tables:${branchId ?? "all"}`,
+        () => getTables(branchId),
+      );
       setTables(data);
+      setSnapshotAt(savedAt);
     } catch (err: unknown) {
-      setError(errorMessage(err));
+      setError(
+        isNetworkFailure(err)
+          ? "You are offline and no saved table list exists on this device yet. Open this page once while online."
+          : errorMessage(err),
+      );
     } finally {
       setLoading(false);
     }
@@ -75,7 +116,7 @@ export default function CatalogPage() {
     setTableNumber("");
     setHourlyRate("");
     setTableStatus("available");
-    setSelectedBranchId(branchFilter);
+    setSelectedBranchId(user?.branchId || (branches[0]?.id ?? ""));
     setFormError(null);
     setShowForm(true);
   }
@@ -83,8 +124,9 @@ export default function CatalogPage() {
   function handleOpenEdit(table: SnookerTable) {
     setEditingTable(table);
     setTableNumber(table.tableNumber);
-    setHourlyRate(String(table.defaultHourlyRate));
+    setHourlyRate(String((table as any).hourlyRate ?? table.defaultHourlyRate ?? ""));
     setTableStatus(table.status);
+    setSelectedBranchId(table.branchId ?? (table.branch as any)?.id ?? user?.branchId ?? "");
     setFormError(null);
     setShowForm(true);
   }
@@ -92,6 +134,7 @@ export default function CatalogPage() {
   function handleCloseForm() {
     setShowForm(false);
     setEditingTable(null);
+    setSelectedBranchId("");
     setFormError(null);
   }
 
@@ -105,7 +148,15 @@ export default function CatalogPage() {
       setFormError("Enter a valid hourly rate");
       return;
     }
-    if (!editingTable && !selectedBranchId) {
+
+    const targetBranchId =
+      selectedBranchId ||
+      editingTable?.branchId ||
+      (editingTable?.branch as any)?.id ||
+      user?.branchId ||
+      "";
+
+    if (!targetBranchId) {
       setFormError("Branch is required");
       return;
     }
@@ -113,7 +164,7 @@ export default function CatalogPage() {
     const input: CreateTableInput = {
       tableNumber: tableNumber.trim(),
       hourlyRate: Number(hourlyRate),
-      branchId: selectedBranchId,
+      branchId: targetBranchId,
       ...(editingTable && { status: tableStatus }),
     };
 
@@ -121,12 +172,37 @@ export default function CatalogPage() {
       setSaving(true);
       if (editingTable) {
         const updated = await updateTable(editingTable.id, input);
+
+        const branchObj =
+          (updated as any).branch ??
+          branches.find((b) => b.id === targetBranchId) ??
+          editingTable.branch;
+
+        const merged: SnookerTable = {
+          ...editingTable,
+          ...updated,
+          defaultHourlyRate: Number(hourlyRate),
+          branchId: targetBranchId,
+          branch: branchObj,
+        };
+
         setTables((prev) =>
-          prev.map((t) => (t.id === editingTable.id ? updated : t))
+          prev.map((t) => (t.id === editingTable.id ? merged : t))
         );
       } else {
         const newTable = await createTable(input);
-          setTables((prev) => [...prev, newTable]);
+        const branchObj =
+          (newTable as any).branch ??
+          branches.find((b) => b.id === targetBranchId);
+
+        const merged: SnookerTable = {
+          ...newTable,
+          defaultHourlyRate: Number(hourlyRate),
+          branchId: targetBranchId,
+          branch: branchObj,
+        };
+
+        setTables((prev) => [...prev, merged]);
       }
       handleCloseForm();
     } catch (err: unknown) {
@@ -193,7 +269,23 @@ export default function CatalogPage() {
         rateType: newRateType,
         hourlyRate: Number(newRateValue),
       });
+
       setRates((prev) => [newRate, ...prev]);
+
+      if (newRateType === "standard") {
+        setTables((prev) =>
+          prev.map((t) =>
+            t.id === rateTable.id
+              ? {
+                  ...t,
+                  defaultHourlyRate: Number(newRateValue),
+                  hourlyRate: Number(newRateValue),
+                }
+              : t
+          )
+        );
+      }
+
       setNewRateValue("");
     } catch (err: unknown) {
       setRateError(errorMessage(err));
@@ -204,58 +296,57 @@ export default function CatalogPage() {
 
   // ── status color ──────────────────────────────
   const statusColor: Record<string, string> = {
-    available:   "bg-green-100 text-green-700",
-    occupied:    "bg-red-100 text-red-700",
+    available: "bg-green-100 text-green-700",
+    occupied: "bg-red-100 text-red-700",
     maintenance: "bg-yellow-100 text-yellow-700",
-    reserved:    "bg-blue-100 text-blue-700",
-    inactive:    "bg-slate-100 text-slate-500",
+    reserved: "bg-blue-100 text-blue-700",
+    inactive: "bg-slate-100 text-slate-500",
   };
 
-  // ── render ────────────────────────────────────
+  // Block rendering until authorized
+  if (authLoading || !isAuthorized) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <p className="text-sm text-slate-400">Verifying permissions...</p>
+      </div>
+    );
+  }
+
   return (
     <div>
-
       {/* ── page header ── */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Tables & Rates
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-800">Tables & Rates</h1>
           <p className="mt-1 text-sm text-slate-500">
             Manage snooker tables and their hourly rates.
           </p>
         </div>
-        <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
-          <option value="">All Branches</option>
-          {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
-        </select>
         <button
           onClick={handleOpenAdd}
-          className="rounded-md bg-green-700 px-4 py-2
-                     text-sm font-medium text-white hover:bg-green-800"
+          disabled={snapshotAt !== null}
+          title={snapshotAt !== null ? "Adding a table needs an internet connection" : undefined}
+          className="rounded-md bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
         >
           + Add Table
         </button>
       </div>
 
+      {snapshotAt && <div className="mb-4"><OfflineSnapshotNotice savedAt={snapshotAt} note="Adding or editing tables needs an internet connection." /></div>}
+
       {/* ── loading ── */}
-      {loading && (
-        <p className="text-sm text-slate-400">Loading tables...</p>
-      )}
+      {loading && <p className="text-sm text-slate-400">Loading tables...</p>}
 
       {/* ── error ── */}
       {error && (
-        <div className="rounded-md bg-red-50 border border-red-200
-                        p-4 text-sm text-red-600">
+        <div className="rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-600 mb-4">
           ⚠️ {error}
         </div>
       )}
 
       {/* ── empty ── */}
       {!loading && !error && tables.length === 0 && (
-        <div className="flex flex-col items-center justify-center
-                        rounded-lg border-2 border-dashed
-                        border-slate-200 py-16">
+        <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-200 py-16">
           <p className="text-slate-400 text-sm">No tables added yet</p>
           <p className="text-slate-300 text-xs mt-1">
             Click + Add Table to get started
@@ -265,12 +356,10 @@ export default function CatalogPage() {
 
       {/* ── tables list ── */}
       {!loading && tables.length > 0 && (
-        <div className="rounded-xl border border-slate-200
-                        bg-white overflow-hidden">
+        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-slate-50 text-left text-xs
-                             font-medium text-slate-500 uppercase">
+              <tr className="bg-slate-50 text-left text-xs font-medium text-slate-500 uppercase">
                 <th className="px-4 py-3 border-b">Table No.</th>
                 <th className="px-4 py-3 border-b">Branch</th>
                 <th className="px-4 py-3 border-b">Hourly Rate</th>
@@ -279,93 +368,96 @@ export default function CatalogPage() {
               </tr>
             </thead>
             <tbody>
-              {tables.map((table) => (
-                <tr key={table.id}
-                    className="border-b last:border-0 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-slate-800">
-                    Table #{table.tableNumber}
-                  </td>
-                  <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">{table.branch?.name ?? "Unknown branch"}</span></td>
-                  <td className="px-4 py-3 text-slate-600">
-                    Rs. {table.defaultHourlyRate}/hr
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs
-                                     font-medium
-                                     ${statusColor[table.status] ??
-                                       "bg-slate-100 text-slate-500"}`}>
-                      {table.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleOpenRates(table)}
-                        className="rounded border border-slate-200
-                                   px-3 py-1 text-xs text-slate-600
-                                   hover:bg-slate-50"
+              {tables.map((table) => {
+                const branchName =
+                  table.branch?.name ??
+                  branches.find((b) => b.id === table.branchId)?.name ??
+                  "Unknown branch";
+
+                const rate =
+                  (table as any).hourlyRate ?? table.defaultHourlyRate ?? 0;
+
+                return (
+                  <tr
+                    key={table.id}
+                    className="border-b last:border-0 hover:bg-slate-50 transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium text-slate-800">
+                      Table #{table.tableNumber}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                        {branchName}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 font-medium">
+                      Rs. {rate}/hr
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          statusColor[table.status] ??
+                          "bg-slate-100 text-slate-500"
+                        }`}
                       >
-                        Rates
-                      </button>
-                      <button
-                        onClick={() => handleOpenEdit(table)}
-                        className="rounded border border-blue-200
-                                   px-3 py-1 text-xs text-blue-600
-                                   hover:bg-blue-50"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(table.id)}
-                        className="rounded border border-red-200
-                                   px-3 py-1 text-xs text-red-500
-                                   hover:bg-red-50"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {table.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleOpenRates(table)}
+                          className="rounded border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 cursor-pointer"
+                        >
+                          Rates
+                        </button>
+                        <button
+                          onClick={() => handleOpenEdit(table)}
+                          className="rounded border border-blue-200 px-3 py-1 text-xs text-blue-600 hover:bg-blue-50 cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(table.id)}
+                          className="rounded border border-red-200 px-3 py-1 text-xs text-red-500 hover:bg-red-50 cursor-pointer"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* ══════════════════════════════════════════
-          ADD / EDIT TABLE MODAL
-      ══════════════════════════════════════════ */}
+      {/* ── ADD / EDIT TABLE MODAL ── */}
       {showForm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex
-                        items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl
-                          w-full max-w-md p-6">
-
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex justify-between items-center mb-5">
               <h2 className="text-lg font-semibold text-slate-800">
                 {editingTable ? "Edit Table" : "Add New Table"}
               </h2>
               <button
                 onClick={handleCloseForm}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 cursor-pointer text-base"
               >
                 ✕
               </button>
             </div>
 
             {formError && (
-              <div className="mb-4 rounded-md bg-red-50 border
-                              border-red-200 p-3 text-sm text-red-600">
+              <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-600">
                 {formError}
               </div>
             )}
 
             <div className="space-y-4">
-
-              {/* table number */}
               <div>
-                <label className="block text-sm font-medium
-                                  text-slate-700 mb-1">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
                   Table Number
                 </label>
                 <input
@@ -373,16 +465,12 @@ export default function CatalogPage() {
                   value={tableNumber}
                   onChange={(e) => setTableNumber(e.target.value)}
                   placeholder="e.g. 1, 2, VIP-1"
-                  className="w-full rounded-lg border border-slate-300
-                             px-3 py-2 text-sm focus:outline-none
-                             focus:ring-2 focus:ring-green-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
 
-              {/* hourly rate */}
               <div>
-                <label className="block text-sm font-medium
-                                  text-slate-700 mb-1">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
                   Hourly Rate (Rs.)
                 </label>
                 <input
@@ -391,33 +479,37 @@ export default function CatalogPage() {
                   onChange={(e) => setHourlyRate(e.target.value)}
                   placeholder="e.g. 200"
                   min={1}
-                  className="w-full rounded-lg border border-slate-300
-                             px-3 py-2 text-sm focus:outline-none
-                             focus:ring-2 focus:ring-green-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
 
-              {!editingTable && <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
-                <select value={selectedBranchId} onChange={(event) => setSelectedBranchId(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Branch
+                </label>
+                <select
+                  value={selectedBranchId}
+                  onChange={(event) => setSelectedBranchId(event.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
                   <option value="">Select a branch</option>
-                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name ?? "Unnamed branch"}</option>)}
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name ?? "Unnamed branch"}
+                    </option>
+                  ))}
                 </select>
-              </div>}
+              </div>
 
-              {/* status — only when editing */}
               {editingTable && (
                 <div>
-                  <label className="block text-sm font-medium
-                                    text-slate-700 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Table Status
                   </label>
                   <select
                     value={tableStatus}
                     onChange={(e) => setTableStatus(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300
-                               px-3 py-2 text-sm focus:outline-none
-                               focus:ring-2 focus:ring-green-500"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
                   >
                     <option value="available">Available</option>
                     <option value="occupied">Occupied</option>
@@ -432,38 +524,30 @@ export default function CatalogPage() {
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={handleCloseForm}
-                className="rounded-lg border border-slate-300
-                           px-4 py-2 text-sm text-slate-600
-                           hover:bg-slate-50"
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded-lg bg-green-700 px-4 py-2
-                           text-sm text-white hover:bg-green-800
-                           disabled:opacity-50"
+                className="rounded-lg bg-green-700 px-4 py-2 text-sm text-white hover:bg-green-800 disabled:opacity-50 cursor-pointer"
               >
                 {saving
                   ? "Saving..."
-                  : editingTable ? "Save Changes" : "Add Table"}
+                  : editingTable
+                  ? "Save Changes"
+                  : "Add Table"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ══════════════════════════════════════════
-          RATE HISTORY MODAL
-      ══════════════════════════════════════════ */}
+      {/* ── RATE HISTORY MODAL ── */}
       {rateTable && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex
-                        items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl
-                          w-full max-w-lg p-6">
-
-            {/* header */}
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <div className="flex justify-between items-center mb-5">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800">
@@ -475,13 +559,12 @@ export default function CatalogPage() {
               </div>
               <button
                 onClick={handleCloseRates}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 cursor-pointer text-base"
               >
                 ✕
               </button>
             </div>
 
-            {/* add new rate */}
             <div className="bg-slate-50 rounded-lg p-4 mb-5">
               <p className="text-sm font-medium text-slate-700 mb-3">
                 Set New Rate
@@ -495,9 +578,7 @@ export default function CatalogPage() {
                 <select
                   value={newRateType}
                   onChange={(e) => setNewRateType(e.target.value)}
-                  className="rounded-lg border border-slate-300
-                             px-3 py-2 text-sm focus:outline-none
-                             focus:ring-2 focus:ring-green-500"
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
                 >
                   <option value="standard">Standard</option>
                   <option value="peak">Peak</option>
@@ -511,24 +592,19 @@ export default function CatalogPage() {
                   onChange={(e) => setNewRateValue(e.target.value)}
                   placeholder="Rate in Rs."
                   min={1}
-                  className="flex-1 rounded-lg border border-slate-300
-                             px-3 py-2 text-sm focus:outline-none
-                             focus:ring-2 focus:ring-green-500"
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
 
                 <button
                   onClick={handleAddRate}
                   disabled={rateSaving}
-                  className="rounded-lg bg-green-700 px-4 py-2
-                             text-sm text-white hover:bg-green-800
-                             disabled:opacity-50"
+                  className="rounded-lg bg-green-700 px-4 py-2 text-sm text-white hover:bg-green-800 disabled:opacity-50 cursor-pointer"
                 >
                   {rateSaving ? "..." : "Set"}
                 </button>
               </div>
             </div>
 
-            {/* rate list */}
             <div className="max-h-60 overflow-y-auto space-y-2">
               {ratesLoading && (
                 <p className="text-sm text-slate-400 text-center py-4">
@@ -543,19 +619,18 @@ export default function CatalogPage() {
               )}
 
               {rates.map((rate) => (
-                <div key={rate.id}
-                     className="flex justify-between items-center
-                                border rounded-lg px-4 py-3 text-sm">
+                <div
+                  key={rate.id}
+                  className="flex justify-between items-center border rounded-lg px-4 py-3 text-sm"
+                >
                   <div>
                     <span className="font-medium capitalize">
                       {rate.rateType}
                     </span>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      From: {new Date(rate.effectiveFrom)
-                        .toLocaleDateString()}
+                      From: {new Date(rate.effectiveFrom).toLocaleDateString()}
                       {rate.effectiveTo
-                        ? ` → ${new Date(rate.effectiveTo)
-                            .toLocaleDateString()}`
+                        ? ` → ${new Date(rate.effectiveTo).toLocaleDateString()}`
                         : " → Current"}
                     </p>
                   </div>
@@ -569,17 +644,21 @@ export default function CatalogPage() {
         </div>
       )}
 
+      {/* ── DELETE CONFIRM MODAL ── */}
       <ConfirmModal
         isOpen={Boolean(deleteTarget)}
         title="Delete table"
-        description={deleteTarget ? `This will delete table ${deleteTarget.tableNumber}. This action is permanent.` : ""}
+        description={
+          deleteTarget
+            ? `This will delete table ${deleteTarget.tableNumber}. This action is permanent.`
+            : ""
+        }
         confirmText="Delete table"
         cancelText="Keep table"
         variant="danger"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
-
     </div>
   );
 }

@@ -42,7 +42,7 @@ export async function getPushSupport() {
 
 function serviceWorkerUrl() {
   const config = Object.fromEntries(Object.entries(firebaseConfig).filter(([, value]) => value));
-  return `/firebase-messaging-sw.js?config=${encodeURIComponent(JSON.stringify(config))}`;
+  return `/firebase/firebase-messaging-sw.js?config=${encodeURIComponent(JSON.stringify(config))}`;
 }
 
 export async function requestPushPermission(): Promise<PushSetupResult> {
@@ -52,7 +52,7 @@ export async function requestPushPermission(): Promise<PushSetupResult> {
   try {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") return { status: "denied", message: "Notification permission was not granted." };
-    const registration = await navigator.serviceWorker.register(serviceWorkerUrl(), { scope: "/" });
+    const registration = await navigator.serviceWorker.register(serviceWorkerUrl(), { scope: "/firebase/" });
     const currentMessaging = await getFirebaseMessaging();
     if (!currentMessaging) return { status: "unsupported", message: "Firebase Messaging is not supported in this browser." };
     const token = await getToken(currentMessaging, { vapidKey: env.NEXT_PUBLIC_FIREBASE_VAPID_KEY!, serviceWorkerRegistration: registration });
@@ -60,6 +60,28 @@ export async function requestPushPermission(): Promise<PushSetupResult> {
     return { status: "generated", token };
   } catch (error) {
     return { status: "failed", message: error instanceof Error ? error.message : "Push setup failed." };
+  }
+}
+
+export async function getExistingPushToken(): Promise<string | null> {
+  if (
+    !hasConfig ||
+    typeof window === "undefined" ||
+    !("Notification" in window) ||
+    !("serviceWorker" in navigator) ||
+    Notification.permission !== "granted"
+  ) return null;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration("/firebase/")
+      ?? await navigator.serviceWorker.register(serviceWorkerUrl(), { scope: "/firebase/" });
+    const currentMessaging = await getFirebaseMessaging();
+    if (!currentMessaging) return null;
+    return await getToken(currentMessaging, {
+      vapidKey: env.NEXT_PUBLIC_FIREBASE_VAPID_KEY!,
+      serviceWorkerRegistration: registration,
+    }) || null;
+  } catch {
+    return null;
   }
 }
 

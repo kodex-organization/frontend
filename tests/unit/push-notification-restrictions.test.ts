@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from "node:fs";
+import path from "node:path";
 
 type ChannelKey = "inAppEnabled" | "pushEnabled" | "smsEnabled" | "dailyDigestEnabled";
 
@@ -40,6 +42,26 @@ function sanitizeNotificationPreferences(roles: string[], preferences: {
   const isOwner = roles.includes("OWNER");
   return isOwner ? preferences : { ...preferences, pushEnabled: false };
 }
+
+test("delivery log category filter submits canonical lowercase category values", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/(owner)/notifications/page.tsx");
+  const pageContent = fs.readFileSync(pagePath, "utf-8");
+
+  assert.match(
+    pageContent,
+    /notificationCategories\.map\(\(item\) => <option key=\{item\} value=\{item\}>\{categoryLabel\(item\)\}<\/option>\)/,
+  );
+});
+
+test("Firebase Messaging uses a dedicated service-worker scope separate from the app worker", () => {
+  const firebasePath = path.resolve(process.cwd(), "src/features/notifications/firebase.ts");
+  const firebaseContent = fs.readFileSync(firebasePath, "utf-8");
+  const workerPath = path.resolve(process.cwd(), "public/firebase/firebase-messaging-sw.js");
+
+  assert.match(firebaseContent, /firebase-messaging-sw\.js/);
+  assert.match(firebaseContent, /scope:\s*["']\/firebase\/["']/);
+  assert.equal(fs.existsSync(workerPath), true);
+});
 
 test('push notification channel option is visible only to the OWNER role', () => {
   const ownerChannels = resolveNotificationChannels(['OWNER']);
