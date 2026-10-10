@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { offlineDB } from "@/lib/sync/offline-db";
+import { getCachedBranchCurrency } from "@/features/tenancy/branch-currency-cache";
 import { invoiceService } from "../services/invoiceService";
 import type {
   BillingTransaction,
@@ -76,7 +77,7 @@ export function useTransactions({
               branch: {
                 id: p.branchId,
                 name: invoice?.branch?.name || "Current Branch",
-                currency: invoice?.branch?.currency || "PKR",
+                currency: getCachedBranchCurrency(p.branchId),
               },
               customer: invoice?.customer || null,
             },

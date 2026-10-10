@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useBranchCurrency } from "@/features/tenancy/useBranchCurrency";
+import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { useConnectionStatus } from "@/lib/connectivity/online-status";
 import { getPendingSyncCount } from "@/lib/sync/offline-db";
 import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
@@ -216,14 +218,14 @@ const PRESET_OPTIONS: { id: Exclude<DatePreset, "custom">; label: string }[] = [
   { id: "thisMonth", label: "This Month" },
 ];
 
-const money = (value: unknown) =>
-  `PKR ${Number(value ?? 0).toLocaleString("en-PK", { maximumFractionDigits: 2 })}`;
 const today = new Date().toISOString().slice(0, 10);
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function ReportingWorkspace() {
   const { user } = useAuth();
+  const currency = useBranchCurrency();
+  const money = (value: unknown) => formatCurrency(Number(value ?? 0), currency);
   const [tab, setTab] = useState<ReportTab>("z-report");
   const branchId = user?.branchId ?? "";
   const [date, setDate] = useState(today);

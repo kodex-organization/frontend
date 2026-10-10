@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 
 import { customerApi } from "@/features/customers/customer-api";
+import { useBranchCurrency } from "@/features/tenancy/useBranchCurrency";
+import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { toast } from "@/lib/toast";
 import type {
   CustomerProfile,
@@ -27,6 +29,7 @@ import type {
 } from "@/features/customers/types";
 
 export default function CustomerDetailsPage() {
+  const currency = useBranchCurrency();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -141,7 +144,7 @@ export default function CustomerDetailsPage() {
             onClick={() => router.push("/udhaar")}
             className="inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg shadow-sm transition-colors"
           >
-            <span>Settle Debt (Rs. {balance.toLocaleString()})</span>
+            <span>Settle Debt ({formatCurrency(balance, currency)})</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         )}
@@ -238,7 +241,7 @@ export default function CustomerDetailsPage() {
           <div>
             <span className="text-xs font-medium text-slate-400">Total Lifetime Spend</span>
             <p className="text-xl font-bold text-slate-900">
-              Rs. {Number(visits?.totalSpent ?? 0).toLocaleString()}
+              {formatCurrency(Number(visits?.totalSpent ?? 0), currency)}
             </p>
           </div>
         </div>
@@ -262,7 +265,7 @@ export default function CustomerDetailsPage() {
           <div>
             <span className="text-xs font-medium text-slate-400">Outstanding Udhaar</span>
             <p className={`text-xl font-bold ${balance > 0 ? "text-rose-600" : "text-slate-900"}`}>
-              Rs. {balance.toLocaleString()}
+              {formatCurrency(balance, currency)}
             </p>
           </div>
         </div>
@@ -351,10 +354,13 @@ export default function CustomerDetailsPage() {
                         </span>
                         {session.invoices?.length > 0 && (
                           <span className="text-sm font-bold text-slate-900">
-                            Rs.{" "}
-                            {session.invoices
-                              .reduce((s: number, inv: any) => s + Number(inv.total ?? 0), 0)
-                              .toLocaleString()}
+                            {formatCurrency(
+                              session.invoices.reduce(
+                                (s: number, inv: any) => s + Number(inv.total ?? 0),
+                                0,
+                              ),
+                              currency,
+                            )}
                           </span>
                         )}
                       </div>
@@ -396,7 +402,7 @@ export default function CustomerDetailsPage() {
                           {invoice.status}
                         </span>
                         <span className="text-sm font-bold text-slate-900">
-                          Rs. {Number(invoice.total ?? 0).toLocaleString()}
+                          {formatCurrency(Number(invoice.total ?? 0), currency)}
                         </span>
                       </div>
                     </div>
@@ -416,7 +422,7 @@ export default function CustomerDetailsPage() {
                     {customer?.branch?.name ? ` · ${customer.branch.name}` : ""}
                   </span>
                   <p className="text-2xl font-bold text-slate-950 mt-0.5">
-                    Rs. {balance.toLocaleString()}
+                    {formatCurrency(balance, currency)}
                   </p>
                 </div>
                 {balance > 0 && (
@@ -466,7 +472,7 @@ export default function CustomerDetailsPage() {
                             isPayment ? "text-emerald-600" : "text-rose-600"
                           }`}
                         >
-                          {isPayment ? "-" : "+"} Rs. {Number(entry.amount ?? 0).toLocaleString()}
+                          {isPayment ? "-" : "+"} {formatCurrency(Number(entry.amount ?? 0), currency)}
                         </span>
                       </div>
                     );

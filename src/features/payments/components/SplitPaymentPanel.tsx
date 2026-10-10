@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { toast } from "react-toastify";
+import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
+import { apiFetch } from "@/lib/api/client";
 
 export default function SplitPaymentPanel({
   invoiceId,
@@ -9,14 +11,16 @@ export default function SplitPaymentPanel({
   cardTotal,
   onSuccess,
   isCustomerBlocked = false,
-  customerName = null,
+  hasCustomer,
+  currency,
 }: {
   invoiceId: string;
   standardTotal: number;
   cardTotal: number;
   onSuccess: () => void;
   isCustomerBlocked?: boolean;
-  customerName?: string | null;
+  hasCustomer: boolean;
+  currency: string;
 }) {
   const [cash, setCash] = useState<string>("0");
   const [card, setCard] = useState<string>("0");
@@ -27,7 +31,8 @@ export default function SplitPaymentPanel({
   const cashVal = parseFloat(cash) || 0;
   const cardVal = parseFloat(card) || 0;
   const walletVal = parseFloat(wallet) || 0;
-  const udhaarVal = isCustomerBlocked ? 0 : (parseFloat(udhaar) || 0);
+  const canUseUdhaar = hasCustomer && !isCustomerBlocked;
+  const udhaarVal = canUseUdhaar ? parseFloat(udhaar) || 0 : 0;
 
   // --- DYNAMIC TAX CONCESSION TARGET ---
   // If 100% of the entered money is on Card (and all other tenders are 0), target is cardTotal (5% tax)
@@ -41,8 +46,12 @@ export default function SplitPaymentPanel({
   const handleSubmit = async () => {
     if (!isValid) return;
 
-    if (udhaarVal > 0 && isCustomerBlocked) {
-      toast.error("Blocked customers cannot receive credit (udhaar).");
+    if (udhaarVal > 0 && !canUseUdhaar) {
+      toast.error(
+        isCustomerBlocked
+          ? "Blocked customers cannot receive credit (udhaar)."
+          : "A customer must be linked to the invoice to use Udhaar.",
+      );
       return;
     }
 
@@ -55,36 +64,10 @@ export default function SplitPaymentPanel({
     try {
       setIsSubmitting(true);
 
-      // Extract bearer token
-      let token = null;
-      try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const val = localStorage.getItem(localStorage.key(i) || "");
-          if (val?.includes("eyJ")) {
-            const m = val.match(/eyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_.+/=]*/);
-            if (m) {
-              token = m[0];
-              break;
-            }
-          }
-        }
-      } catch {}
-
-      const rawBase = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/api\/v1\/?$/, "").replace(/\/$/, "");
-      const res = await fetch(`${rawBase}/api/v1/billing/invoices/${invoiceId}/payments`, {
+      await apiFetch(`/billing/invoices/${encodeURIComponent(invoiceId)}/payments`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        credentials: "include",
         body: JSON.stringify({ tenders }),
       });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error?.message || errData.message || "Failed to settle invoice.");
-      }
 
       toast.success("Payment settled successfully!");
       onSuccess();
@@ -106,7 +89,7 @@ export default function SplitPaymentPanel({
         </div>
         <div className="text-right">
           <span className="text-xs text-slate-400 font-semibold uppercase">Target Total</span>
-          <p className="text-lg font-bold text-slate-900">PKR {targetTotal}</p>
+          <p className="text-lg font-bold text-slate-900">{formatCurrency(targetTotal, currency)}</p>
         </div>
       </div>
 
@@ -152,26 +135,37 @@ export default function SplitPaymentPanel({
             {isCustomerBlocked && (
               <span className="text-[11px] text-rose-600 font-bold">Blocked - Credit Restricted</span>
             )}
+            {!hasCustomer && (
+              <span className="text-[11px] text-slate-500 font-bold">Customer required</span>
+            )}
           </label>
           <input
             type="number"
             step="any"
-            disabled={isCustomerBlocked}
-            value={isCustomerBlocked ? "0" : udhaar}
+            disabled={!canUseUdhaar}
+            value={canUseUdhaar ? udhaar : "0"}
             onChange={(e) => {
-              if (isCustomerBlocked) return;
+              if (!canUseUdhaar) return;
               setUdhaar(e.target.value);
             }}
-            placeholder={isCustomerBlocked ? "Blocked from credit" : "0"}
-            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none ${
+            placeholder={
               isCustomerBlocked
+                ? "Blocked from credit"
+                : hasCustomer
+                  ? "0"
+                  : "Customer required"
+            }
+            className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none ${
+              !canUseUdhaar
                 ? "bg-rose-50/60 border-rose-200 text-rose-400 cursor-not-allowed"
                 : "border-slate-300 focus:border-emerald-600"
             }`}
           />
-          {isCustomerBlocked && (
+          {!canUseUdhaar && (
             <p className="mt-1 text-[11px] text-rose-600 font-medium">
-              This customer is marked as blocked and cannot receive credit.
+              {isCustomerBlocked
+                ? "This customer is marked as blocked and cannot receive credit."
+                : "Walk-in invoices need a linked customer before Udhaar can be used."}
             </p>
           )}
         </div>
@@ -181,7 +175,7 @@ export default function SplitPaymentPanel({
         <div>
           <p className="text-xs text-slate-500">Remaining to allocate</p>
           <p className={`text-base font-bold ${remaining === 0 ? "text-emerald-600" : "text-amber-600"}`}>
-            PKR {remaining}
+            {formatCurrency(remaining, currency)}
           </p>
         </div>
 

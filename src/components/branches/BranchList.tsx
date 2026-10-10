@@ -12,6 +12,31 @@ interface BranchListProps {
   onDeleteBranch: (branchId: string) => void;
 }
 
+/**
+ * Safely parses raw ISO time strings (like "1970-01-01T09:00:00.000Z")
+ * or standard time strings into clean "HH:mm" format.
+ */
+function formatTimeOnly(timeValue: string | null | undefined): string {
+  if (!timeValue) return "—";
+  try {
+    // If it's an ISO string or Date parseable format
+    if (timeValue.includes("T") || timeValue.includes("-")) {
+      const date = new Date(timeValue);
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+      }
+    }
+    // If it's already a simple time string like "10:00"
+    return timeValue;
+  } catch {
+    return timeValue;
+  }
+}
+
 export function BranchList({
   branches,
   isLoading,
@@ -60,136 +85,142 @@ export function BranchList({
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-      {branches.map((branch) => (
-        <div
-          key={branch.id}
-          className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
-        >
-          <div>
-            <div className="flex items-start justify-between gap-3 mb-2">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 line-clamp-1">
-                  {branch.name}
-                </h3>
-                <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
-                  {branch.address}
-                </p>
-              </div>
+        {branches.map((branch) => {
+          // Adjust property names based on your backend response schema if needed (e.g. operatingHoursStart vs openingTime)
+          const startTime = formatTimeOnly((branch as any).operatingHoursStart || (branch as any).openingTime || "10:00");
+          const endTime = formatTimeOnly((branch as any).operatingHoursEnd || (branch as any).closingTime || "02:00");
 
-              <span
-                className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full shrink-0 border ${
-                  branch.isActive
-                    ? "bg-brand-50 text-brand-700 border-brand-200"
-                    : "bg-slate-100 text-slate-600 border-slate-200"
-                }`}
-              >
-                {branch.isActive ? "ACTIVE" : "INACTIVE"}
-              </span>
-            </div>
-
-            {/* Operational Pills */}
-            <div className="grid grid-cols-2 gap-2 my-4 text-[11px]">
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                  Operating Hours
-                </span>
-                <span className="font-semibold text-slate-800">
-                  {branch.operatingHoursStart || "10:00"} - {branch.operatingHoursEnd || "02:00"}
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                  Peak Multiplier
-                </span>
-                <span className="font-semibold text-slate-800">
-                  {Number(branch.peakHourMultiplier ?? 1.0).toFixed(2)}x Rate
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                  Standard Tax / GST
-                </span>
-                <span className="font-semibold text-slate-800">
-                  {branch.standardTaxPercent ?? 16}%
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                  Max Credit Cap
-                </span>
-                <span className="font-semibold text-slate-800">
-                  {branch.currency || "PKR"} {Number(branch.maxUdhaarPerCustomer ?? 5000).toLocaleString()}
-                </span>
-              </div>
-            </div>
-
-            {/* Counts */}
-            {branch._count && (
-              <div className="flex items-center justify-between text-xs text-slate-500 pt-1 pb-3 border-b border-slate-100 font-medium">
-                <span>{branch._count.tablesCatalog ?? 0} Tables</span>
-                <span>•</span>
-                <span>{branch._count.users ?? 0} Staff</span>
-                <span>•</span>
-                <span>{branch._count.sessions ?? 0} Sessions</span>
-              </div>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center justify-between gap-2 pt-4 mt-2">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onEditBranch(branch)}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors shadow-2xs"
-              >
-                Edit Profile
-              </button>
-
-              <button
-                onClick={() => onEditConfig(branch)}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-2xs"
-              >
-                Configure Rules
-              </button>
-            </div>
-
-            <button
-              onClick={() => setPendingDelete(branch)}
-              className="p-2 text-slate-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50"
-              title="Delete / Deactivate Branch"
+          return (
+            <div
+              key={branch.id}
+              className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 line-clamp-1">
+                      {branch.name}
+                    </h3>
+                    <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                      {branch.address}
+                    </p>
+                  </div>
 
-    <ConfirmModal
-      isOpen={Boolean(pendingDelete)}
-      title="Delete branch"
-      description={pendingDelete ? `This will remove ${pendingDelete.name} and any associated branch configuration. This action cannot be undone.` : ""}
-      confirmText="Delete branch"
-      cancelText="Keep branch"
-      variant="danger"
-      onConfirm={() => {
-        if (pendingDelete) {
-          onDeleteBranch(pendingDelete.id);
-        }
-        setPendingDelete(null);
-      }}
-      onCancel={() => setPendingDelete(null)}
-    />
-  </>
+                  <span
+                    className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full shrink-0 border ${
+                      branch.isActive
+                        ? "bg-brand-50 text-brand-700 border-brand-200"
+                        : "bg-slate-100 text-slate-600 border-slate-200"
+                    }`}
+                  >
+                    {branch.isActive ? "ACTIVE" : "INACTIVE"}
+                  </span>
+                </div>
+
+                {/* Operational Pills */}
+                <div className="grid grid-cols-2 gap-2 my-4 text-[11px]">
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                      Operating Hours
+                    </span>
+                    <span className="font-semibold text-slate-800">
+                      {startTime} - {endTime}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                      Peak Multiplier
+                    </span>
+                    <span className="font-semibold text-slate-800">
+                      {Number((branch as any).peakHourMultiplier ?? 1.0).toFixed(2)}x Rate
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                      Standard Tax / GST
+                    </span>
+                    <span className="font-semibold text-slate-800">
+                      {(branch as any).standardTaxPercent ?? 16}%
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                      Max Credit Cap
+                    </span>
+                    <span className="font-semibold text-slate-800">
+                      {branch.currency || "PKR"} {Number((branch as any).maxUdhaarPerCustomer ?? 5000).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Counts */}
+                {branch._count && (
+                  <div className="flex items-center justify-between text-xs text-slate-500 pt-1 pb-3 border-b border-slate-100 font-medium">
+                    <span>{branch._count.tablesCatalog ?? 0} Tables</span>
+                    <span>•</span>
+                    <span>{branch._count.users ?? 0} Staff</span>
+                    <span>•</span>
+                    <span>{branch._count.sessions ?? 0} Sessions</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between gap-2 pt-4 mt-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onEditBranch(branch)}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    Edit Profile
+                  </button>
+
+                  <button
+                    onClick={() => onEditConfig(branch)}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    Configure Rules
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setPendingDelete(branch)}
+                  className="p-2 text-slate-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50 cursor-pointer"
+                  title="Delete / Deactivate Branch"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <ConfirmModal
+        isOpen={Boolean(pendingDelete)}
+        title="Delete branch"
+        description={pendingDelete ? `This will remove ${pendingDelete.name} and any associated branch configuration. This action cannot be undone.` : ""}
+        confirmText="Delete branch"
+        cancelText="Keep branch"
+        variant="danger"
+        onConfirm={() => {
+          if (pendingDelete) {
+            onDeleteBranch(pendingDelete.id);
+          }
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
+    </>
   );
 }

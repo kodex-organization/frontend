@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api/client";
+import { getCachedBranchCurrency } from "@/features/tenancy/branch-currency-cache";
 
 export interface InvoiceItem {
   id: string;
@@ -129,7 +130,7 @@ async function recordSettleOffline(invoiceId: string, payload: SettleInvoicePayl
       invoiceNumber: `INV-${invoiceId.slice(-6)}`,
       status: "paid",
       createdAt: new Date().toISOString(),
-      branch: { id: branchId, name: "Current Branch", currency: "PKR", maxUdhaarPerCustomer: 50000, discountLimitPercent: 20 },
+      branch: { id: branchId, name: "Current Branch", currency: getCachedBranchCurrency(branchId), maxUdhaarPerCustomer: 50000, discountLimitPercent: 20 },
       customer: null,
       items: [],
       subtotal: 0,

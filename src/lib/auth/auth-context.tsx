@@ -58,25 +58,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const context = tokenStorage.getAccessContext();
 
-      // Verify token user identity against stored profile if context exists
+      // Resolve user ID across all standard naming conventions
+      const storedUserId =
+        storedUser.id ||
+        (storedUser as any).userId ||
+        (storedUser as any)._id ||
+        (storedUser as any).sub;
+
+      // Verify token user identity against stored profile ONLY if BOTH are present
       if (context) {
         const tokenUserId =
           (context as Record<string, unknown>).userId ??
           (context as Record<string, unknown>).sub ??
           (context as Record<string, unknown>).id;
 
-        if (tokenUserId && tokenUserId !== storedUser.id) {
-          // Token belongs to another user; clear session
+        if (
+          tokenUserId &&
+          storedUserId &&
+          String(tokenUserId).trim() !== String(storedUserId).trim()
+        ) {
+          console.warn("[Auth] Token userId mismatch with stored profile:", {
+            tokenUserId,
+            storedUserId,
+          });
           tokenStorage.clear();
           setUser(null);
           return;
         }
       }
 
-      // Session is valid; persist user profile to state
-      setUser(storedUser);
+      // Normalize user object: ensure .id and uppercase .roles exist
+      const rawRoles = Array.isArray(storedUser.roles)
+        ? storedUser.roles
+        : typeof (storedUser as any).role === "string"
+        ? [(storedUser as any).role]
+        : [];
+
+      const normalizedUser: SessionUser = {
+        ...storedUser,
+        id: String(storedUserId || ""),
+        roles: rawRoles.map((r: any) =>
+          typeof r === "string"
+            ? (r.toUpperCase() as any)
+            : (r?.role || r?.name || "").toUpperCase()
+        ),
+      };
+
+      // Session is valid; persist normalized user profile to state
+      setUser(normalizedUser);
     } catch (err) {
       console.error("[Auth] Session restoration error:", err);
+      // Do not clear storage on non-fatal parsing errors
       setUser(null);
     }
   }, []);
@@ -125,12 +157,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionUser: SessionUser,
       tokens: { accessToken: string; refreshToken?: string; expiresIn: string },
     ) => {
-      try {
-        tokenStorage.replaceSession(tokens, sessionUser);
-        setUser(sessionUser);
-      } catch (err) {
-        console.error("[Auth] Failed to apply session:", err);
-      }
+      tokenStorage.replaceSession(tokens, sessionUser);
+      setUser(sessionUser);
     },
     [],
   );

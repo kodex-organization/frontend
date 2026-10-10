@@ -30,6 +30,8 @@ import { sessionApi } from "@/features/sessions/session-api";
 import type { ActiveSession } from "@/features/sessions/types";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { useBranchCurrency } from "@/features/tenancy/useBranchCurrency";
+import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 
 interface CartItem extends MenuItem {
   cartQuantity: number;
@@ -40,6 +42,7 @@ type PaymentMethod = "CASH" | "CARD" | "DIGITAL_WALLET" | "SPLIT";
 
 export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) {
   const { user } = useAuth();
+  const branchCurrency = useBranchCurrency();
   const isOnline = useOnlineStatus();
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -66,6 +69,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
 
   // Barcode scanner buffer
   const [barcodeBuffer, setBarcodeBuffer] = useState("");
+  const currency = branchCurrency;
 
   // Payment Tender Modal State (Option A)
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -307,7 +311,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
   // 2. Process Walk-in Direct Order with Payment Recording
   const processWalkInOrder = async () => {
     if (paymentMethod === "CASH" && numericCashTendered < cartTotal) {
-      toast.error(`Cash received is less than total amount (PKR ${cartTotal.toFixed(2)})`);
+      toast.error(`Cash received is less than total amount (${formatCurrency(cartTotal, currency)})`);
       return;
     }
 
@@ -315,7 +319,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
       const splitCash = parseFloat(splitCashAmount) || 0;
       const splitCard = parseFloat(splitCardAmount) || 0;
       if (Math.abs(splitCash + splitCard - cartTotal) > 0.01) {
-        toast.error(`Split payments must equal total amount of PKR ${cartTotal.toFixed(2)}`);
+        toast.error(`Split payments must equal total amount of ${formatCurrency(cartTotal, currency)}`);
         return;
       }
     }
@@ -354,11 +358,11 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
       };
 
       // Call API (supports both new object payload and legacy array payload)
-      await (CanteenApi.createStandaloneOrder as any)(orderPayload);
+      await CanteenApi.createStandaloneOrder(orderPayload);
 
       toast.success(
         paymentMethod === "CASH" && changeDue > 0
-          ? `Sale completed! Change due: PKR ${changeDue.toFixed(2)}`
+          ? `Sale completed! Change due: ${formatCurrency(changeDue, currency)}`
           : "Walk-in sale completed and invoice generated!"
       );
 
@@ -526,7 +530,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
 
                   <div className="mt-3 flex flex-wrap items-end justify-between gap-x-2 gap-y-1 border-t border-slate-100 pt-2">
                     <span className="min-w-0 flex-1 whitespace-nowrap font-extrabold text-sm text-brand-700 font-mono 2xl:text-base">
-                      Rs. {Number(item.currentPrice).toFixed(2)}
+                      {formatCurrency(Number(item.currentPrice), currency)}
                     </span>
                     <span className="shrink-0 whitespace-nowrap text-[11px] font-semibold text-slate-400 group-hover:text-brand-600 transition-colors flex items-center gap-0.5">
                       <Plus className="w-3.5 h-3.5" /> Add
@@ -635,14 +639,14 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                     <div className="flex justify-between items-center text-[11px] font-semibold text-slate-700 mb-1">
                       <span>Existing Table Orders:</span>
                       <span className="font-mono text-brand-700">
-                        Rs. {sessionOrders.reduce((sum, ord) => sum + (ord.items || []).reduce((s: number, it: any) => s + (it.lineTotal || 0), 0), 0).toFixed(2)}
+                        {formatCurrency(sessionOrders.reduce((sum, ord) => sum + (ord.items || []).reduce((s: number, it: any) => s + (it.lineTotal || 0), 0), 0), currency)}
                       </span>
                     </div>
                     <div className="space-y-1 max-h-20 overflow-y-auto pr-1">
                       {sessionOrders.flatMap((ord) => ord.items || []).map((it: any, idx: number) => (
                         <div key={it.id || idx} className="flex justify-between items-center text-[10px] text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded">
                           <span className="truncate max-w-[170px]">{it.quantity}x {it.menuItem?.name || "Item"}</span>
-                          <span className="font-mono font-medium">Rs. {Number(it.lineTotal || 0).toFixed(2)}</span>
+                          <span className="font-mono font-medium">{formatCurrency(Number(it.lineTotal || 0), currency)}</span>
                         </div>
                       ))}
                     </div>
@@ -668,14 +672,14 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                 <div className="flex justify-between items-center text-[11px] font-semibold mb-1">
                   <span>Current Orders:</span>
                   <span className="font-mono text-brand-700">
-                    Rs. {sessionOrders.reduce((sum, ord) => sum + (ord.items || []).reduce((s: number, it: any) => s + (it.lineTotal || 0), 0), 0).toFixed(2)}
+                    {formatCurrency(sessionOrders.reduce((sum, ord) => sum + (ord.items || []).reduce((s: number, it: any) => s + (it.lineTotal || 0), 0), 0), currency)}
                   </span>
                 </div>
                 <div className="space-y-0.5 max-h-20 overflow-y-auto">
                   {sessionOrders.flatMap((ord) => ord.items || []).map((it: any, idx: number) => (
                     <div key={it.id || idx} className="flex justify-between text-[10px]">
                       <span>{it.quantity}x {it.menuItem?.name || "Item"}</span>
-                      <span className="font-mono">Rs. {Number(it.lineTotal || 0).toFixed(2)}</span>
+                      <span className="font-mono">{formatCurrency(Number(it.lineTotal || 0), currency)}</span>
                     </div>
                   ))}
                 </div>
@@ -709,7 +713,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                     {c.name}
                   </span>
                   <span className="font-extrabold text-sm text-slate-900 font-mono ml-2 shrink-0">
-                    Rs. {(Number(c.currentPrice) * c.cartQuantity).toFixed(2)}
+                    {formatCurrency(Number(c.currentPrice) * c.cartQuantity, currency)}
                   </span>
                 </div>
 
@@ -745,7 +749,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                   </div>
 
                   <span className="text-xs text-slate-400 font-mono">
-                    Rs. {Number(c.currentPrice).toFixed(2)} each
+                    {formatCurrency(Number(c.currentPrice), currency)} each
                   </span>
 
                   <button
@@ -781,12 +785,12 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
           <div className="space-y-1">
             <div className="flex justify-between items-center text-xs text-slate-500">
               <span>Items Subtotal:</span>
-              <span className="font-mono">Rs. {cartTotal.toFixed(2)}</span>
+              <span className="font-mono">{formatCurrency(cartTotal, currency)}</span>
             </div>
             <div className="flex justify-between items-center font-black text-lg text-slate-900 pt-1">
               <span>Grand Total:</span>
               <span className="text-brand-700 font-mono">
-                Rs. {cartTotal.toFixed(2)}
+                {formatCurrency(cartTotal, currency)}
               </span>
             </div>
           </div>
@@ -856,7 +860,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                 Total Bill Due
               </span>
               <p className="text-3xl font-black text-slate-900 font-mono mt-0.5">
-                PKR {cartTotal.toFixed(2)}
+                {formatCurrency(cartTotal, currency)}
               </p>
               <p className="text-xs text-slate-400 mt-1">
                 {totalQuantity} item{totalQuantity > 1 ? "s" : ""} from canteen
@@ -933,9 +937,9 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                      Cash Received (PKR)
+                      Cash Received ({currency})
                     </label>
-                    <span className="text-xs text-slate-400">Bill: PKR {cartTotal.toFixed(2)}</span>
+                    <span className="text-xs text-slate-400">Bill: {formatCurrency(cartTotal, currency)}</span>
                   </div>
                   <input
                     type="number"
@@ -967,7 +971,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                         onClick={() => setCashTendered(String(preset))}
                         className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
                       >
-                        PKR {preset}
+                        {formatCurrency(preset, currency)}
                       </button>
                     );
                   })}
@@ -979,7 +983,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                     Change Due to Customer:
                   </span>
                   <span className="text-lg font-black text-emerald-700 font-mono">
-                    PKR {changeDue.toFixed(2)}
+                    {formatCurrency(changeDue, currency)}
                   </span>
                 </div>
               </div>
@@ -1041,7 +1045,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
                 <div className="flex justify-between items-center text-xs text-slate-500 px-1">
                   <span>Split Total:</span>
                   <span className="font-bold text-slate-900 font-mono">
-                    PKR {((parseFloat(splitCashAmount) || 0) + (parseFloat(splitCardAmount) || 0)).toFixed(2)} / {cartTotal.toFixed(2)}
+                    {formatCurrency((parseFloat(splitCashAmount) || 0) + (parseFloat(splitCardAmount) || 0), currency)} / {formatCurrency(cartTotal, currency)}
                   </span>
                 </div>
               </div>
