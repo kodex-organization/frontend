@@ -21,6 +21,11 @@ test("Record Payment Modal and Service Card Concession Integration", async (t) =
     "src/features/invoice/services/invoiceService.ts"
   );
   const invoiceServiceContent = fs.readFileSync(invoiceServicePath, "utf-8");
+  const splitPaymentPath = path.resolve(
+    process.cwd(),
+    "src/features/payments/components/SplitPaymentPanel.tsx"
+  );
+  const splitPaymentContent = fs.readFileSync(splitPaymentPath, "utf-8");
 
   await t.test("RecordPaymentModal accepts cardTotal and standardTotal props", () => {
     assert.ok(
@@ -75,6 +80,36 @@ test("Record Payment Modal and Service Card Concession Integration", async (t) =
     assert.ok(
       invoiceServiceContent.includes("amount: input.amount"),
       "invoiceService.addPayment must map input.amount into tenders array"
+    );
+  });
+
+  await t.test("invoice actions use the session-aware API client", () => {
+    assert.ok(
+      invoiceDetailsContent.includes("apiFetch<Invoice>("),
+      "Invoice discount must use the shared authenticated API client"
+    );
+    assert.ok(
+      splitPaymentContent.includes("apiFetch(`/billing/invoices/"),
+      "Split payment must use the shared authenticated API client"
+    );
+    assert.ok(
+      !splitPaymentContent.includes("localStorage"),
+      "Split payment must not select an arbitrary stored token"
+    );
+  });
+
+  await t.test("walk-in invoices cannot allocate udhaar", () => {
+    assert.ok(
+      splitPaymentContent.includes("const canUseUdhaar = hasCustomer && !isCustomerBlocked"),
+      "Udhaar must require a linked, unblocked customer"
+    );
+    assert.ok(
+      splitPaymentContent.includes("disabled={!canUseUdhaar}"),
+      "Udhaar input must be disabled when a customer is unavailable"
+    );
+    assert.ok(
+      invoiceDetailsContent.includes("hasCustomer={Boolean(invoice.customer?.id)}"),
+      "InvoiceDetails must pass whether the invoice has an attached customer"
     );
   });
 });

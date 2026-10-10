@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { redirectPathForRoles, type UserRole } from "@/lib/auth/session";
@@ -18,36 +18,44 @@ export default function ProtectedRoute({
   const pathname = usePathname();
   const { user, isLoading, isAuthenticated } = useAuth();
 
-  // Safely guard roles array against undefined or non-array payloads
-  const userRoles: UserRole[] = Array.isArray(user?.roles) ? user.roles : [];
+  // Normalize user roles to uppercase strings
+  const userRoles = useMemo(() => {
+    const rawRoles = Array.isArray(user?.roles) ? user.roles : [];
+    return rawRoles.map((r: any) =>
+      typeof r === "string"
+        ? r.toUpperCase()
+        : String(r?.role || r?.name || "").toUpperCase()
+    );
+  }, [user?.roles]);
+
+  // Normalize allowed roles to uppercase strings
+  const normalizedAllowedRoles = useMemo(() => {
+    return (allowedRoles || []).map((r) => String(r).toUpperCase());
+  }, [allowedRoles]);
 
   const hasPermission =
     isAuthenticated &&
-    !!user &&
-    userRoles.some((role) => allowedRoles.includes(role));
+    Boolean(user) &&
+    userRoles.some((role) => normalizedAllowedRoles.includes(role));
 
   useEffect(() => {
     // Never trigger redirects while storage hydration is in flight
     if (isLoading) return;
 
-    // 1. Unauthenticated -> redirect to login
     if (!isAuthenticated || !user) {
       router.replace("/login");
       return;
     }
 
-    // 2. Insufficient role permissions -> redirect to role home
     if (!hasPermission) {
-      const targetPath = redirectPathForRoles(userRoles);
+      const targetPath = redirectPathForRoles(user.roles);
 
-      // Prevent infinite redirect loops if target is current path or empty
+      // Only redirect if target path is different from current page to prevent loops
       if (targetPath && targetPath !== pathname) {
         router.replace(targetPath);
-      } else if (!targetPath || targetPath === pathname) {
-        router.replace("/login");
       }
     }
-  }, [user, isLoading, isAuthenticated, hasPermission, userRoles, pathname, router]);
+  }, [user, isLoading, isAuthenticated, hasPermission, pathname, router]);
 
   // Loading barrier: prevents hydration flash and premature redirects on F5
   if (isLoading) {

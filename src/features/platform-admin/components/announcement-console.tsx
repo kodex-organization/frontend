@@ -2,6 +2,8 @@
 
 import {
   Archive,
+  Calendar,
+  Clock,
   Edit3,
   Eye,
   Megaphone,
@@ -114,19 +116,58 @@ function validateDraft(draft: AnnouncementDraft) {
   ) {
     return "Expiry must be after the start time.";
   }
+  if (draft.expiresAt && new Date(draft.expiresAt) <= new Date()) {
+    return "Expiry date must be in the future.";
+  }
   return null;
 }
 
-function StatusBadge({ status }: { status: AnnouncementStatus }) {
-  const styles =
-    status === "published"
-      ? "bg-brand-50 text-brand-700"
-      : status === "draft"
-        ? "bg-amber-50 text-amber-700"
-        : "bg-slate-100 text-slate-600";
+function getAnnouncementLifecycle(announcement: PlatformAnnouncement): {
+  label: string;
+  style: string;
+} {
+  if (announcement.status === "archived") {
+    return {
+      label: "Archived",
+      style: "bg-slate-100 text-slate-600 border border-slate-200",
+    };
+  }
+  if (announcement.status === "draft") {
+    return {
+      label: "Draft",
+      style: "bg-amber-50 text-amber-700 border border-amber-200",
+    };
+  }
+
+  const now = new Date();
+  const startsAt = announcement.startsAt ? new Date(announcement.startsAt) : null;
+  const expiresAt = announcement.expiresAt ? new Date(announcement.expiresAt) : null;
+
+  if (expiresAt && expiresAt <= now) {
+    return {
+      label: "Expired",
+      style: "bg-rose-50 text-rose-700 border border-rose-200",
+    };
+  }
+
+  if (startsAt && startsAt > now) {
+    return {
+      label: "Scheduled",
+      style: "bg-blue-50 text-blue-700 border border-blue-200",
+    };
+  }
+
+  return {
+    label: "Published",
+    style: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  };
+}
+
+function StatusBadge({ announcement }: { announcement: PlatformAnnouncement }) {
+  const { label, style } = getAnnouncementLifecycle(announcement);
   return (
-    <span className={`rounded-full px-2 py-1 text-xs font-medium capitalize ${styles}`}>
-      {status}
+    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${style}`}>
+      {label}
     </span>
   );
 }
@@ -219,6 +260,10 @@ export function AnnouncementConsole() {
         : [...current.targetRoles, role],
     }));
   };
+
+  const isPublishTargetScheduled = Boolean(
+    publishTarget?.startsAt && new Date(publishTarget.startsAt) > new Date()
+  );
 
   return (
     <div className="space-y-8">
@@ -404,7 +449,13 @@ export function AnnouncementConsole() {
           {error ? (
             <div className="mt-4 flex items-center gap-3">
               <Alert variant="error">{error}</Alert>
-              <Button variant="outline" size="icon" title="Retry" aria-label="Retry" onClick={() => void loadAnnouncements()}>
+              <Button
+                variant="outline"
+                size="icon"
+                title="Retry"
+                aria-label="Retry"
+                onClick={() => void loadAnnouncements()}
+              >
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
@@ -417,42 +468,69 @@ export function AnnouncementConsole() {
                 No announcements match these filters.
               </div>
             ) : (
-              announcements.map((announcement) => (
-                <article key={announcement.id} className="rounded-md border border-slate-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Megaphone className="h-4 w-4 text-slate-400" />
-                        <h3 className="font-semibold text-slate-900">{announcement.title}</h3>
-                        <StatusBadge status={announcement.status} />
+              announcements.map((announcement) => {
+                const isScheduled =
+                  announcement.status === "draft" &&
+                  Boolean(announcement.startsAt && new Date(announcement.startsAt) > new Date());
+
+                return (
+                  <article key={announcement.id} className="rounded-md border border-slate-200 bg-white p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Megaphone className="h-4 w-4 text-slate-400" />
+                          <h3 className="font-semibold text-slate-900">{announcement.title}</h3>
+                          <StatusBadge announcement={announcement} />
+                        </div>
+                        <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-sm text-slate-600">
+                          {announcement.body}
+                        </p>
+                        <p className="mt-3 text-xs text-slate-500">
+                          {announcement.audience.replaceAll("_", " ")} | starts {formatDateTime(announcement.startsAt)} | expires {formatDateTime(announcement.expiresAt)}
+                        </p>
                       </div>
-                      <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-sm text-slate-600">
-                        {announcement.body}
-                      </p>
-                      <p className="mt-3 text-xs text-slate-500">
-                        {announcement.audience.replaceAll("_", " ")} | starts {formatDateTime(announcement.startsAt)} | expires {formatDateTime(announcement.expiresAt)}
-                      </p>
+                      <div className="flex shrink-0 gap-1">
+                        {announcement.status !== "archived" ? (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            title="Edit"
+                            aria-label={`Edit ${announcement.title}`}
+                            onClick={() => editAnnouncement(announcement)}
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                        {announcement.status === "draft" ? (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            title={isScheduled ? "Schedule announcement" : "Publish announcement"}
+                            aria-label={isScheduled ? `Schedule ${announcement.title}` : `Publish ${announcement.title}`}
+                            onClick={() => void publishAnnouncement(announcement)}
+                          >
+                            {isScheduled ? <Clock className="h-4 w-4 text-blue-600" /> : <Send className="h-4 w-4" />}
+                          </Button>
+                        ) : null}
+                        {announcement.status !== "archived" ? (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            title="Archive"
+                            aria-label={`Archive ${announcement.title}`}
+                            onClick={() => void archiveAnnouncement(announcement)}
+                          >
+                            <Archive className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="flex shrink-0 gap-1">
-                      {announcement.status !== "archived" ? (
-                        <Button type="button" size="icon" variant="ghost" title="Edit" aria-label={`Edit ${announcement.title}`} onClick={() => editAnnouncement(announcement)}>
-                          <Edit3 className="h-4 w-4" />
-                        </Button>
-                      ) : null}
-                      {announcement.status === "draft" ? (
-                        <Button type="button" size="icon" variant="ghost" title="Publish" aria-label={`Publish ${announcement.title}`} onClick={() => void publishAnnouncement(announcement)}>
-                          <Send className="h-4 w-4" />
-                        </Button>
-                      ) : null}
-                      {announcement.status !== "archived" ? (
-                        <Button type="button" size="icon" variant="ghost" title="Archive" aria-label={`Archive ${announcement.title}`} onClick={() => void archiveAnnouncement(announcement)}>
-                          <Archive className="h-4 w-4" />
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                </article>
-              ))
+                  </article>
+                );
+              })
             )}
           </div>
         </div>
@@ -460,9 +538,15 @@ export function AnnouncementConsole() {
 
       <ConfirmModal
         isOpen={Boolean(publishTarget)}
-        title="Publish announcement"
-        description={publishTarget ? `Publish "${publishTarget.title}" to its configured audience?` : ""}
-        confirmText="Publish"
+        title={isPublishTargetScheduled ? "Schedule announcement" : "Publish announcement"}
+        description={
+          publishTarget
+            ? isPublishTargetScheduled
+              ? `Schedule "${publishTarget.title}" to go live on ${formatDateTime(publishTarget.startsAt)}?`
+              : `Publish "${publishTarget.title}" immediately to its configured audience?`
+            : ""
+        }
+        confirmText={isPublishTargetScheduled ? "Schedule" : "Publish"}
         cancelText="Cancel"
         variant="primary"
         onConfirm={async () => {

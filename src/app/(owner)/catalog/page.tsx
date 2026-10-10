@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { redirectPathForRoles } from "@/lib/auth/session";
+import { toast } from "@/lib/toast";
 import {
   SnookerTable,
   CreateTableInput,
@@ -21,6 +22,7 @@ import {
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { fetchBranches } from "@/lib/api/branch";
 import type { BranchItem } from "@/types/branch";
+import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { isNetworkFailure, loadWithOfflineSnapshot } from "@/lib/sync/offline-reference-cache";
 import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 
@@ -41,7 +43,6 @@ export default function CatalogPage() {
 
   useEffect(() => {
     if (!authLoading && user && !isAuthorized) {
-      // Bounce cashier to their designated workspace (e.g. /floor or /canteen)
       const targetPath = redirectPathForRoles(user.roles) || "/canteen";
       router.replace(targetPath);
     }
@@ -64,6 +65,10 @@ export default function CatalogPage() {
   const [deleteTarget, setDeleteTarget] = useState<SnookerTable | null>(null);
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState("");
+  const selectedCurrency =
+    branches.find((branch) => branch.id === selectedBranchId)?.currency ||
+    branches.find((branch) => branch.id === user?.branchId)?.currency ||
+    "PKR";
 
   // ── rate modal state ─────────────────────────
   const [rateTable, setRateTable] = useState<SnookerTable | null>(null);
@@ -80,7 +85,7 @@ export default function CatalogPage() {
     void loadWithOfflineSnapshot("catalog:branches", () => fetchBranches({ limit: 100 }))
       .then(({ data }) => setBranches(data.branches))
       .catch(() => {
-        // Offline and never loaded: the table list below still works, branch names fall back to "Unknown".
+        // Offline and never loaded: fall back to branch ID
       });
   }, [isAuthorized]);
 
@@ -189,6 +194,7 @@ export default function CatalogPage() {
         setTables((prev) =>
           prev.map((t) => (t.id === editingTable.id ? merged : t))
         );
+        toast.success(`Table #${tableNumber} updated successfully.`);
       } else {
         const newTable = await createTable(input);
         const branchObj =
@@ -203,6 +209,7 @@ export default function CatalogPage() {
         };
 
         setTables((prev) => [...prev, merged]);
+        toast.success(`Table #${tableNumber} created successfully.`);
       }
       handleCloseForm();
     } catch (err: unknown) {
@@ -212,20 +219,39 @@ export default function CatalogPage() {
     }
   }
 
+  // ── delete handlers with occupied guard ──────
   async function handleDelete(id: string) {
     const target = tables.find((table) => table.id === id);
     if (!target) return;
+
+    if (target.status === "occupied") {
+      toast.error(
+        `Table #${target.tableNumber} is currently occupied. End and settle the active session before deleting.`
+      );
+      return;
+    }
+
     setDeleteTarget(target);
   }
 
   async function confirmDelete() {
     if (!deleteTarget) return;
+
+    if (deleteTarget.status === "occupied") {
+      toast.error("Cannot delete a table while it is occupied.");
+      setDeleteTarget(null);
+      return;
+    }
+
     try {
       await deleteTable(deleteTarget.id);
       setTables((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      toast.success(`Table #${deleteTarget.tableNumber} deleted.`);
       setDeleteTarget(null);
     } catch (err: unknown) {
-      setFormError(errorMessage(err));
+      const msg = errorMessage(err);
+      toast.error(msg);
+      setError(msg);
       setDeleteTarget(null);
     }
   }
@@ -287,6 +313,7 @@ export default function CatalogPage() {
       }
 
       setNewRateValue("");
+      toast.success("New rate plan applied.");
     } catch (err: unknown) {
       setRateError(errorMessage(err));
     } finally {
@@ -303,7 +330,6 @@ export default function CatalogPage() {
     inactive: "bg-slate-100 text-slate-500",
   };
 
-  // Block rendering until authorized
   if (authLoading || !isAuthorized) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -332,7 +358,14 @@ export default function CatalogPage() {
         </button>
       </div>
 
-      {snapshotAt && <div className="mb-4"><OfflineSnapshotNotice savedAt={snapshotAt} note="Adding or editing tables needs an internet connection." /></div>}
+      {snapshotAt && (
+        <div className="mb-4">
+          <OfflineSnapshotNotice
+            savedAt={snapshotAt}
+            note="Adding or editing tables needs an internet connection."
+          />
+        </div>
+      )}
 
       {/* ── loading ── */}
       {loading && <p className="text-sm text-slate-400">Loading tables...</p>}
@@ -373,9 +406,14 @@ export default function CatalogPage() {
                   table.branch?.name ??
                   branches.find((b) => b.id === table.branchId)?.name ??
                   "Unknown branch";
+                const currency =
+                  branches.find((branch) => branch.id === table.branchId)?.currency ||
+                  selectedCurrency;
 
                 const rate =
                   (table as any).hourlyRate ?? table.defaultHourlyRate ?? 0;
+
+                const isOccupied = table.status === "occupied";
 
                 return (
                   <tr
@@ -391,7 +429,7 @@ export default function CatalogPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-600 font-medium">
-                      Rs. {rate}/hr
+                      {formatCurrency(Number(rate), currency)}/hr
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -404,7 +442,7 @@ export default function CatalogPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleOpenRates(table)}
                           className="rounded border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 cursor-pointer"
@@ -419,7 +457,17 @@ export default function CatalogPage() {
                         </button>
                         <button
                           onClick={() => handleDelete(table.id)}
-                          className="rounded border border-red-200 px-3 py-1 text-xs text-red-500 hover:bg-red-50 cursor-pointer"
+                          disabled={isOccupied}
+                          title={
+                            isOccupied
+                              ? "Occupied table cannot be deleted while a session is running"
+                              : "Delete table"
+                          }
+                          className={`rounded border px-3 py-1 text-xs transition-colors ${
+                            isOccupied
+                              ? "border-slate-200 text-slate-300 cursor-not-allowed bg-slate-50"
+                              : "border-red-200 text-red-500 hover:bg-red-50 cursor-pointer"
+                          }`}
                         >
                           Delete
                         </button>
@@ -471,7 +519,7 @@ export default function CatalogPage() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Hourly Rate (Rs.)
+                  Hourly Rate ({selectedCurrency})
                 </label>
                 <input
                   type="number"
@@ -590,7 +638,7 @@ export default function CatalogPage() {
                   type="number"
                   value={newRateValue}
                   onChange={(e) => setNewRateValue(e.target.value)}
-                  placeholder="Rate in Rs."
+                  placeholder={`Rate in ${selectedCurrency}`}
                   min={1}
                   className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
@@ -635,7 +683,7 @@ export default function CatalogPage() {
                     </p>
                   </div>
                   <span className="font-semibold text-green-700">
-                    Rs. {rate.hourlyRate}/hr
+                    {formatCurrency(rate.hourlyRate, branches.find((branch) => branch.id === rateTable?.branchId)?.currency || selectedCurrency)}/hr
                   </span>
                 </div>
               ))}
@@ -650,7 +698,7 @@ export default function CatalogPage() {
         title="Delete table"
         description={
           deleteTarget
-            ? `This will delete table ${deleteTarget.tableNumber}. This action is permanent.`
+            ? `This will delete table #${deleteTarget.tableNumber}. This action is permanent.`
             : ""
         }
         confirmText="Delete table"

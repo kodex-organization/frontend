@@ -788,19 +788,14 @@ export const CanteenApi = {
       return executeOffline();
     }
 
-    try {
-      const order = await apiFetch<Order>("/canteen-pos/standalone-orders", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      if (order) {
-        await persistOrder(order);
-      }
-      return order;
-    } catch (err) {
-      console.warn("Online createStandaloneOrder failed, queuing offline order:", err);
-      return executeOffline();
+    const order = await apiFetch<Order>("/canteen-pos/standalone-orders", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    if (order) {
+      await persistOrder(order);
     }
+    return order;
   },
 
   getSessionOrders: async (sessionId: string): Promise<Order[]> => {

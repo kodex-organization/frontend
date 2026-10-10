@@ -8,6 +8,7 @@ import {
 } from "@/lib/sync/offline-db";
 import { addToSyncQueue, getSyncQueue } from "@/lib/offline-sync";
 import { tokenStorage } from "@/lib/auth/session";
+import { getCachedBranchCurrency } from "@/features/tenancy/branch-currency-cache";
 import type { ActiveSession, Customer, TableOption } from "./types";
 
 const OFFLINE_TABLES_KEY = "cuecloud_offline_tables";
@@ -271,6 +272,7 @@ export const sessionApi = {
   }): Promise<ActiveSession & { offlineQueued?: boolean }> => {
     const effectiveBranchId =
       body.branchId || getActiveOfflineBranchId() || "default";
+    const branchCurrency = getCachedBranchCurrency(effectiveBranchId);
     const sessionId = crypto.randomUUID();
     const accessContext = tokenStorage.getAccessContext();
     const startedAt = new Date().toISOString();
@@ -315,12 +317,12 @@ export const sessionApi = {
         id: body.tableId,
         tableNumber: matchedTable?.tableNumber ?? "Offline Table",
         defaultHourlyRate: matchedTable?.defaultHourlyRate ?? "700.00",
-        currency: matchedTable?.currency ?? "PKR",
+        currency: branchCurrency,
       },
       branch: {
         id: effectiveBranchId,
         name: "Current Branch",
-        currency: "PKR",
+        currency: branchCurrency,
       },
       pauses: [],
     };

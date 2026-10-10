@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useBranchCurrency } from "@/features/tenancy/useBranchCurrency";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { useInvoices } from "../hooks/useInvoices";
 import { useTransactions } from "../hooks/useTransactions";
@@ -41,6 +42,7 @@ export default function BillingWorkspace({
 }) {
   const isOnline = useOnlineStatus();
   const { user } = useAuth();
+  const activeBranchCurrency = useBranchCurrency();
 
   // Role check: pure accountant without cashier/manager/owner permissions
   const isReadOnly = Boolean(
@@ -109,7 +111,7 @@ export default function BillingWorkspace({
 
   const displayCurrency =
     (invoices || []).find((invoice) => invoice?.branch?.currency)?.branch
-      ?.currency ?? "PKR";
+    ?.currency ?? activeBranchCurrency;
 
   function applySearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { fetchBranches } from "@/lib/api/branch";
+import { useBranchCurrency } from "@/features/tenancy/useBranchCurrency";
+import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { DashboardApi, LiveTableSession, RevenueKPIs, OutstandingUdhaar, SyncDeviceStatus, RevenueTrend, TableHeatmap, AnomalyItem, TransactionItem } from "../dashboard.api";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
@@ -29,6 +31,7 @@ interface DashboardSnapshot {
 
 export function DashboardView() {
   const { user } = useAuth();
+  const currency = useBranchCurrency();
   const router = useRouter();
 
   // States
@@ -297,7 +300,7 @@ export function DashboardView() {
             </div>
           </div>
           <div className="relative mt-4">
-            <span className="text-2xl font-bold text-slate-900">Rs. {kpis?.totalRevenue.toLocaleString() || "0"}</span>
+            <span className="text-2xl font-bold text-slate-900">{formatCurrency(kpis?.totalRevenue ?? 0, currency)}</span>
             <span className="flex items-center gap-1 text-xs text-brand-600 mt-1 font-medium">
               <TrendingUp className="h-3 w-3" /> Combined daily sales
             </span>
@@ -334,7 +337,7 @@ export function DashboardView() {
             </div>
           </div>
           <div className="relative mt-4">
-            <span className="text-2xl font-bold text-slate-900">Rs. {udhaar?.totalOutstanding.toLocaleString() || "0"}</span>
+            <span className="text-2xl font-bold text-slate-900">{formatCurrency(udhaar?.totalOutstanding ?? 0, currency)}</span>
             <span className="flex items-center gap-1 text-xs text-red-600 mt-1 font-medium">
               Settlements pending
             </span>
@@ -437,11 +440,11 @@ export function DashboardView() {
                 <div className="space-y-3">
                   <div className="flex justify-between text-sm py-2 border-b border-slate-150 cursor-pointer hover:bg-slate-100 px-2 rounded" onClick={() => handleDrilldown("table")}>
                     <span className="text-slate-600">Table Sessions</span>
-                    <span className="font-semibold text-slate-950">Rs. {kpis?.tableRevenue.toLocaleString() || "0"}</span>
+                    <span className="font-semibold text-slate-950">{formatCurrency(kpis?.tableRevenue ?? 0, currency)}</span>
                   </div>
                   <div className="flex justify-between text-sm py-2 border-b border-slate-150 cursor-pointer hover:bg-slate-100 px-2 rounded" onClick={() => handleDrilldown("canteen")}>
                     <span className="text-slate-600">Canteen Sales</span>
-                    <span className="font-semibold text-slate-950">Rs. {kpis?.canteenRevenue.toLocaleString() || "0"}</span>
+                    <span className="font-semibold text-slate-950">{formatCurrency(kpis?.canteenRevenue ?? 0, currency)}</span>
                   </div>
                 </div>
 
@@ -450,7 +453,7 @@ export function DashboardView() {
                   {kpis?.paymentMethods && Object.entries(kpis.paymentMethods).map(([method, amt]) => (
                     <div key={method} className="flex justify-between text-sm py-2 border-b border-slate-150">
                       <span className="text-slate-600 uppercase">{method}</span>
-                      <span className="font-semibold text-slate-950">Rs. {amt.toLocaleString()}</span>
+                      <span className="font-semibold text-slate-950">{formatCurrency(amt, currency)}</span>
                     </div>
                   ))}
                 </div>
@@ -585,7 +588,7 @@ export function DashboardView() {
           <div className="space-y-6">
             <div className="flex justify-between items-center border-b border-slate-100 pb-4">
               <h3 className="text-lg font-bold text-slate-950">Outstanding Udhaar Balances</h3>
-              <span className="text-sm font-semibold text-red-600">Total: Rs. {udhaar?.totalOutstanding.toLocaleString() || "0"}</span>
+              <span className="text-sm font-semibold text-red-600">Total: {formatCurrency(udhaar?.totalOutstanding ?? 0, currency)}</span>
             </div>
 
             {udhaar?.outstandingList.length === 0 ? (
@@ -606,7 +609,7 @@ export function DashboardView() {
                     {udhaar?.outstandingList.map((item) => (
                       <tr key={item.customerId} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4 font-medium text-slate-900">{item.fullName}</td>
-                        <td className="px-6 py-4 font-semibold text-red-600">Rs. {item.balance.toLocaleString()}</td>
+                        <td className="px-6 py-4 font-semibold text-red-600">{formatCurrency(item.balance, currency)}</td>
                         <td className="px-6 py-4 text-right">
                           <button
                             onClick={() => router.push(`/customers/${item.customerId}?tab=udhaar`)}
@@ -748,7 +751,7 @@ export function DashboardView() {
                           <td className="px-6 py-4">{tx.customerName}</td>
                           <td className="px-6 py-4">{tx.branchName}</td>
                           <td className="px-6 py-4">{tx.detail}</td>
-                          <td className="px-6 py-4 font-semibold text-slate-900">Rs. {tx.amount.toLocaleString()}</td>
+                          <td className="px-6 py-4 font-semibold text-slate-900">{formatCurrency(tx.amount, currency)}</td>
                           <td className="px-6 py-4 text-xs text-slate-400">{new Date(tx.createdAt).toLocaleTimeString()}</td>
                         </tr>
                       ))}

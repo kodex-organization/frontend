@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { apiFetch } from "@/lib/api/client";
 import { useInvoice } from "../hooks/useInvoice";
 import type { Invoice } from "../types/invoice";
 import { formatCurrency } from "../utils/formatCurrency";
@@ -15,21 +16,6 @@ import RecordPaymentModal from "./RecordPaymentModal";
 import StatusBadge from "./StatusBadge";
 import VoidInvoiceModal from "./VoidInvoiceModal";
 import SplitPaymentPanel from "@/features/payments/components/SplitPaymentPanel";
-
-// --- COMPACT JWT TOKEN & ERROR HELPERS ---
-function findJwtToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const val = localStorage.getItem(localStorage.key(i) || "");
-      if (val?.includes("eyJ")) {
-        const m = val.match(/eyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_.+/=]*/);
-        if (m) return m[0];
-      }
-    }
-  } catch {}
-  return null;
-}
 
 function parseErrorMessage(err: any): string {
   if (typeof err === "string") return err;
@@ -336,9 +322,10 @@ export default function InvoiceDetails({
               invoiceId={invoice.id}
               standardTotal={standardTotal}
               cardTotal={cardTotal}
+              currency={currency}
               onSuccess={() => void refresh()}
               isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
-              customerName={invoice.customer?.fullName ?? null}
+              hasCustomer={Boolean(invoice.customer?.id)}
             />
           ) : (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
@@ -377,6 +364,7 @@ export default function InvoiceDetails({
       {showDiscountModal && (
         <ApplyDiscountModal
           invoiceId={invoice.id}
+          currency={currency}
           onClose={() => setShowDiscountModal(false)}
           onSuccess={(updatedInvoice) => {
             setInvoice(updatedInvoice);
@@ -404,10 +392,12 @@ export default function InvoiceDetails({
 // --- DISCOUNT MODAL COMPONENT ---
 function ApplyDiscountModal({
   invoiceId,
+  currency,
   onClose,
   onSuccess,
 }: {
   invoiceId: string;
+  currency: string;
   onClose: () => void;
   onSuccess: (updatedInvoice: Invoice) => void;
 }) {
@@ -456,32 +446,19 @@ function ApplyDiscountModal({
 
     try {
       setIsSubmitting(true);
-      const token = findJwtToken();
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const rawBase = (process.env.NEXT_PUBLIC_API_URL || "")
-        .replace(/\/api\/v1\/?$/, "")
-        .replace(/\/$/, "");
-      const res = await fetch(`${rawBase}/api/v1/billing/invoices/${invoiceId}/discount`, {
-        method: "POST",
-        headers,
-        credentials: "include",
-        body: JSON.stringify({
-          discountType,
-          amount: numericAmount,
-          reason,
-          ownerPassword: ownerPassword.trim() || undefined,
-        }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(parseErrorMessage(errData));
-      }
-
-      const result = (await res.json()) as { data?: Invoice };
-      onSuccess(result.data ?? (result as unknown as Invoice));
+      const updatedInvoice = await apiFetch<Invoice>(
+        `/billing/invoices/${encodeURIComponent(invoiceId)}/discount`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            discountType,
+            amount: numericAmount,
+            reason,
+            ownerPassword: ownerPassword.trim() || undefined,
+          }),
+        },
+      );
+      onSuccess(updatedInvoice);
     } catch (err: any) {
       setError(parseErrorMessage(err));
     } finally {
@@ -520,7 +497,7 @@ function ApplyDiscountModal({
                     : "border-slate-200 text-slate-600 hover:bg-slate-50"
                 }`}
               >
-                Fixed PKR
+                Fixed {currency}
               </button>
               <button
                 type="button"
@@ -538,7 +515,7 @@ function ApplyDiscountModal({
 
           <div>
             <label className="block text-xs font-semibold text-slate-700">
-              Discount Value ({discountType === "fixed" ? "PKR" : "%"})
+              Discount Value ({discountType === "fixed" ? currency : "%"})
             </label>
             <input
               type="number"

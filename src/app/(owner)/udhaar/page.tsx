@@ -3,6 +3,8 @@
 import { useMemo, useState, useRef, useEffect, type FormEvent } from "react";
 import { useUdhaarLedger } from "@/features/udhaar/hooks/useUdhaarLedger";
 import { type UdhaarThresholdSettings } from "@/features/udhaar/api/udhaarApi";
+import { useBranchCurrency } from "@/features/tenancy/useBranchCurrency";
+import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { useAuth } from "@/lib/auth/auth-context";
 import { toast } from "@/lib/toast";
 import {
@@ -22,9 +24,9 @@ import {
 
 const statusOptions = ["all", "pending", "cleared", "overdue"] as const;
 
-function formatCurrency(value: unknown) {
+function formatAmount(value: unknown, currency: string) {
   const num = typeof value === "number" ? value : Number(value ?? 0);
-  return `PKR ${Number.isFinite(num) ? num.toLocaleString("en-PK", { maximumFractionDigits: 2 }) : "0"}`;
+  return formatCurrency(Number.isFinite(num) ? num : 0, currency);
 }
 
 function getInitials(name?: string) {
@@ -39,6 +41,7 @@ function getInitials(name?: string) {
 
 export default function UdhaarPage() {
   const { user } = useAuth();
+  const currency = useBranchCurrency();
 
   // Role permissions
   const userRoles = useMemo(
@@ -219,8 +222,8 @@ export default function UdhaarPage() {
       });
       toast.success(
         result.mode === "offline"
-          ? `Settlement of PKR ${amount.toLocaleString()} saved on this device. It will sync when the connection returns.`
-          : `Settlement of PKR ${amount.toLocaleString()} recorded.`,
+          ? `Settlement of ${formatCurrency(amount, currency)} saved on this device. It will sync when the connection returns.`
+          : `Settlement of ${formatCurrency(amount, currency)} recorded.`,
       );
       setShowSettlement(false);
     } catch (err: any) {
@@ -469,7 +472,7 @@ export default function UdhaarPage() {
                 </span>
               </div>
               <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-                {aging ? formatCurrency(aging.summary.totalOutstanding) : "—"}
+                {aging ? formatAmount(aging.summary.totalOutstanding, currency) : "—"}
               </p>
               <p className="mt-1 text-[11px] text-slate-400">Total active credit across all accounts</p>
             </div>
@@ -484,7 +487,7 @@ export default function UdhaarPage() {
                 </span>
               </div>
               <p className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-amber-700">
-                {aging ? formatCurrency(aging.summary.overdueBalance) : "—"}
+                {aging ? formatAmount(aging.summary.overdueBalance, currency) : "—"}
               </p>
               <p className="mt-1 text-[11px] text-slate-400">Requires collection priority</p>
             </div>
@@ -548,7 +551,7 @@ export default function UdhaarPage() {
                           isOverdue ? "text-amber-700" : "text-slate-900"
                         }`}
                       >
-                        {formatCurrency(value)}
+                        {formatAmount(value, currency)}
                       </p>
                     </div>
                   );
@@ -645,7 +648,7 @@ export default function UdhaarPage() {
                       </span>
 
                       <span className="min-w-[100px] text-right font-mono text-sm font-bold text-slate-900">
-                        {formatCurrency(customer.outstandingBalance)}
+                        {formatAmount(customer.outstandingBalance, currency)}
                       </span>
 
                       <div className="flex items-center gap-1.5 ml-2">
@@ -787,7 +790,7 @@ export default function UdhaarPage() {
                     Transactions: <strong className="text-slate-900">{statement?.entries.length ?? 0} entries</strong>
                   </p>
                   <p className="text-sm font-bold text-slate-900 pt-1">
-                    Current Balance: {formatCurrency(selectedCustomer?.outstandingBalance ?? 0)}
+                    Current Balance: {formatAmount(selectedCustomer?.outstandingBalance ?? 0, currency)}
                   </p>
                 </div>
               </div>
@@ -841,7 +844,7 @@ export default function UdhaarPage() {
                                   isCredit ? "text-emerald-700" : "text-slate-900"
                                 }`}
                               >
-                                {isCredit ? `- ${formatCurrency(absAmount)}` : formatCurrency(absAmount)}
+                                {isCredit ? `- ${formatAmount(absAmount, currency)}` : formatAmount(absAmount, currency)}
                               </td>
                             </tr>
                           );
@@ -851,19 +854,19 @@ export default function UdhaarPage() {
                         <tr className="font-semibold text-slate-700">
                           <td colSpan={3} className="pt-3 text-right">Period Total Debits:</td>
                           <td className="pt-3 text-right font-mono font-bold text-slate-900">
-                            {formatCurrency(statementSummary.totalDebits)}
+                            {formatAmount(statementSummary.totalDebits, currency)}
                           </td>
                         </tr>
                         <tr className="font-semibold text-slate-700">
                           <td colSpan={3} className="py-1 text-right">Period Total Credits / Payments:</td>
                           <td className="py-1 text-right font-mono font-bold text-emerald-700">
-                            - {formatCurrency(statementSummary.totalCredits)}
+                            - {formatAmount(statementSummary.totalCredits, currency)}
                           </td>
                         </tr>
                         <tr className="font-bold text-slate-900 border-t border-slate-200 print:border-slate-400">
                           <td colSpan={3} className="py-2 text-right">Net Period Movement:</td>
                           <td className="py-2 text-right font-mono font-bold text-slate-950">
-                            {formatCurrency(statementSummary.netMovement)}
+                            {formatAmount(statementSummary.netMovement, currency)}
                           </td>
                         </tr>
                       </tfoot>
@@ -960,7 +963,7 @@ export default function UdhaarPage() {
                             <p className="text-[11px] text-slate-500">
                               {c.phone} · Balance:{" "}
                               <span className="font-bold text-slate-800">
-                                {formatCurrency(c.outstandingBalance)}
+                                {formatAmount(c.outstandingBalance, currency)}
                               </span>
                             </p>
                           </button>
@@ -972,7 +975,7 @@ export default function UdhaarPage() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    Adjustment Amount (PKR) <span className="text-rose-500">*</span>
+                    Adjustment Amount ({currency}) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     required
@@ -1114,7 +1117,7 @@ export default function UdhaarPage() {
                             <p className="text-[11px] text-slate-500">
                               {c.phone} · Balance:{" "}
                               <span className="font-bold text-slate-800">
-                                {formatCurrency(c.outstandingBalance)}
+                                {formatAmount(c.outstandingBalance, currency)}
                               </span>
                             </p>
                           </button>
@@ -1126,7 +1129,7 @@ export default function UdhaarPage() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    Settlement Amount (PKR) <span className="text-rose-500">*</span>
+                    Settlement Amount ({currency}) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     required
@@ -1204,7 +1207,7 @@ export default function UdhaarPage() {
               <form onSubmit={handleThresholdsSubmit} className="space-y-3.5 text-xs">
                 <div>
                   <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    Individual Customer Credit Ceiling (PKR)
+                    Individual Customer Credit Ceiling ({currency})
                   </label>
                   <input
                     type="number"
@@ -1226,7 +1229,7 @@ export default function UdhaarPage() {
 
                 <div>
                   <label className="block font-bold uppercase tracking-wider text-slate-600 mb-1">
-                    Club-Wide Aggregate Limit (PKR) <span className="text-slate-400 font-normal">(Optional)</span>
+                    Club-Wide Aggregate Limit ({currency}) <span className="text-slate-400 font-normal">(Optional)</span>
                   </label>
                   <input
                     type="number"

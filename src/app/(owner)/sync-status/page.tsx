@@ -51,6 +51,8 @@ import { SYNC_STATUS_EVENT } from "@/lib/sync/sync-manager";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useConnectionStatus, connectionLabel, checkServerConnection } from "@/lib/connectivity/online-status";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useBranchCurrency } from "@/features/tenancy/useBranchCurrency";
+import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { tokenStorage } from "@/lib/auth/session";
 import { getQueueCount, getSyncQueue, triggerSyncPush, type QueueItem } from "@/lib/offline-sync";
 
@@ -135,17 +137,17 @@ function getEntityBadgeColor(entity: string) {
   }
 }
 
-function itemDescription(item: PendingSyncItem) {
+function itemDescription(item: PendingSyncItem, currency: string) {
   if (item.entity === "session") {
     const payload = item.payload as any;
     if (String(item.action).toUpperCase() === "SWITCH_TABLE") {
       return `Switch to Table ${payload?.tableNumber || payload?.tableId?.slice(0, 8) || ""}`;
     }
-    return `${payload?.status || "active"} session${payload?.appliedHourlyRate ? ` · Rs. ${payload.appliedHourlyRate}/hr` : ""}`;
+    return `${payload?.status || "active"} session${payload?.appliedHourlyRate ? ` · ${formatCurrency(Number(payload.appliedHourlyRate), currency)}/hr` : ""}`;
   }
   if (item.entity === "invoice") {
     const payload = item.payload as InvoiceOfflinePayload;
-    return `${payload.invoiceNumber ? `Invoice ${payload.invoiceNumber}` : "Unnumbered invoice"}${payload.total ? ` · Total Rs. ${payload.total}` : ""}`;
+    return `${payload.invoiceNumber ? `Invoice ${payload.invoiceNumber}` : "Unnumbered invoice"}${payload.total ? ` · Total ${formatCurrency(Number(payload.total), currency)}` : ""}`;
   }
   if (item.entity === "customer") {
     const payload = item.payload as CustomerOfflinePayload;
@@ -153,17 +155,18 @@ function itemDescription(item: PendingSyncItem) {
   }
   if (item.entity === "payment") {
     const payload = item.payload as PaymentOfflinePayload;
-    return `Payment Rs. ${payload.amount || "0"} (${payload.paymentMethod || "CASH"})`;
+    return `Payment ${formatCurrency(Number(payload.amount || 0), currency)} (${payload.paymentMethod || "CASH"})`;
   }
   if (item.entity === "udhaar") {
     const payload = item.payload as UdhaarOfflinePayload;
-    return `Udhaar ${payload.entryType || "CHARGE"} Rs. ${payload.amount || "0"}`;
+    return `Udhaar ${payload.entryType || "CHARGE"} ${formatCurrency(Number(payload.amount || 0), currency)}`;
   }
   return `Offline mutation (${item.action})`;
 }
 
 export default function SyncStatusPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const currency = useBranchCurrency();
   const connectionStatus = useConnectionStatus();
   const isOnline = connectionStatus === 'online';
   const [now, setNow] = useState(() => Date.now());
@@ -654,7 +657,7 @@ export default function SyncStatusPage() {
                       </td>
 
                       <td className="px-5 py-3.5 font-medium text-slate-700">
-                        {itemDescription(item)}
+                        {itemDescription(item, currency)}
                         {item.lastError && (
                           <span className="block text-rose-600 font-normal text-[11px] mt-0.5">
                             {item.lastError}

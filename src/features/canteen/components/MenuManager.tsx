@@ -22,6 +22,8 @@ import { toast } from "react-toastify";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { useBranchCurrency } from "@/features/tenancy/useBranchCurrency";
+import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 
 interface CategoryFormData {
   name: string;
@@ -39,6 +41,7 @@ interface MenuItemFormData {
 
 export function MenuManager() {
   const { user } = useAuth();
+  const currency = useBranchCurrency();
   const isOnline = useOnlineStatus();
   const isManagement = user?.roles.some(
     (role) => role === "OWNER" || role === "MANAGER"
@@ -597,7 +600,7 @@ export function MenuManager() {
                           Price
                         </span>
                         <span className="font-extrabold text-lg text-brand-700 font-mono">
-                          Rs. {Number(item.currentPrice).toFixed(2)}
+                          {formatCurrency(Number(item.currentPrice), currency)}
                         </span>
                       </div>
 
@@ -772,7 +775,7 @@ export function MenuManager() {
 
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    Price (Rs.) *
+                    Price ({currency}) *
                   </label>
                   <Input
                     type="number"

@@ -7,6 +7,7 @@ import type {
   UpdateBranchPayload,
 } from "../../types/branch";
 import { notifyAssignedBranchesChanged } from "@/features/tenancy/branch-switching";
+import { cacheBranchCurrency } from "@/features/tenancy/branch-currency-cache";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
 
@@ -86,10 +87,12 @@ export async function fetchBranchById(branchId: string): Promise<BranchItem> {
  * 3. Create a new branch under the current tenant
  */
 export async function createBranch(payload: CreateBranchPayload): Promise<BranchItem> {
-  return request<BranchItem>("/tenancy/branches", {
+  const branch = await request<BranchItem>("/tenancy/branches", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  cacheBranchCurrency(branch.id, branch.currency || "PKR");
+  return branch;
 }
 
 /**
@@ -99,10 +102,12 @@ export async function updateBranch(
   branchId: string,
   payload: UpdateBranchPayload
 ): Promise<BranchItem> {
-  return request<BranchItem>(`/tenancy/branches/${branchId}`, {
+  const branch = await request<BranchItem>(`/tenancy/branches/${branchId}`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });
+  cacheBranchCurrency(branch.id, branch.currency || "PKR");
+  return branch;
 }
 
 /**
@@ -112,10 +117,12 @@ export async function updateBranchConfig(
   branchId: string,
   payload: UpdateBranchConfigPayload
 ): Promise<BranchItem> {
-  return request<BranchItem>(`/tenancy/branches/${branchId}/config`, {
+  const branch = await request<BranchItem>(`/tenancy/branches/${branchId}/config`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+  cacheBranchCurrency(branch.id, branch.currency || "PKR");
+  return branch;
 }
 
 /**
