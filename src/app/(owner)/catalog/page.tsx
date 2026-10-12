@@ -25,6 +25,7 @@ import type { BranchItem } from "@/types/branch";
 import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { isNetworkFailure, loadWithOfflineSnapshot } from "@/lib/sync/offline-reference-cache";
 import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
+import { removeCachedTable } from "@/features/sessions/offline-tables-cache";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The request failed";
@@ -245,6 +246,7 @@ export default function CatalogPage() {
 
     try {
       await deleteTable(deleteTarget.id);
+      removeCachedTable(deleteTarget.branchId || user?.branchId, deleteTarget.id);
       setTables((prev) => prev.filter((t) => t.id !== deleteTarget.id));
       toast.success(`Table #${deleteTarget.tableNumber} deleted.`);
       setDeleteTarget(null);

@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Invoice } from "../types/invoice";
 import { formatCurrency } from "../utils/formatCurrency";
 import StatusBadge from "./StatusBadge";
+import { getCachedBranchName } from "@/features/tenancy/branch-currency-cache";
 
 function currency(invoice: Invoice, value: number) {
   const safeValue = isNaN(value) ? 0 : value;
@@ -64,6 +65,9 @@ export default function InvoiceTable({
                 : typeof invoice.remainingAmount === "number" && !isNaN(invoice.remainingAmount)
                 ? invoice.remainingAmount
                 : Math.max(0, total - paidAmount);
+            const branchName =
+              invoice.branch?.name ||
+              getCachedBranchName(invoice.branch?.id || invoice.branchId);
 
             return (
               <tr key={invoice.id} className="hover:bg-slate-50">
@@ -72,12 +76,12 @@ export default function InvoiceTable({
                     {invoice.invoiceNumber ?? "Number pending"}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {invoice.branch?.name ?? "Current branch"}
+                    {branchName}
                   </p>
                 </td>
                 <td className="whitespace-nowrap px-5 py-4">
                   <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                    {invoice.branch?.name ?? "Unknown branch"}
+                    {branchName}
                   </span>
                 </td>
                 <td className="whitespace-nowrap px-5 py-4 text-slate-600">

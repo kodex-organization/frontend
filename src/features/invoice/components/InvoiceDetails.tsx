@@ -7,6 +7,9 @@ import { toast } from "react-toastify";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { apiFetch } from "@/lib/api/client";
+import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
+import { isAppOffline } from "@/lib/connectivity/online-status";
+import { applyDiscount } from "../api/invoiceApi";
 import { useInvoice } from "../hooks/useInvoice";
 import type { Invoice } from "../types/invoice";
 import { formatCurrency } from "../utils/formatCurrency";
@@ -176,8 +179,9 @@ export default function InvoiceDetails({
             <button
               type="button"
               onClick={() => setShowDiscountModal(true)}
-              disabled={!isOnline}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              disabled={false}
+              title={!isOnline ? "Discount will be saved offline and synced when the connection returns" : undefined}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Discount
             </button>
@@ -424,8 +428,8 @@ function ApplyDiscountModal({
     const numericAmount = Number(amount);
     const nextAmountError = !amount.trim()
       ? "Discount amount is required."
-      : !Number.isFinite(numericAmount) || numericAmount <= 0
-      ? "Enter a discount amount greater than zero."
+      : !Number.isFinite(numericAmount) || numericAmount < 0
+      ? "Enter a discount amount of zero or greater."
       : null;
     const nextPasswordError =
       !isOwnerOrManager && !ownerPassword.trim()
@@ -446,21 +450,36 @@ function ApplyDiscountModal({
 
     try {
       setIsSubmitting(true);
-      const updatedInvoice = await apiFetch<Invoice>(
-        `/billing/invoices/${encodeURIComponent(invoiceId)}/discount`,
-        {
-          method: "POST",
-          body: JSON.stringify({
+      const discountResult = isAppOffline()
+        ? await applyDiscount(invoiceId, {
             discountType,
             amount: numericAmount,
             reason,
             ownerPassword: ownerPassword.trim() || undefined,
-          }),
-        },
-      );
+          })
+        : await apiFetch<Invoice | { data: Invoice }>(
+            `/billing/invoices/${encodeURIComponent(invoiceId)}/discount`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                discountType,
+                amount: numericAmount,
+                reason,
+                ownerPassword: ownerPassword.trim() || undefined,
+              }),
+            },
+          );
+      const updatedInvoice =
+        "data" in discountResult
+          ? discountResult.data as Invoice
+          : discountResult as Invoice;
       onSuccess(updatedInvoice);
     } catch (err: any) {
-      setError(parseErrorMessage(err));
+      setError(
+        isNetworkFailure(err)
+          ? parseErrorMessage(err)
+          : parseErrorMessage(err),
+      );
     } finally {
       setIsSubmitting(false);
     }

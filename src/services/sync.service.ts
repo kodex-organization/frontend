@@ -1,5 +1,6 @@
 import { apiFetch } from "@/lib/api/client";
 import { tokenStorage } from "@/lib/auth/session";
+import { retryOnAuthExpiry } from "@/lib/sync/auth-retry";
 
 type ServerTimeResponse = {
   serverTime: string;
@@ -81,13 +82,15 @@ export async function pushSyncChanges(
   const context = tokenStorage.getAccessContext();
   const effectiveDeviceId = context?.deviceId || deviceId;
 
-  return apiFetch<SyncPushResponse>("/sync/push", {
-    method: "POST",
-    body: JSON.stringify({
-      deviceId: effectiveDeviceId,
-      changes,
+  return retryOnAuthExpiry(() =>
+    apiFetch<SyncPushResponse>("/sync/push", {
+      method: "POST",
+      body: JSON.stringify({
+        deviceId: effectiveDeviceId,
+        changes,
+      }),
     }),
-  });
+  );
 }
 
 export async function pullSyncChanges(

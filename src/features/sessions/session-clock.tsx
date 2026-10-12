@@ -6,14 +6,26 @@ import type { ActiveSession } from "./types";
 
 function billableSeconds(session: ActiveSession, now: number) {
   const end = session.endedAt ? Date.parse(session.endedAt) : now;
-  const paused = session.pauses.reduce((total, pause) => {
-    const resumedAt = pause.resumedAt ? Date.parse(pause.resumedAt) : end;
-    return total + Math.max(0, resumedAt - Date.parse(pause.pausedAt));
+  const storedPauses = session.pauses || [];
+  const paused = storedPauses.reduce((total, pause) => {
+    if (!pause.resumedAt) return total;
+    const pausedAt = Date.parse(pause.pausedAt);
+    const resumedAt = Date.parse(pause.resumedAt);
+    return Number.isFinite(pausedAt) && Number.isFinite(resumedAt)
+      ? total + Math.max(0, resumedAt - pausedAt)
+      : total;
   }, 0);
+  const openPause = [...storedPauses].reverse().find((pause) => !pause.resumedAt);
+  const activePauseAt = session.status === "paused"
+    ? Date.parse(session.pausedAt || openPause?.pausedAt || "")
+    : null;
+  const activePauseDuration = activePauseAt !== null && Number.isFinite(activePauseAt)
+    ? Math.max(0, end - activePauseAt)
+    : 0;
 
   return Math.max(
     0,
-    Math.floor((end - Date.parse(session.startedAt) - paused) / 1000),
+    Math.floor((end - Date.parse(session.startedAt) - paused - activePauseDuration) / 1000),
   );
 }
 

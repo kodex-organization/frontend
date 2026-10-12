@@ -101,7 +101,7 @@ export function StartSessionModal({
   useEffect(() => {
     const trimmedQuery = query.trim();
 
-    if (walkIn || trimmedQuery.length === 0 || !isOnline) {
+    if (walkIn || trimmedQuery.length === 0) {
       setCustomers([]);
       return;
     }
@@ -224,8 +224,13 @@ export function StartSessionModal({
               placeholder="Search name or phone"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              disabled={busy || !isOnline}
+              disabled={busy}
             />
+            {!isOnline && (
+              <p className="mt-1 text-xs text-slate-500">
+                Offline: searching customers saved on this device.
+              </p>
+            )}
             <div className="mt-2 max-h-36 overflow-auto rounded-lg border">
               {customers.length === 0 && query.trim() !== "" ? (
                 <p className="p-3 text-xs text-slate-400">No customers found</p>

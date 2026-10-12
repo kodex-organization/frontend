@@ -6,6 +6,12 @@ import {
   queuePaymentChange,
 } from "@/lib/sync/offline-db";
 import { tokenStorage } from "@/lib/auth/session";
+import {
+  cacheBranchCurrency,
+  getCachedBranchCurrency,
+  getCachedBranchName,
+} from "@/features/tenancy/branch-currency-cache";
+import { filterCachedInvoices } from "../utils/filterCachedInvoices";
 import type {
   BillingTransaction,
   Invoice,
@@ -25,10 +31,44 @@ function toQuery(values: object) {
     ) {
       params.set(key, String(value));
     }
+
   }
 
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+async function readOfflineInvoices() {
+  const cached = await offlineDB.cachedInvoices.toArray();
+  const byId = new Map<string, Invoice>(
+    cached
+      .map((entry) => [entry.id, entry.data as Invoice] as const)
+      .filter((entry): entry is [string, Invoice] => Boolean(entry[1])),
+  );
+  const pending = await offlineDB.pendingQueue.where("entity").equals("invoice").toArray();
+  for (const item of pending) {
+    const payload = item.payload as any;
+    if (!payload?.id || byId.has(payload.id)) continue;
+    const total = Number(payload.total ?? 0);
+    byId.set(payload.id, {
+      ...payload,
+      branch: {
+        id: payload.branchId,
+        name: getCachedBranchName(payload.branchId),
+        currency: getCachedBranchCurrency(payload.branchId),
+      },
+      subtotal: Number(payload.subtotal ?? total),
+      discountAmount: Number(payload.discountAmount ?? 0),
+      taxAmount: Number(payload.taxAmount ?? 0),
+      serviceCharge: Number(payload.serviceCharge ?? 0),
+      total,
+      paidAmount: Number(payload.paidAmount ?? 0),
+      remainingAmount: Math.max(0, total - Number(payload.paidAmount ?? 0)),
+      items: payload.items ?? [],
+      payments: payload.payments ?? [],
+    } as Invoice);
+  }
+  return Array.from(byId.values());
 }
 
 async function recordPaymentOffline(invoiceId: string, input: RecordPaymentInput): Promise<PaymentResult> {
@@ -88,17 +128,8 @@ export const invoiceService = {
   async getInvoices(filters: InvoiceListFilters = {}): Promise<Paginated<Invoice>> {
     if (isAppOffline()) {
       try {
-        const cached = await offlineDB.cachedInvoices.toArray();
-        const items = cached.map((c) => c.data).filter(Boolean) as Invoice[];
-        return {
-          items,
-          pagination: {
-            page: 1,
-            pageSize: items.length || 25,
-            total: items.length,
-            totalPages: 1,
-          },
-        };
+        const items = await readOfflineInvoices();
+        return filterCachedInvoices(items, filters, getActiveOfflineBranchId());
       } catch {
         return {
           items: [],
@@ -115,6 +146,11 @@ export const invoiceService = {
       // Cache invoices for offline availability
       if (response?.items && Array.isArray(response.items)) {
         try {
+          for (const invoice of response.items) {
+            if (invoice.branch?.id && invoice.branch.currency) {
+              cacheBranchCurrency(invoice.branch.id, invoice.branch.currency);
+            }
+          }
           await offlineDB.cachedInvoices.bulkPut(
             response.items.map((inv) => ({
               id: inv.id,
@@ -136,17 +172,8 @@ export const invoiceService = {
         err?.message?.includes("fetch")
       ) {
         try {
-          const cached = await offlineDB.cachedInvoices.toArray();
-          const items = cached.map((c) => c.data).filter(Boolean) as Invoice[];
-          return {
-            items,
-            pagination: {
-              page: 1,
-              pageSize: items.length || 25,
-              total: items.length,
-              totalPages: 1,
-            },
-          };
+          const items = await readOfflineInvoices();
+          return filterCachedInvoices(items, filters, getActiveOfflineBranchId());
         } catch {}
       }
       throw err;

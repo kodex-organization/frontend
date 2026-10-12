@@ -8,13 +8,51 @@ import {
 } from "@/lib/sync/offline-db";
 import { addToSyncQueue, getSyncQueue } from "@/lib/offline-sync";
 import { tokenStorage } from "@/lib/auth/session";
+import {
+  canSeeAllBranchesOffline,
+  isCustomerCacheUsable,
+} from "@/lib/sync/offline-reference-cache";
 import { getCachedBranchCurrency } from "@/features/tenancy/branch-currency-cache";
 import type { ActiveSession, Customer, TableOption } from "./types";
-
-const OFFLINE_TABLES_KEY = "cuecloud_offline_tables";
+import { addCachedTable, readCachedTables, saveCachedTables } from "./offline-tables-cache";
 
 const request = <T>(path: string, options?: RequestInit) =>
   apiFetch<T>(path, options);
+
+// Offline customer search over the IndexedDB cache, same branch visibility as the customers module.
+async function searchCachedCustomers(query: string, limit = 10): Promise<Customer[]> {
+  if (!(await isCustomerCacheUsable())) return [];
+
+  const branchId = getActiveOfflineBranchId();
+  const seesAllBranches = canSeeAllBranchesOffline();
+  const rows =
+    !seesAllBranches && branchId
+      ? await offlineDB.cachedCustomers.where("branchId").equals(branchId).toArray()
+      : await offlineDB.cachedCustomers.toArray();
+
+  const term = query.trim().toLowerCase();
+  return rows
+    .map((row) => row.data as Customer & { branchId?: string | null })
+    .filter(
+      (customer) =>
+        customer &&
+        (seesAllBranches || !customer.branchId || customer.branchId === branchId),
+    )
+    .filter(
+      (customer) =>
+        !term ||
+        customer.fullName?.toLowerCase().includes(term) ||
+        customer.phone?.includes(term) ||
+        customer.cnic?.includes(term),
+    )
+    .slice(0, limit)
+    .map((customer) => ({
+      id: customer.id,
+      fullName: customer.fullName,
+      phone: customer.phone,
+      cnic: customer.cnic ?? null,
+    }));
+}
 
 function cleanFloorViewLocalStorage(sessionId: string, action: "pause" | "resume" | "end") {
   if (typeof window === "undefined") return;
@@ -228,16 +266,13 @@ export const sessionApi = {
       const tables = await request<TableOption[]>(
         `/sessions/available-tables${branchId ? `?branchId=${encodeURIComponent(branchId)}` : ""}`,
       );
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(OFFLINE_TABLES_KEY, JSON.stringify(tables));
-      }
+      saveCachedTables(branchId || getActiveOfflineBranchId(), tables);
       return tables;
     } catch {
       if (typeof window === "undefined") return [];
       try {
-        const cached = JSON.parse(window.localStorage.getItem(OFFLINE_TABLES_KEY) || "[]");
-        const tablesList = Array.isArray(cached) ? (cached as TableOption[]) : [];
         const effectiveBranchId = branchId || getActiveOfflineBranchId();
+        const tablesList = readCachedTables(effectiveBranchId);
         const cachedSessions = effectiveBranchId
           ? await offlineDB.cachedTables
               .where("branchId")
@@ -262,8 +297,11 @@ export const sessionApi = {
     }
   },
 
-  customers: (query: string) =>
-    request<Customer[]>(`/customers?q=${encodeURIComponent(query)}&limit=10`),
+  customers: async (query: string): Promise<Customer[]> => {
+    // Offline: search cached customers.
+    if (isAppOffline()) return searchCachedCustomers(query);
+    return request<Customer[]>(`/customers?q=${encodeURIComponent(query)}&limit=10`);
+  },
 
   start: async (body: {
     branchId?: string;
@@ -274,18 +312,14 @@ export const sessionApi = {
       body.branchId || getActiveOfflineBranchId() || "default";
     const branchCurrency = getCachedBranchCurrency(effectiveBranchId);
     const sessionId = crypto.randomUUID();
+    // Same key for both offline queues.
+    const idempotencyKey = crypto.randomUUID();
     const accessContext = tokenStorage.getAccessContext();
     const startedAt = new Date().toISOString();
 
-    let matchedTable: TableOption | undefined;
-    if (typeof window !== "undefined") {
-      try {
-        const cached = JSON.parse(window.localStorage.getItem(OFFLINE_TABLES_KEY) || "[]");
-        matchedTable = Array.isArray(cached)
-          ? cached.find((t: TableOption) => t.id === body.tableId)
-          : undefined;
-      } catch {}
-    }
+    const matchedTable: TableOption | undefined = readCachedTables(
+      effectiveBranchId,
+    ).find((t) => t.id === body.tableId);
 
     let matchedCustomer: Customer | null = null;
     if (body.customerId) {
@@ -339,6 +373,13 @@ export const sessionApi = {
     };
 
     if (isAppOffline()) {
+      // Block tables missing from this branch's cache (other branch or deleted).
+      if (!matchedTable) {
+        throw new Error(
+          "This table is not available in the current branch. Reconnect once to refresh the table list.",
+        );
+      }
+
       await offlineDB.cachedTables.put({
         id: sessionId,
         branchId: effectiveBranchId,
@@ -346,10 +387,10 @@ export const sessionApi = {
         cachedAt: startedAt,
       });
 
-      await queueSessionChange(sessionPayload, "START");
+      await queueSessionChange(sessionPayload, "START", idempotencyKey);
 
       addToSyncQueue({
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey,
         entityType: "Session",
         entityId: sessionId,
         action: "START",
@@ -382,10 +423,10 @@ export const sessionApi = {
         cachedAt: startedAt,
       });
 
-      await queueSessionChange(sessionPayload, "START");
+      await queueSessionChange(sessionPayload, "START", idempotencyKey);
 
       addToSyncQueue({
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey,
         entityType: "Session",
         entityId: sessionId,
         action: "START",
@@ -408,16 +449,37 @@ export const sessionApi = {
 
     const updateOfflineDb = async () => {
       try {
+        const actionAt = new Date().toISOString();
         if (action === "end") {
           await offlineDB.cachedTables.delete(id);
         } else {
           const item = await offlineDB.cachedTables.get(id);
           if (item && item.data) {
+            const currentPauses = Array.isArray(item.data.pauses)
+              ? item.data.pauses
+              : [];
+            const pauses =
+              action === "pause"
+                ? [
+                    ...currentPauses,
+                    {
+                      id: crypto.randomUUID(),
+                      pausedAt: actionAt,
+                      resumedAt: null,
+                    },
+                  ]
+                : currentPauses.map((pause: { resumedAt: string | null }, index: number) =>
+                    index === currentPauses.length - 1 && !pause.resumedAt
+                      ? { ...pause, resumedAt: actionAt }
+                      : pause,
+                  );
             await offlineDB.cachedTables.put({
               ...item,
               data: {
                 ...item.data,
                 status: action === "pause" ? "paused" : "active",
+                pausedAt: action === "pause" ? actionAt : null,
+                pauses,
               },
             });
           }
@@ -482,7 +544,10 @@ export const sessionApi = {
           branch: {
             id: sess.branch?.id || effectiveBranchId,
             name: sess.branch?.name || "Current branch",
-            currency: sess.branch?.currency || sess.table?.currency || "PKR",
+            currency:
+              sess.branch?.currency ||
+              sess.table?.currency ||
+              getCachedBranchCurrency(sess.branch?.id || effectiveBranchId),
           },
           sessionId: id,
           session: {
@@ -573,6 +638,8 @@ export const sessionApi = {
     const queueOfflineAction = async () => {
       await updateOfflineDb();
       if (action === "end") {
+        // The cache only held tables that were free when it was saved; bring this one back.
+        if (existingSessionData?.table) addCachedTable(effectiveBranchId, existingSessionData.table);
         await synthesizeOfflineInvoice(existingSessionData);
       }
       const payload = {
@@ -583,10 +650,11 @@ export const sessionApi = {
         endedAt: action === "end" ? new Date().toISOString() : null,
       };
 
-      await queueSessionChange(payload, queueAction);
+      const idempotencyKey = crypto.randomUUID();
+      await queueSessionChange(payload, queueAction, idempotencyKey);
 
       return addToSyncQueue({
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey,
         entityType: "Session",
         entityId: id,
         action: queueAction,
@@ -622,16 +690,9 @@ export const sessionApi = {
 
     const updateOfflineDb = async () => {
       try {
-        let matchedTable: TableOption | undefined;
-        if (typeof window !== "undefined") {
-          try {
-            const cachedRaw = window.localStorage.getItem(OFFLINE_TABLES_KEY);
-            const cached = cachedRaw ? JSON.parse(cachedRaw) : [];
-            matchedTable = Array.isArray(cached)
-              ? cached.find((t: TableOption) => t.id === targetTableId)
-              : undefined;
-          } catch {}
-        }
+        const matchedTable: TableOption | undefined = readCachedTables(
+          effectiveBranchId,
+        ).find((t) => t.id === targetTableId);
 
         const item = await offlineDB.cachedTables.get(id);
         if (item && item.data) {
@@ -654,6 +715,8 @@ export const sessionApi = {
     };
 
     const queueOfflineSwitch = async () => {
+      const before = await offlineDB.cachedTables.get(id);
+      if (before?.data?.table) addCachedTable(effectiveBranchId, before.data.table);
       await updateOfflineDb();
       const payload = {
         id,
@@ -662,10 +725,11 @@ export const sessionApi = {
         previousTableId,
       };
 
-      await queueSessionChange(payload, "SWITCH_TABLE");
+      const idempotencyKey = crypto.randomUUID();
+      await queueSessionChange(payload, "SWITCH_TABLE", idempotencyKey);
 
       return addToSyncQueue({
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey,
         entityType: "Session",
         entityId: id,
         action: "SWITCH_TABLE",

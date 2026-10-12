@@ -168,31 +168,37 @@ export default function SessionsPage() {
             ...session,
             status: "paused",
             pausedAt: nowIso,
+            pauses: [
+              ...(session.pauses || []),
+              {
+                id: crypto.randomUUID(),
+                pausedAt: nowIso,
+                resumedAt: null,
+              },
+            ],
+          };
+        }
+        const pauses = [...(session.pauses || [])];
+        let lastOpenPauseIndex = -1;
+        pauses.forEach((pause, index) => {
+          if (!pause.resumedAt) lastOpenPauseIndex = index;
+        });
+        if (lastOpenPauseIndex >= 0) {
+          pauses[lastOpenPauseIndex] = {
+            ...pauses[lastOpenPauseIndex],
+            resumedAt: nowIso,
           };
         }
         return {
           ...session,
           status: "active",
-          pausedAt: null as any,
+          pausedAt: null,
+          pauses,
         };
       });
     });
 
     try {
-      if (nextAction === "end") {
-        setItems((current) => current.filter((session) => session.id !== id));
-      } else {
-        setItems((current) =>
-          current.map((session) =>
-            session.id === id
-              ? {
-                  ...session,
-                  status: nextAction === "pause" ? "paused" : "active",
-                }
-              : session,
-          ),
-        );
-      }
       const result = await sessionApi.action(id, nextAction);
 
       if (!isOnline || (result && "offlineQueued" in result)) {

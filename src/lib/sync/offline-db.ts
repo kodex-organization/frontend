@@ -226,6 +226,8 @@ export const offlineDB = new CueCloudOfflineDB();
 export async function queueSessionChange(
   payload: SessionOfflinePayload | Record<string, unknown>,
   action: "START" | "PAUSE" | "RESUME" | "END" | "SWITCH_TABLE" | "create" | "update" | "delete" | string = "START",
+  // Use the same key as the matching localStorage outbox entry.
+  idempotencyKey: string = crypto.randomUUID(),
 ) {
   try {
     return await offlineDB.pendingQueue.add({
@@ -235,7 +237,7 @@ export async function queueSessionChange(
       action,
       payload,
       status: "pending",
-      idempotencyKey: crypto.randomUUID(),
+      idempotencyKey,
       originTimestamp: new Date().toISOString(),
       retryCount: 0,
       lastError: null,

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { invoiceService } from "../services/invoiceService";
+import { voidInvoice as voidInvoiceOfflineAware } from "../api/invoiceApi";
 import type { Invoice } from "../types/invoice";
 
 export default function VoidInvoiceModal({
@@ -26,21 +27,14 @@ export default function VoidInvoiceModal({
       return;
     }
 
-    if (!isOnline) {
-      setError("Reconnect before voiding an invoice.");
-      return;
-    }
-
     setSubmitting(true);
     setError("");
 
     try {
-      onSuccess(
-        await invoiceService.voidInvoice(
-          invoice.id,
-          reason.trim(),
-        ),
-      );
+      const updated = !isOnline
+        ? await voidInvoiceOfflineAware(invoice.id, { reason: reason.trim() })
+        : { data: await invoiceService.voidInvoice(invoice.id, reason.trim()) };
+      onSuccess(updated.data as Invoice);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -81,7 +75,7 @@ export default function VoidInvoiceModal({
 
           {!isOnline && (
             <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Invoice voiding is unavailable offline.
+              Offline void will be saved on this device and synced when the connection returns.
             </p>
           )}
 
@@ -118,7 +112,7 @@ export default function VoidInvoiceModal({
           <button
             type="button"
             onClick={() => void confirmVoid()}
-            disabled={submitting || !isOnline}
+            disabled={submitting}
             className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? "Voiding…" : "Confirm void"}

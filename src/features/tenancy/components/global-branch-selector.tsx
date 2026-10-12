@@ -21,6 +21,7 @@ import {
 import { BranchSelector } from "./branch-selector";
 import { RequestBranchAccessModal } from "./request-branch-access-modal";
 import { ManageBranchAccessModal } from "./manage-branch-access-modal";
+import { cacheBranchName } from "../branch-currency-cache";
 
 export function GlobalBranchSelector({
   onSwitching,
@@ -45,6 +46,7 @@ export function GlobalBranchSelector({
       const assigned = await getAssignedBranches();
       if (version !== loadVersion.current) return;
       setBranches(assigned);
+      assigned.forEach((branch) => cacheBranchName(branch.id, branch.name));
       setError(null);
       void cacheScopedJson<AssignedBranch[]>(`assigned-branches:${user?.id ?? ""}`, assigned);
     } catch (cause) {
@@ -55,7 +57,10 @@ export function GlobalBranchSelector({
           `assigned-branches:${user?.id ?? ""}`,
         );
         if (version !== loadVersion.current) return;
-        if (saved) setBranches(saved.data);
+        if (saved) {
+          setBranches(saved.data);
+          saved.data.forEach((branch) => cacheBranchName(branch.id, branch.name));
+        }
         setError(null);
       } else {
         setError("Could not load branches. Retry");

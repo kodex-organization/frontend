@@ -51,6 +51,7 @@ export interface InvoiceDetails {
   items: InvoiceItem[];
   subtotal: number;
   discountAmount: number;
+  discountReasonCode?: string | null;
   taxAmount: number;
   serviceCharge: number;
   total: number;
@@ -70,6 +71,7 @@ import {
 } from "@/lib/sync/offline-db";
 import { tokenStorage } from "@/lib/auth/session";
 import { isAppOffline } from "@/lib/connectivity/online-status";
+import { queueInvoiceChange } from "@/lib/sync/offline-db";
 
 export interface SettleInvoicePayload {
   tenders: Array<{
@@ -164,12 +166,81 @@ export async function settleInvoice(invoiceId: string, payload: SettleInvoicePay
 }
 
 export interface ApplyDiscountPayload {
-  discountAmount: number;
-  discountReasonCode: string;
+  discountAmount?: number;
+  discountReasonCode?: string;
+  discountType?: "fixed" | "percentage";
+  amount?: number;
+  reason?: string;
   ownerPassword?: string;
 }
 
+async function findCachedInvoice(invoiceId: string) {
+  const direct = await offlineDB.cachedInvoices.get(invoiceId);
+  return direct;
+}
+
 export async function applyDiscount(invoiceId: string, payload: ApplyDiscountPayload) {
+  if (isAppOffline()) {
+    const cached = await findCachedInvoice(invoiceId);
+    if (!cached?.data) throw new Error("Invoice details unavailable offline.");
+
+    const invoice = cached.data as InvoiceDetails & {
+      branchId?: string;
+      voidReason?: string | null;
+      voidedAt?: string | null;
+      voidedById?: string | null;
+    };
+    const baseSubtotal = Number(invoice.subtotal || 0);
+    const requested = Number(payload.amount ?? payload.discountAmount ?? 0);
+    const discountAmount = payload.discountType === "percentage"
+      ? Number((baseSubtotal * requested / 100).toFixed(2))
+      : requested;
+    if (!Number.isFinite(discountAmount) || discountAmount < 0 || discountAmount > baseSubtotal) {
+      throw new Error("Discount cannot be negative or exceed the invoice subtotal.");
+    }
+
+    const nextDiscount = Number(discountAmount.toFixed(2));
+    const netSubtotal = Math.max(0, baseSubtotal - nextDiscount);
+    const tax = Number(invoice.taxAmount || 0);
+    const serviceCharge = Number(invoice.serviceCharge || 0);
+    const nextTotal = Number((netSubtotal + tax + serviceCharge).toFixed(2));
+    const updatedInvoice = {
+      ...invoice,
+      discountAmount: nextDiscount,
+      discountReasonCode: payload.reason ?? payload.discountReasonCode ?? null,
+      total: nextTotal,
+      remainingBalance: Math.max(0, nextTotal - Number(invoice.paidAmount || 0)),
+      remainingAmount: Math.max(0, nextTotal - Number(invoice.paidAmount || 0)),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await offlineDB.cachedInvoices.put({ ...cached, data: updatedInvoice });
+    await queueInvoiceChange({
+      id: invoiceId,
+      branchId: cached.branchId || invoice.branch?.id || getActiveOfflineBranchId() || "default",
+      invoiceNumber: invoice.invoiceNumber,
+      sessionId: invoice.sessionId || null,
+      customerId: invoice.customer?.id || null,
+      subtotal: String(baseSubtotal),
+      discountAmount: String(nextDiscount),
+      discountReasonCode: updatedInvoice.discountReasonCode,
+      discountApprovedById: tokenStorage.getAccessContext()?.userId ?? null,
+      taxAmount: String(tax),
+      serviceCharge: String(serviceCharge),
+      total: String(nextTotal),
+      paidAmount: String(invoice.paidAmount || 0),
+      status: invoice.status === "paid" ? "paid" : "open",
+      voidedInvoiceId: null,
+      createdById: tokenStorage.getAccessContext()?.userId ?? null,
+      createdAt: invoice.createdAt,
+    }, "update");
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("cuecloud:offline-queue-changed"));
+    }
+    return updatedInvoice;
+  }
+
   return apiFetch<{ success: boolean; data: InvoiceDetails }>(`/invoices/${invoiceId}/discount`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -182,6 +253,48 @@ export interface VoidInvoicePayload {
 }
 
 export async function voidInvoice(invoiceId: string, payload: VoidInvoicePayload) {
+  if (isAppOffline()) {
+    const cached = await findCachedInvoice(invoiceId);
+    if (!cached?.data) throw new Error("Invoice details unavailable offline.");
+    const invoice = cached.data as InvoiceDetails & { branchId?: string };
+    const now = new Date().toISOString();
+    const updatedInvoice = {
+      ...invoice,
+      status: "void",
+      voidReason: payload.reason,
+      voidedAt: now,
+      voidedById: tokenStorage.getAccessContext()?.userId ?? null,
+      remainingBalance: 0,
+      remainingAmount: 0,
+      updatedAt: now,
+    };
+    await offlineDB.cachedInvoices.put({ ...cached, data: updatedInvoice });
+    await queueInvoiceChange({
+      id: invoiceId,
+      branchId: cached.branchId || invoice.branch?.id || getActiveOfflineBranchId() || "default",
+      invoiceNumber: invoice.invoiceNumber,
+      sessionId: invoice.sessionId || null,
+      customerId: invoice.customer?.id || null,
+      subtotal: String(invoice.subtotal || 0),
+      discountAmount: String(invoice.discountAmount || 0),
+      discountReasonCode: invoice.discountReasonCode || null,
+      discountApprovedById: null,
+      taxAmount: String(invoice.taxAmount || 0),
+      serviceCharge: String(invoice.serviceCharge || 0),
+      total: String(invoice.total || 0),
+      paidAmount: String(invoice.paidAmount || 0),
+      status: "void",
+      voidedInvoiceId: null,
+      createdById: tokenStorage.getAccessContext()?.userId ?? null,
+      createdAt: invoice.createdAt,
+    }, "update");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("cuecloud:invoice-voided", { detail: { invoiceId, reason: payload.reason } }));
+      window.dispatchEvent(new Event("cuecloud:offline-queue-changed"));
+    }
+    return { success: true, data: updatedInvoice };
+  }
+
   const res = await apiFetch<{ success: boolean; data: InvoiceDetails }>(`/invoices/${invoiceId}/void`, {
     method: "POST",
     body: JSON.stringify(payload),
