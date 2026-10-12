@@ -20,6 +20,8 @@ import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { useConnectionStatus } from "@/lib/connectivity/online-status";
 import { getPendingSyncCount } from "@/lib/sync/offline-db";
 import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
+import { tokenStorage } from "@/lib/auth/session";
+import { ASSIGNED_BRANCHES_CHANGED_EVENT } from "@/features/tenancy/branch-switching";
 import { OfflineSnapshotNotice } from "@/components/sync/offline-snapshot-notice";
 import {
   fetchAging,
@@ -227,7 +229,19 @@ export default function ReportingWorkspace() {
   const currency = useBranchCurrency();
   const money = (value: unknown) => formatCurrency(Number(value ?? 0), currency);
   const [tab, setTab] = useState<ReportTab>("z-report");
-  const branchId = user?.branchId ?? "";
+  const [branchId, setBranchId] = useState(
+    () => tokenStorage.getAccessContext()?.branchId ?? user?.branchId ?? ""
+  );
+
+  useEffect(() => {
+    const updateBranch = () => {
+      const current = tokenStorage.getAccessContext()?.branchId ?? user?.branchId ?? "";
+      setBranchId(current);
+    };
+    updateBranch();
+    window.addEventListener(ASSIGNED_BRANCHES_CHANGED_EVENT, updateBranch);
+    return () => window.removeEventListener(ASSIGNED_BRANCHES_CHANGED_EVENT, updateBranch);
+  }, [user?.branchId]);
   const [date, setDate] = useState(today);
 
   const [fromDate, setFromDate] = useState(() => getPresetRange("30d").from);
@@ -806,17 +820,19 @@ export default function ReportingWorkspace() {
                 className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-sm font-mono text-slate-800 transition outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                Report Date
-              </label>
-              <input
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-                className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-sm text-slate-800 transition outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
+            {!rangeTabs.includes(tab) && (
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  Report Date
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-sm text-slate-800 transition outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+            )}
 
             {rangeTabs.includes(tab) && (
               <>

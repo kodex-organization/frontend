@@ -13,6 +13,7 @@ export default function SplitPaymentPanel({
   isCustomerBlocked = false,
   hasCustomer,
   currency,
+  concessionTaxPercent = 5,
 }: {
   invoiceId: string;
   standardTotal: number;
@@ -21,6 +22,7 @@ export default function SplitPaymentPanel({
   isCustomerBlocked?: boolean;
   hasCustomer: boolean;
   currency: string;
+  concessionTaxPercent?: number;
 }) {
   const [cash, setCash] = useState<string>("0");
   const [card, setCard] = useState<string>("0");
@@ -107,7 +109,7 @@ export default function SplitPaymentPanel({
 
         <div>
           <label className="block text-xs font-semibold text-slate-700">
-            Card {is100PercentCard && <span className="text-emerald-600 font-bold">(5% Concession)</span>}
+            Card {is100PercentCard && <span className="text-emerald-600 font-bold">({concessionTaxPercent}% Concession)</span>}
           </label>
           <input
             type="number"

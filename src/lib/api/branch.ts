@@ -9,52 +9,15 @@ import type {
 import { notifyAssignedBranchesChanged } from "@/features/tenancy/branch-switching";
 import { cacheBranchCurrency } from "@/features/tenancy/branch-currency-cache";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
-
-function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return (
-    localStorage.getItem("cuecloud_access_token") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("accessToken") ||
-    null
-  );
-}
-
-function getStoredDeviceId(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("cuecloud_device_id") || null;
-}
+import { apiFetch } from "@/lib/api/client";
 
 /**
- * Generic helper for typed API responses
+ * Generic helper for typed API responses using standard authenticated apiFetch
  */
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const token = getStoredToken();
-  const deviceId = getStoredDeviceId();
-
-  // Only attach Content-Type: application/json if there is an actual body
-  const headers: Record<string, string> = {
-    ...(options.body ? { "Content-Type": "application/json" } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(deviceId ? { "x-device-id": deviceId } : {}),
-    ...((options.headers as Record<string, string>) || {}),
-  };
-
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-    credentials: "include",
-  });
-
-  const json = await response.json().catch(() => ({}));
-
-  if (!response.ok || json.success === false) {
-    throw new Error(json.error?.message || json.message || "An unexpected error occurred");
-  }
-
+  const data = await apiFetch<T>(endpoint, options);
   if (options.method && options.method !== "GET") notifyAssignedBranchesChanged();
-  return json.data as T;
+  return data;
 }
 
 /**

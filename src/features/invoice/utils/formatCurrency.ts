@@ -9,10 +9,12 @@ export function formatCurrency(
     });
   }
 
+  const normalized = currency.toUpperCase() === "RS" ? "PKR" : currency;
+
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
-      currency,
+      currency: normalized,
       maximumFractionDigits: 2,
     }).format(value);
   } catch {

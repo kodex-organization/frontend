@@ -29,6 +29,7 @@ export default function RecordPaymentModal({
   cardTotal,
   currency,
   isCustomerBlocked = false,
+  concessionTaxPercent = 5,
   onClose,
   onSuccess,
 }: {
@@ -38,6 +39,7 @@ export default function RecordPaymentModal({
   cardTotal?: number;
   currency: string | null;
   isCustomerBlocked?: boolean;
+  concessionTaxPercent?: number;
   onClose: () => void;
   onSuccess: (result: PaymentResult) => void;
 }) {
@@ -157,10 +159,11 @@ export default function RecordPaymentModal({
         {tenderType === "card" && cardTotal !== undefined && standardTotal !== undefined && standardTotal > cardTotal && (
           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
             <div className="flex items-center gap-1.5 font-bold">
-              <span>💡 PRA 5% Card Tax Concession Applied</span>
+              <span>💡 PRA {concessionTaxPercent}% Card Tax Concession Applied</span>
+              {/* PRA 5% Card Tax Concession */}
             </div>
             <p className="mt-1 text-emerald-800">
-              Card payments receive a reduced 5% sales tax rate (saving {formatCurrency(standardTotal - cardTotal, currency)}). Total due is {formatCurrency(cardTotal, currency)}.
+              Card payments receive a reduced {concessionTaxPercent}% sales tax rate (saving {formatCurrency(standardTotal - cardTotal, currency)}). Total due is {formatCurrency(cardTotal, currency)}.
             </p>
           </div>
         )}

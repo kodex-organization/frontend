@@ -333,16 +333,16 @@ function GovernanceContent() {
               disabled={!isOnline || !canHandover}
               onClick={() => setShowHandover(true)}
             />
-            <ActionCard
-              title="Audit Log"
-              description="View governance actions for the selected session."
-              label="View Audit Log"
-              color="bg-gray-600 hover:bg-gray-700"
-              disabled={!isOnline || !selectedSession}
-              onClick={() => setShowAuditLog(true)}
-            />
           </>
         )}
+        <ActionCard
+          title="Audit Log History"
+          description="View governance actions, policy overrides, approvals, and full audit trail."
+          label="View Log History"
+          color="bg-slate-700 hover:bg-slate-800"
+          disabled={false}
+          onClick={() => setShowAuditLog(true)}
+        />
       </div>
 
       {showCancellation && selectedSession && (
@@ -391,9 +391,10 @@ function GovernanceContent() {
           onSuccess={() => void Promise.all([loadSessions(), loadStaff()])}
         />
       )}
-      {canManage && showAuditLog && selectedSession && (
+      {showAuditLog && (
         <AuditLogViewer
-          sessionId={selectedSession.id}
+          sessionId={selectedSession?.id}
+          sessions={sessions}
           onClose={() => setShowAuditLog(false)}
         />
       )}
