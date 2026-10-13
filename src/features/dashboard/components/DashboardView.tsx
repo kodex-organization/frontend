@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { fetchBranches } from "@/lib/api/branch";
 import { useBranchCurrency } from "@/features/tenancy/useBranchCurrency";
 import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
-import { DashboardApi, LiveTableSession, RevenueKPIs, OutstandingUdhaar, SyncDeviceStatus, RevenueTrend, TableHeatmap, AnomalyItem, TransactionItem } from "../dashboard.api";
+import { DashboardApi, getOfflineRevenueSnapshot, LiveTableSession, RevenueKPIs, OutstandingUdhaar, SyncDeviceStatus, RevenueTrend, TableHeatmap, AnomalyItem, TransactionItem } from "../dashboard.api";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Activity, CreditCard, Users, RefreshCw, AlertTriangle, ChevronRight, TrendingUp } from "lucide-react";
@@ -117,18 +117,47 @@ export function DashboardView() {
     } catch (err: any) {
       if (!isSilent) {
         if (isNetworkFailure(err)) {
+          let offlineRevenue: Awaited<ReturnType<typeof getOfflineRevenueSnapshot>> | null = null;
+          try {
+            offlineRevenue = await getOfflineRevenueSnapshot(branchId);
+          } catch (offlineRevenueError) {
+            console.error("Failed to calculate offline dashboard revenue:", offlineRevenueError);
+          }
+          const hasLocalRevenue = Boolean(
+            offlineRevenue &&
+              (offlineRevenue.totalRevenue > 0 ||
+                offlineRevenue.tableRevenue > 0 ||
+                offlineRevenue.canteenRevenue > 0 ||
+                Object.keys(offlineRevenue.paymentMethods).length > 0),
+          );
           // Offline: show the last data saved while online instead of an error page.
           const snapshot = await readScopedJson<Partial<DashboardSnapshot>>(
             `dashboard:${branchId ?? "default"}`,
           );
+          if (!snapshot && hasLocalRevenue && offlineRevenue) {
+            setKPIs({
+              totalRevenue: offlineRevenue.totalRevenue,
+              tableRevenue: offlineRevenue.tableRevenue,
+              canteenRevenue: offlineRevenue.canteenRevenue,
+              paymentMethods: offlineRevenue.paymentMethods,
+            });
+            setRevenueTrend(offlineRevenue.revenueTrend);
+            setSnapshotAt(null);
+            return;
+          }
           if (snapshot) {
             const saved = snapshot.data;
             setLiveTables(saved.liveTables ?? []);
             if (!isCashier) {
-              setKPIs(saved.kpis ?? null);
+              setKPIs(offlineRevenue ? {
+                totalRevenue: offlineRevenue.totalRevenue,
+                tableRevenue: offlineRevenue.tableRevenue,
+                canteenRevenue: offlineRevenue.canteenRevenue,
+                paymentMethods: offlineRevenue.paymentMethods,
+              } : saved.kpis ?? null);
               setUdhaar(saved.udhaar ?? null);
               setSyncDevices(saved.syncDevices ?? []);
-              setRevenueTrend(saved.revenueTrend ?? null);
+              setRevenueTrend(offlineRevenue?.revenueTrend ?? saved.revenueTrend ?? null);
               setHeatmap(saved.heatmap ?? null);
               setAnomalies(saved.anomalies ?? []);
               setStaffPerf(saved.staffPerf ?? {});

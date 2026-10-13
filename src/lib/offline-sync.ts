@@ -1,5 +1,6 @@
 import { apiFetch } from "@/lib/api/client";
 import { tokenStorage } from "@/lib/auth/session";
+import { retryOnAuthExpiry } from "@/lib/sync/auth-retry";
 
 const OUTBOX_KEY = "cuecloud_sync_outbox";
 
@@ -77,12 +78,11 @@ export async function triggerSyncPush(): Promise<{ pushedCount: number }> {
     originTimestamp: c.originTimestamp ? new Date(c.originTimestamp).toISOString() : new Date().toISOString(),
   }));
 
-  const response = await apiFetch<{ processed?: number; acceptedChanges?: unknown[] }>(
-    "/sync/push",
-    {
+  const response = await retryOnAuthExpiry(() =>
+    apiFetch<{ processed?: number; acceptedChanges?: unknown[] }>("/sync/push", {
       method: "POST",
       body: JSON.stringify({ deviceId, changes: sanitizedChanges }),
-    },
+    }),
   );
 
   if (tokenStorage.getSessionVersion() !== version || !tokenStorage.getAccessContext()) {

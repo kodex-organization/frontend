@@ -18,13 +18,14 @@ import {
   type Notification,
 } from "../types";
 import { sessionApi } from "@/features/sessions/session-api";
+import { readCachedTables } from "@/features/sessions/offline-tables-cache";
+import { getActiveOfflineBranchId } from "@/lib/sync/offline-db";
 import type { ActiveSession, TableOption } from "@/features/sessions/types";
 import { getSyncQueue } from "@/lib/offline-sync";
 
 const POLL_INTERVAL_MS = 8_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const OFFLINE_FLOOR_TABLES_KEY = "cuecloud_offline_floor_tables";
-const OFFLINE_TABLES_KEY = "cuecloud_offline_tables";
 
 function requestErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.code === "NETWORK_ERROR") {
@@ -163,24 +164,20 @@ export function useFloorView(selectedBranchId?: string) {
               const cacheKey = `${OFFLINE_FLOOR_TABLES_KEY}_${selectedBranchId || "all"}`;
               const cachedRaw = window.localStorage.getItem(cacheKey);
               if (cachedRaw) cached = JSON.parse(cachedRaw);
-              if (!Array.isArray(cached) || cached.length === 0) {
+              // "_all" holds the last viewed branch, so use it only when no branch is selected.
+              if (!selectedBranchId && (!Array.isArray(cached) || cached.length === 0)) {
                 const allFloorRaw = window.localStorage.getItem(`${OFFLINE_FLOOR_TABLES_KEY}_all`);
                 if (allFloorRaw) cached = JSON.parse(allFloorRaw);
               }
               if (!Array.isArray(cached) || cached.length === 0) {
-                const generalTablesRaw = window.localStorage.getItem(OFFLINE_TABLES_KEY);
-                if (generalTablesRaw) {
-                  const genTables = JSON.parse(generalTablesRaw);
-                  if (Array.isArray(genTables)) {
-                    cached = genTables.map((t: TableOption) => ({
-                      tableId: t.id,
-                      tableNumber: t.tableNumber,
-                      status: "available" as const,
-                      currency: t.currency || "PKR",
-                      session: null,
-                    }));
-                  }
-                }
+                const genTables = readCachedTables(selectedBranchId || getActiveOfflineBranchId());
+                cached = genTables.map((t: TableOption) => ({
+                  tableId: t.id,
+                  tableNumber: t.tableNumber,
+                  status: "available" as const,
+                  currency: t.currency || "PKR",
+                  session: null,
+                }));
               }
             } catch {}
           }

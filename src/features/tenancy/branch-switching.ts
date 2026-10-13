@@ -1,5 +1,6 @@
 import { ApiError, apiFetch } from "@/lib/api/client";
 import { tokenStorage, redirectPathForRoles, type SessionTokens, type SessionUser, type UserRole } from "@/lib/auth/session";
+import { cacheBranchCurrency, cacheBranchName } from "./branch-currency-cache";
 
 export const ASSIGNED_BRANCHES_CHANGED_EVENT =
   "cuecloud:assigned-branches-changed";
@@ -19,8 +20,13 @@ export interface BranchSwitchSession extends SessionTokens {
   user: SessionUser;
 }
 
-export function getAssignedBranches() {
-  return apiFetch<AssignedBranch[]>("/tenancy/branches/assigned");
+export async function getAssignedBranches() {
+  const branches = await apiFetch<AssignedBranch[]>("/tenancy/branches/assigned");
+  branches.forEach((branch) => {
+    cacheBranchName(branch.id, branch.name);
+    cacheBranchCurrency(branch.id, branch.currency || "PKR");
+  });
+  return branches;
 }
 
 export function notifyAssignedBranchesChanged() {

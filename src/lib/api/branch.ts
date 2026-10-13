@@ -7,7 +7,7 @@ import type {
   UpdateBranchPayload,
 } from "../../types/branch";
 import { notifyAssignedBranchesChanged } from "@/features/tenancy/branch-switching";
-import { cacheBranchCurrency } from "@/features/tenancy/branch-currency-cache";
+import { cacheBranchCurrency, cacheBranchName } from "@/features/tenancy/branch-currency-cache";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
 
@@ -92,6 +92,7 @@ export async function createBranch(payload: CreateBranchPayload): Promise<Branch
     body: JSON.stringify(payload),
   });
   cacheBranchCurrency(branch.id, branch.currency || "PKR");
+  cacheBranchName(branch.id, branch.name);
   return branch;
 }
 
@@ -107,6 +108,7 @@ export async function updateBranch(
     body: JSON.stringify(payload),
   });
   cacheBranchCurrency(branch.id, branch.currency || "PKR");
+  cacheBranchName(branch.id, branch.name);
   return branch;
 }
 
@@ -122,6 +124,7 @@ export async function updateBranchConfig(
     body: JSON.stringify(payload),
   });
   cacheBranchCurrency(branch.id, branch.currency || "PKR");
+  cacheBranchName(branch.id, branch.name);
   return branch;
 }
 

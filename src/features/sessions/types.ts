@@ -18,6 +18,7 @@ export interface SessionPause {
 export interface ActiveSession {
   id: string;
   status: "active" | "paused" | "ended";
+  pausedAt?: string | null;
   startedAt: string;
   endedAt: string | null;
   appliedHourlyRate: number | string;

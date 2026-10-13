@@ -42,4 +42,3 @@ export function useConnectionStatus() {
 export function useOnlineStatus() {
   return useConnectionStatus() === 'online';
 }
-

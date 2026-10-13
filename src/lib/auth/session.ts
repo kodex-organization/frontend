@@ -214,4 +214,3 @@ export function redirectPathForRoles(roles: UserRole[]): string {
   }
   return "/billing";
 }
-

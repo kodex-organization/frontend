@@ -216,7 +216,9 @@ export function authenticateOfflineWithPassword(email: string, password: string)
     throw new Error("Invalid password for offline login.");
   }
 
-  const accessToken = record.lastToken || createOfflineAccessToken(record);
+  // Never reuse an online JWT for an offline login: it may already be expired
+  // even though the locally cached credentials are still valid.
+  const accessToken = createOfflineAccessToken(record);
   const user: SessionUser = {
     id: record.id,
     email: record.email,
@@ -263,7 +265,7 @@ export function authenticateOfflineWithPin(
     throw new Error("Invalid PIN or account not available offline on this device.");
   }
 
-  const accessToken = record.lastToken || createOfflineAccessToken(record);
+  const accessToken = createOfflineAccessToken(record);
   const user: SessionUser = {
     id: record.id,
     email: record.email,

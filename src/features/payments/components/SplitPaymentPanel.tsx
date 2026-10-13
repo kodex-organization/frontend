@@ -4,6 +4,9 @@ import { useState } from "react";
 import { toast } from "react-toastify";
 import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { apiFetch } from "@/lib/api/client";
+import { isAppOffline } from "@/lib/connectivity/online-status";
+import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
+import { recordSplitPaymentOffline } from "../split-payment-offline";
 
 export default function SplitPaymentPanel({
   invoiceId,
@@ -55,14 +58,30 @@ export default function SplitPaymentPanel({
       return;
     }
 
-    const tenders = [];
+    const tenders: Array<{ tenderType: string; amount: number }> = [];
     if (cashVal > 0) tenders.push({ tenderType: "cash", amount: cashVal });
     if (cardVal > 0) tenders.push({ tenderType: "card", amount: cardVal });
     if (walletVal > 0) tenders.push({ tenderType: "mobile_wallet", amount: walletVal });
     if (udhaarVal > 0) tenders.push({ tenderType: "udhaar", amount: udhaarVal });
 
+    // Offline / server unreachable: save the split on this device and sync it later.
+    const saveOffline = async () => {
+      try {
+        await recordSplitPaymentOffline(invoiceId, tenders as any);
+        toast.success("Payment saved on this device. It will sync when the connection returns.");
+        onSuccess();
+      } catch (offlineError: any) {
+        toast.error(offlineError?.message || "Payment could not be saved offline.");
+      }
+    };
+
     try {
       setIsSubmitting(true);
+
+      if (isAppOffline()) {
+        await saveOffline();
+        return;
+      }
 
       await apiFetch(`/billing/invoices/${encodeURIComponent(invoiceId)}/payments`, {
         method: "POST",
@@ -72,7 +91,11 @@ export default function SplitPaymentPanel({
       toast.success("Payment settled successfully!");
       onSuccess();
     } catch (err: any) {
-      toast.error(err.message || "Payment settlement failed.");
+      if (isNetworkFailure(err)) {
+        await saveOffline();
+      } else {
+        toast.error(err.message || "Payment settlement failed.");
+      }
     } finally {
       setIsSubmitting(false);
     }

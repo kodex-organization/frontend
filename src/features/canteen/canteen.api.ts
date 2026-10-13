@@ -7,6 +7,10 @@ import {
   queueCanteenCategoryChange,
   queueCanteenItemChange,
 } from "@/lib/sync/offline-db";
+import {
+  getCachedBranchCurrency,
+  getCachedBranchName,
+} from "@/features/tenancy/branch-currency-cache";
 
 export interface Category {
   id: string;
@@ -73,118 +77,6 @@ export interface StandaloneOrderPayload {
   customerId?: string | null;
 }
 
-const DEFAULT_CATEGORIES: Category[] = [
-  { id: "cat-beverages", name: "Beverages", isActive: true },
-  { id: "cat-snacks", name: "Snacks", isActive: true },
-  { id: "cat-meals", name: "Fast Food", isActive: true },
-  { id: "cat-retail", name: "Retail & Others", isActive: true },
-];
-
-const DEFAULT_MENU_ITEMS: MenuItem[] = [
-  {
-    id: "item-tea",
-    categoryId: "cat-beverages",
-    name: "Special Chai / Tea",
-    currentPrice: 50,
-    isActive: true,
-    isAvailable: true,
-  },
-  {
-    id: "item-coffee",
-    categoryId: "cat-beverages",
-    name: "Cold / Hot Coffee",
-    currentPrice: 120,
-    isActive: true,
-    isAvailable: true,
-  },
-  {
-    id: "item-water",
-    categoryId: "cat-beverages",
-    name: "Mineral Water (500ml)",
-    currentPrice: 60,
-    isActive: true,
-    isAvailable: true,
-  },
-  {
-    id: "item-soda",
-    categoryId: "cat-beverages",
-    name: "Soft Drink Can",
-    currentPrice: 90,
-    isActive: true,
-    isAvailable: true,
-  },
-  {
-    id: "item-chips",
-    categoryId: "cat-snacks",
-    name: "Lays / Chips",
-    currentPrice: 70,
-    isActive: true,
-    isAvailable: true,
-  },
-  {
-    id: "item-biscuit",
-    categoryId: "cat-snacks",
-    name: "Biscuits & Cookies",
-    currentPrice: 40,
-    isActive: true,
-    isAvailable: true,
-  },
-  {
-    id: "item-sandwich",
-    categoryId: "cat-meals",
-    name: "Club Sandwich",
-    currentPrice: 220,
-    isActive: true,
-    isAvailable: true,
-  },
-  {
-    id: "item-fries",
-    categoryId: "cat-meals",
-    name: "French Fries (Crispy)",
-    currentPrice: 150,
-    isActive: true,
-    isAvailable: true,
-  },
-];
-
-function getLocalCategories(): Category[] {
-  if (typeof window === "undefined") return DEFAULT_CATEGORIES;
-  try {
-    const raw = localStorage.getItem("cuecloud_cached_canteen_categories");
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return DEFAULT_CATEGORIES;
-}
-
-function setLocalCategories(cats: Category[]) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(
-      "cuecloud_cached_canteen_categories",
-      JSON.stringify(cats)
-    );
-  } catch {}
-}
-
-function getLocalMenuItems(): MenuItem[] {
-  if (typeof window === "undefined") return DEFAULT_MENU_ITEMS;
-  try {
-    const raw = localStorage.getItem("cuecloud_cached_canteen_menu_items");
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return DEFAULT_MENU_ITEMS;
-}
-
-function setLocalMenuItems(items: MenuItem[]) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(
-      "cuecloud_cached_canteen_menu_items",
-      JSON.stringify(items)
-    );
-  } catch {}
-}
-
 function getLocalOrders(): Order[] {
   if (typeof window === "undefined") return [];
   try {
@@ -208,29 +100,30 @@ async function getStoredCategories(): Promise<Category[]> {
   const branchId = getActiveOfflineBranchId() || "default";
   try {
     const rows = await offlineDB.cachedCanteenCategories
-      .filter((c) => !c.branchId || c.branchId === branchId)
+      .filter((c) => c.branchId === branchId)
       .toArray();
-    if (rows.length > 0) {
-      return rows.map((r) => r.data || r);
-    }
+    return rows.map((r) => r.data || r);
   } catch (err) {
     console.warn("Could not read cached categories from offlineDB:", err);
   }
-  return getLocalCategories();
+  return [];
 }
 
 async function persistCategories(categories: Category[]) {
   const branchId = getActiveOfflineBranchId() || "default";
-  setLocalCategories(categories);
   try {
-    await offlineDB.cachedCanteenCategories.bulkPut(
-      categories.map((c) => ({
-        id: c.id,
-        branchId,
-        data: c,
-        cachedAt: new Date().toISOString(),
-      }))
-    );
+    await offlineDB.transaction("rw", offlineDB.cachedCanteenCategories, async () => {
+      // This branch's saved categories become exactly the list given (nothing foreign stays)
+      await offlineDB.cachedCanteenCategories.where("branchId").equals(branchId).delete();
+      await offlineDB.cachedCanteenCategories.bulkPut(
+        categories.map((c) => ({
+          id: c.id,
+          branchId,
+          data: c,
+          cachedAt: new Date().toISOString(),
+        }))
+      );
+    });
   } catch (err) {
     console.warn("Could not cache categories to offlineDB:", err);
   }
@@ -244,17 +137,11 @@ async function getStoredMenuItems(
   let items: MenuItem[] = [];
   try {
     const rows = await offlineDB.cachedCanteenMenuItems
-      .filter((i) => !i.branchId || i.branchId === branchId)
+      .filter((i) => i.branchId === branchId)
       .toArray();
-    if (rows.length > 0) {
-      items = rows.map((r) => r.data || r);
-    }
+    items = rows.map((r) => r.data || r);
   } catch (err) {
     console.warn("Could not read cached menu items from offlineDB:", err);
-  }
-
-  if (items.length === 0) {
-    items = getLocalMenuItems();
   }
 
   if (categoryId) {
@@ -268,17 +155,20 @@ async function getStoredMenuItems(
 
 async function persistMenuItems(items: MenuItem[]) {
   const branchId = getActiveOfflineBranchId() || "default";
-  setLocalMenuItems(items);
   try {
-    await offlineDB.cachedCanteenMenuItems.bulkPut(
-      items.map((i) => ({
-        id: i.id,
-        branchId,
-        categoryId: i.categoryId,
-        data: i,
-        cachedAt: new Date().toISOString(),
-      }))
-    );
+    await offlineDB.transaction("rw", offlineDB.cachedCanteenMenuItems, async () => {
+      // This branch's saved menu becomes exactly the list given (nothing foreign stays)
+      await offlineDB.cachedCanteenMenuItems.where("branchId").equals(branchId).delete();
+      await offlineDB.cachedCanteenMenuItems.bulkPut(
+        items.map((i) => ({
+          id: i.id,
+          branchId,
+          categoryId: i.categoryId,
+          data: i,
+          cachedAt: new Date().toISOString(),
+        }))
+      );
+    });
   } catch (err) {
     console.warn("Could not cache menu items to offlineDB:", err);
   }
@@ -459,12 +349,10 @@ export const CanteenApi = {
         if (!categoryId && onlyAvailable === undefined) {
           await persistMenuItems(serverItems);
         } else {
-          const existing = await getStoredMenuItems();
-          const map = new Map(existing.map((i) => [i.id, i]));
-          for (const item of serverItems) {
-            map.set(item.id, item);
-          }
-          await persistMenuItems(Array.from(map.values()));
+          // A filtered answer is not the whole menu, so save the full branch list instead
+          try {
+            await persistMenuItems(await apiFetch<MenuItem[]>("/canteen-pos/items"));
+          } catch {}
         }
         return serverItems;
       }
@@ -702,6 +590,11 @@ export const CanteenApi = {
       const offlineInvoice = {
         id: invoiceId,
         branchId,
+        branch: {
+          id: branchId,
+          name: getCachedBranchName(branchId),
+          currency: getCachedBranchCurrency(branchId),
+        },
         sessionId: null,
         customerId: body.customerId ?? null,
         customer: null,

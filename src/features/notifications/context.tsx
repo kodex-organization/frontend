@@ -7,6 +7,7 @@ import { getActiveOfflineBranchId } from "@/lib/sync/offline-db";
 import { useAuth } from "@/lib/auth/auth-context";
 import { checkFcmTokenRegistration, getNotificationPreferences, getNotifications, markAllNotificationsRead as apiMarkAllNotificationsRead, markNotificationRead, registerFcmToken, revokeFcmToken, saveNotificationPreferences, type NotificationPreference } from "./api";
 import { flushNotificationQueue, queueNotificationPreferences, queueNotificationRead, queueNotificationsReadAll } from "./offline";
+import { cacheNotifications, cachePreferences, markCachedNotificationsRead, readCachedNotifications, readCachedPreferences } from "./offline-cache";
 import { isUnread, type Notification } from "./types";
 import { getExistingPushToken, listenForForegroundMessages, requestPushPermission, revokePushToken, type PushSetupResult } from "./firebase";
 import { toast } from "react-toastify";
@@ -68,12 +69,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const refresh = useCallback(async () => {
     const scopeVersion = branchScopeVersion.current;
     if (!online) {
-      if (scopeVersion === branchScopeVersion.current) setLoading(false);
+      const cached = await readCachedNotifications();
+      if (scopeVersion === branchScopeVersion.current) {
+        if (cached) setNotifications(cached);
+        setLoading(false);
+      }
       return;
     }
     setLoading(true);
     try {
       const nextNotifications = await getNotifications();
+      cacheNotifications(nextNotifications);
       if (scopeVersion === branchScopeVersion.current) {
         setNotifications(nextNotifications);
         setError(null);
@@ -91,12 +97,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const loadPreferences = useCallback(async () => {
     const scopeVersion = branchScopeVersion.current;
     if (!online) {
-      if (scopeVersion === branchScopeVersion.current) setPreferencesLoading(false);
+      const cached = await readCachedPreferences();
+      if (scopeVersion === branchScopeVersion.current) {
+        if (cached) setPreferences(isOwner ? cached : { ...cached, pushEnabled: false });
+        setPreferencesLoading(false);
+      }
       return;
     }
     setPreferencesLoading(true);
     try {
       const nextPreferences = await getNotificationPreferences();
+      cachePreferences(nextPreferences);
       if (scopeVersion === branchScopeVersion.current) {
         setPreferences(isOwner ? nextPreferences : { ...nextPreferences, pushEnabled: false });
         setPreferencesError(null);
@@ -156,6 +167,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setPreferencesSaving(true);
     if (!online) {
       setPreferences(preferencesToSave);
+      cachePreferences(preferencesToSave);
       await queueNotificationPreferences(preferencesToSave);
       setPreferencesError(null);
       setPreferencesSaving(false);
@@ -248,7 +260,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setNotifications((current) => current.map((item) => item.id === id
       ? { ...item, status: "read", readAt: new Date().toISOString() }
       : item));
-    if (!online) { await queueNotificationRead(id); return; }
+    if (!online) { await queueNotificationRead(id); void markCachedNotificationsRead(id); return; }
     try { await markNotificationRead(id); }
     catch (err) {
       if (branchId) await queueNotificationRead(id, branchId);
@@ -263,6 +275,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     if (!online) {
       setNotifications((current) => current.map((item) => ({ ...item, status: "read", readAt: item.readAt ?? new Date().toISOString() })));
       await queueNotificationsReadAll();
+      void markCachedNotificationsRead();
       setMarkAllLoading(false);
       return;
     }
