@@ -42,6 +42,9 @@ export interface Invoice {
     id: string;
     name: string | null;
     currency: string | null;
+    standardTaxPercent?: number;
+    concessionTaxPercent?: number;
+    serviceChargePercent?: number;
   };
   sessionId: string | null;
   session: {

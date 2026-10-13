@@ -65,6 +65,9 @@ export async function managerTakeover(data: ManagerTakeoverInput) {
   });
 }
 
-export async function getAuditLogs(sessionId: string) {
-  return apiFetch<AuditLog[]>(`/governance/audit-log/${sessionId}`);
+export async function getAuditLogs(sessionId?: string) {
+  if (sessionId && sessionId !== "all") {
+    return apiFetch<AuditLog[]>(`/governance/audit-log/${encodeURIComponent(sessionId)}`);
+  }
+  return apiFetch<AuditLog[]>("/governance/audit-log");
 }

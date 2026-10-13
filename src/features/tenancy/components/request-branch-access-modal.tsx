@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Building2, X } from "lucide-react";
+import { Building2, X, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { FormField } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { apiFetch, ApiError } from "@/lib/api/client";
 import { fetchBranches } from "@/lib/api/branch";
+import { getAssignedBranches } from "../branch-switching";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { BranchItem } from "@/types/branch";
 import { toast } from "@/lib/toast";
@@ -29,6 +30,7 @@ export function RequestBranchAccessModal({
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [targetBranchId, setTargetBranchId] = useState("");
   const [reason, setReason] = useState("");
+  const [loadingBranches, setLoadingBranches] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,19 +38,56 @@ export function RequestBranchAccessModal({
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const loadBranches = useCallback(async () => {
+    setLoadingBranches(true);
     setError(null);
-    void fetchBranches({ limit: 100 }).then((res) => {
-      const otherBranches = (res.branches || []).filter(
-        (b) => b.id !== user?.branchId
+    try {
+      const [branchRes, assignedList] = await Promise.all([
+        fetchBranches({ limit: 100 }),
+        getAssignedBranches().catch(() => []),
+      ]);
+
+      const allBranches: BranchItem[] = Array.isArray(branchRes)
+        ? branchRes
+        : Array.isArray((branchRes as any)?.branches)
+        ? (branchRes as any).branches
+        : Array.isArray((branchRes as any)?.data?.branches)
+        ? (branchRes as any).data.branches
+        : Array.isArray((branchRes as any)?.data)
+        ? (branchRes as any).data
+        : [];
+
+      const assignedIds = new Set(
+        (Array.isArray(assignedList) ? assignedList : []).map((b) => b.id)
       );
+      if (user?.branchId) assignedIds.add(user.branchId);
+
+      const otherBranches = allBranches.filter(
+        (b) => b && b.id && !assignedIds.has(b.id)
+      );
+
       setBranches(otherBranches);
       if (otherBranches[0]) {
         setTargetBranchId(otherBranches[0].id);
       }
-    });
-  }, [isOpen, user?.branchId]);
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : "Failed to load branches."
+      );
+    } finally {
+      setLoadingBranches(false);
+    }
+  }, [user?.branchId]);
+
+  useEffect(() => {
+    if (isOpen) {
+      void loadBranches();
+    }
+  }, [isOpen, loadBranches]);
 
   if (!isOpen || !mounted) return null;
 
@@ -108,12 +147,33 @@ export function RequestBranchAccessModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && <Alert variant="error">{error}</Alert>}
-
-          {branches.length === 0 ? (
-            <div className="rounded-xl bg-slate-50 p-4 text-center text-xs text-slate-500 border border-slate-200">
-              No other branches available in this organization.
+          {error && (
+            <div className="space-y-2">
+              <Alert variant="error">{error}</Alert>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadBranches()}
+                className="w-full text-xs"
+              >
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                Retry loading branches
+              </Button>
             </div>
+          )}
+
+          {loadingBranches ? (
+            <div className="flex flex-col items-center justify-center gap-2 rounded-xl bg-slate-50 p-6 text-xs text-slate-500 border border-slate-200">
+              <RefreshCw className="h-4 w-4 animate-spin text-brand-600" />
+              <span>Loading available branches in your organization...</span>
+            </div>
+          ) : branches.length === 0 ? (
+            !error && (
+              <div className="rounded-xl bg-slate-50 p-4 text-center text-xs text-slate-500 border border-slate-200">
+                No other branches available in this organization.
+              </div>
+            )
           ) : (
             <>
               <FormField

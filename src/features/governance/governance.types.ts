@@ -56,4 +56,8 @@ export interface AuditLog {
     fullName: string | null;
     email: string | null;
   } | null;
+  branch?: {
+    name: string | null;
+  } | null;
+  details?: any;
 }

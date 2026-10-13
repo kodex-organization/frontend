@@ -81,9 +81,15 @@ export default function InvoiceDetails({
   const netSubtotal = Math.max(0, subtotal - discountAmount);
   const serviceCharge = Number(invoice.serviceCharge ?? 0);
 
+  // Branch tax rates (defaulting to 16% standard, 5% card concession if not specified)
+  const standardTaxRatePercent = Number(invoice.branch?.standardTaxPercent ?? 16);
+  const concessionTaxRatePercent = Number(invoice.branch?.concessionTaxPercent ?? 5);
+  const standardTaxRate = standardTaxRatePercent / 100;
+  const concessionTaxRate = concessionTaxRatePercent / 100;
+
   // Projected Tax Calculations
-  const standardTax = Number((netSubtotal * 0.16).toFixed(2));
-  const cardTax = Number((netSubtotal * 0.05).toFixed(2));
+  const standardTax = Number((netSubtotal * standardTaxRate).toFixed(2));
+  const cardTax = Number((netSubtotal * concessionTaxRate).toFixed(2));
 
   const standardTotal = Number((netSubtotal + standardTax + serviceCharge).toFixed(2));
   const cardTotal = Number((netSubtotal + cardTax + serviceCharge).toFixed(2));
@@ -93,32 +99,46 @@ export default function InvoiceDetails({
     paymentsList.length > 0 &&
     paymentsList.every((p) => String(p.tenderType).toLowerCase() === "card");
 
-  // Display saved DB total if paid, or dynamic projected total if open
-  const displayTax =
-    invoice.status === "paid"
-      ? Number(invoice.taxAmount ?? 0)
-      : isFullyPaidByCard
-      ? cardTax
-      : standardTax;
+  const currentStatus = String(invoice.status ?? "").toLowerCase();
+  const isVoid = currentStatus === "void" || currentStatus === "voided";
+  const isFinalized = isVoid || currentStatus === "paid";
 
-  const displayTotal =
-    invoice.status === "paid"
-      ? Number(invoice.total ?? 0)
-      : isFullyPaidByCard
-      ? cardTotal
-      : standardTotal;
+  // Display saved DB total if finalized (paid or void), or dynamic projected total if open
+  const displayTax = isFinalized
+    ? Number(invoice.taxAmount ?? 0)
+    : isFullyPaidByCard
+    ? cardTax
+    : standardTax;
+
+  const displayTotal = isFinalized
+    ? Number(invoice.total ?? 0)
+    : isFullyPaidByCard
+    ? cardTotal
+    : standardTotal;
 
   const paidAmount = paymentsList.reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
-  const remainingAmount = Math.max(0, displayTotal - paidAmount);
+  const remainingAmount = isVoid ? 0 : Math.max(0, displayTotal - paidAmount);
+
+  let taxLabel = `Tax (${standardTaxRatePercent}% Standard)`;
+  if (isFinalized) {
+    if (displayTax > 0) {
+      taxLabel = isFullyPaidByCard
+        ? `Tax (${concessionTaxRatePercent}% Card)`
+        : `Tax (${standardTaxRatePercent}% Standard)`;
+    } else {
+      taxLabel = "Tax";
+    }
+  } else {
+    taxLabel = isFullyPaidByCard
+      ? `Tax (${concessionTaxRatePercent}% Card)`
+      : `Tax (${standardTaxRatePercent}% Standard)`;
+  }
 
   const currency = invoice.branch?.currency ?? "PKR";
   const formatAmount = (val: number) => formatCurrency(isNaN(val) ? 0 : val, currency);
 
-  const currentStatus = String(invoice.status);
-
   const canVoid =
-    currentStatus !== "void" &&
-    currentStatus !== "voided" &&
+    !isVoid &&
     userRoles.some((role) => ["OWNER", "MANAGER"].includes(role));
 
   const canPay =
@@ -127,9 +147,7 @@ export default function InvoiceDetails({
     ["open", "draft", "partially_paid"].includes(currentStatus);
 
   const canApplyDiscount =
-    currentStatus !== "void" &&
-    currentStatus !== "voided" &&
-    currentStatus !== "paid" &&
+    !isFinalized &&
     userRoles.some((role) => ["OWNER", "MANAGER", "CASHIER"].includes(role));
 
   return (
@@ -223,7 +241,7 @@ export default function InvoiceDetails({
       </section>
 
       {/* --- DUAL TAX COMPARISON CARD FOR OPEN INVOICES --- */}
-      {invoice.status !== "paid" && invoice.status !== "void" && (
+      {!isFinalized && (
         <section className="mt-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
           <h2 className="text-xs font-bold uppercase tracking-wider text-blue-900">
             💡 Settlement Tax Comparison (PRA Rules)
@@ -231,7 +249,7 @@ export default function InvoiceDetails({
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-blue-200 bg-white p-3.5 shadow-sm">
               <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
-                100% Card Payment (5% Tax)
+                100% Card Payment ({concessionTaxRatePercent}% Tax)
               </span>
               <p className="mt-2 text-xl font-bold text-slate-900">
                 {formatAmount(cardTotal)}
@@ -244,7 +262,7 @@ export default function InvoiceDetails({
 
             <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
               <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">
-                Cash / Udhaar / Wallet (16% Tax)
+                Cash / Udhaar / Wallet ({standardTaxRatePercent}% Tax)
               </span>
               <p className="mt-2 text-xl font-bold text-slate-900">
                 {formatAmount(standardTotal)}
@@ -306,7 +324,7 @@ export default function InvoiceDetails({
           <Detail label="Subtotal" value={formatAmount(subtotal)} />
           <Detail label="Discount" value={formatAmount(discountAmount)} />
           <Detail
-            label={`Tax (${isFullyPaidByCard ? "5% Card" : "16% Standard"})`}
+            label={taxLabel}
             value={formatAmount(displayTax)}
           />
           <Detail label="Service charge" value={formatAmount(serviceCharge)} />
@@ -318,14 +336,13 @@ export default function InvoiceDetails({
         <InvoiceItems items={invoice.items} currency={currency} />
 
         {/* SplitPaymentPanel guarded so only staff with payment rights can interact */}
-        {remainingAmount > 0 &&
-        invoice.status !== "paid" &&
-        invoice.status !== "void" ? (
+        {remainingAmount > 0 && !isFinalized ? (
           canPay ? (
             <SplitPaymentPanel
               invoiceId={invoice.id}
               standardTotal={standardTotal}
               cardTotal={cardTotal}
+              concessionTaxPercent={concessionTaxRatePercent}
               currency={currency}
               onSuccess={() => void refresh()}
               isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
@@ -338,7 +355,9 @@ export default function InvoiceDetails({
           )
         ) : (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
-            No additional tender allocation is needed because this invoice is fully covered.
+            {isVoid
+              ? "This invoice has been voided and is closed."
+              : "No additional tender allocation is needed because this invoice is fully covered."}
           </div>
         )}
 
@@ -351,6 +370,7 @@ export default function InvoiceDetails({
           remainingAmount={remainingAmount}
           standardTotal={standardTotal}
           cardTotal={cardTotal}
+          concessionTaxPercent={concessionTaxRatePercent}
           currency={currency}
           isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
           onClose={() => setShowPaymentModal(false)}
