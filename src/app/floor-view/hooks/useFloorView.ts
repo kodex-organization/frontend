@@ -22,6 +22,7 @@ import { readCachedTables } from "@/features/sessions/offline-tables-cache";
 import { getActiveOfflineBranchId } from "@/lib/sync/offline-db";
 import type { ActiveSession, TableOption } from "@/features/sessions/types";
 import { getSyncQueue } from "@/lib/offline-sync";
+import { getServerNowMs } from "@/features/sessions/session-timing";
 
 const POLL_INTERVAL_MS = 8_000;
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -78,16 +79,38 @@ export function useFloorView(selectedBranchId?: string) {
   const updateSessionOptimistically = useCallback(
     (sessionId: string, nextStatus: "active" | "paused" | "ended") => {
       setTables((current) => {
+        const nowIso = new Date(getServerNowMs()).toISOString();
         const updated = current.map((table) => {
           if (table.session?.sessionId !== sessionId) return table;
           if (nextStatus === "ended") return { ...table, status: "available" as const, session: null };
+
+          const currentPauses = Array.isArray(table.session?.pauses) ? [...table.session.pauses] : [];
+          let nextPauses = currentPauses;
+          if (nextStatus === "paused") {
+            nextPauses = [
+              ...currentPauses,
+              { pausedAt: nowIso, resumedAt: null },
+            ];
+          } else if (nextStatus === "active") {
+            const lastOpenIdx = currentPauses.map((p) => p.resumedAt).lastIndexOf(null);
+            if (lastOpenIdx >= 0) {
+              currentPauses[lastOpenIdx] = {
+                ...currentPauses[lastOpenIdx],
+                resumedAt: nowIso,
+              };
+            }
+            nextPauses = currentPauses;
+          }
+
           return {
             ...table,
-            status: "occupied" as const,
+            status: (nextStatus === "paused" ? "paused" : "occupied") as any,
             session: {
               ...table.session!,
               billingState: (nextStatus === "paused" ? "paused" : "accruing") as FloorViewSession["billingState"],
               isPaused: nextStatus === "paused",
+              pausedAt: nextStatus === "paused" ? nowIso : null,
+              pauses: nextPauses,
             },
           };
         });
@@ -124,6 +147,7 @@ export function useFloorView(selectedBranchId?: string) {
             billingState: (session.status === "paused" ? "paused" : "accruing") as FloorViewSession["billingState"],
             isPaused: session.status === "paused",
             isOvertime: false,
+            pauses: session.pauses ?? [],
           };
           return {
             ...table,

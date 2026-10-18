@@ -2,6 +2,7 @@
 "use client";
 
 import { FloorViewTable } from "../types";
+import { useSessionTiming } from "@/features/sessions/session-timing";
 
 interface FloorCardProps {
   table: FloorViewTable;
@@ -9,17 +10,6 @@ interface FloorCardProps {
   onPauseSession?: (sessionId: string) => void;
   onResumeSession?: (sessionId: string) => void;
   onEndSession?: (sessionId: string) => void;
-}
-
-function formatDuration(seconds: number | undefined, startedAt: string | null = null) {
-  const parsedStartedAt = startedAt ? new Date(startedAt) : null;
-  const elapsedSeconds = parsedStartedAt && !Number.isNaN(parsedStartedAt.getTime())
-    ? (Date.now() - parsedStartedAt.getTime()) / 1000
-    : 0;
-  const safeSeconds = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds! : elapsedSeconds));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
 function formatAmount(
@@ -60,9 +50,16 @@ export function FloorCard({
   onResumeSession,
   onEndSession,
 }: FloorCardProps) {
+  const timing = useSessionTiming(table.session);
+
+  const hasSession = Boolean(table.session);
   const isOccupied = table.status === "occupied";
   const isOvertime = table.session?.isOvertime || false;
-  const isPaused = table.session?.isPaused || false;
+  const isPaused = Boolean(
+    table.session?.isPaused ||
+      table.status === "paused" ||
+      timing.isPaused,
+  );
 
   let containerStyle =
     "bg-white border-slate-200 hover:border-brand-500 shadow-sm";
@@ -125,7 +122,7 @@ export function FloorCard({
         />
       </svg>
     );
-  } else if (isOccupied) {
+  } else if (isOccupied || hasSession) {
     containerStyle =
       "bg-white border-slate-200 hover:border-blue-500 shadow-sm ring-1 ring-slate-100";
     badgeStyle = "bg-blue-50 text-blue-700 border-blue-200";
@@ -225,6 +222,12 @@ export function FloorCard({
     );
   }
 
+  // Current live charge to display
+  const currentCharge =
+    timing.charge > 0 || hasSession
+      ? timing.charge
+      : table.session?.estimatedCharge ?? null;
+
   return (
     <div
       id={`floor-table-${table.tableId}`}
@@ -247,7 +250,7 @@ export function FloorCard({
         </div>
 
         {/* Card Body Metrics */}
-        {isOccupied && table.session ? (
+        {hasSession && table.session ? (
           <div className="text-xs space-y-2.5 text-slate-600">
             <div className="flex justify-between items-center py-0.5">
               <span className="text-slate-400 font-medium">Customer</span>
@@ -294,7 +297,7 @@ export function FloorCard({
                   Elapsed
                 </span>
                 <span className="font-medium text-slate-700">
-                  {formatDuration(table.session.durationSeconds, table.session.startedAt)}
+                  {timing.formattedActiveDuration}
                 </span>
               </div>
               <div className="w-[45%] sm:w-auto sm:text-center">
@@ -302,9 +305,7 @@ export function FloorCard({
                   Paused
                 </span>
                 <span className="font-medium text-slate-700">
-                  {formatDuration(
-                    table.session.pauseDurationSeconds,
-                  )}
+                  {timing.formattedPauseDuration}
                 </span>
               </div>
               <div className="w-full sm:w-auto sm:text-right pt-1 sm:pt-0 border-t sm:border-0 border-slate-100/50">
@@ -313,7 +314,7 @@ export function FloorCard({
                 </span>
                 <span className="font-medium text-slate-700">
                   {billingStateLabel(
-                    table.session.billingState,
+                    isPaused ? "paused" : table.session.billingState || "active",
                   )}
                 </span>
               </div>
@@ -345,7 +346,7 @@ export function FloorCard({
               <button
                 type="button"
                 onClick={() => onStartSession(table.tableId)}
-                className="mt-1 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition-all"
+                className="mt-1 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer"
               >
                 + Start Session
               </button>
@@ -355,7 +356,7 @@ export function FloorCard({
       </div>
 
       {/* Card Footer Actions */}
-      {isOccupied && table.session && (
+      {hasSession && table.session && (
         <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-1 shrink-0">
@@ -379,7 +380,7 @@ export function FloorCard({
               </span>
               <span className="text-xs font-bold text-slate-800">
                 {formatAmount(
-                  table.session.estimatedCharge,
+                  currentCharge,
                   table.currency,
                 )}
               </span>
@@ -394,12 +395,12 @@ export function FloorCard({
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-1">
-            {table.session.isPaused ? (
+            {isPaused ? (
               onResumeSession && (
                 <button
                   type="button"
                   onClick={() => onResumeSession(table.session!.sessionId)}
-                  className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1 rounded-md transition-colors"
+                  className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-medium px-2.5 py-1 rounded-md transition-colors cursor-pointer"
                 >
                   Resume
                 </button>
@@ -409,7 +410,7 @@ export function FloorCard({
                 <button
                   type="button"
                   onClick={() => onPauseSession(table.session!.sessionId)}
-                  className="bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium px-2.5 py-1 rounded-md transition-colors"
+                  className="bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium px-2.5 py-1 rounded-md transition-colors cursor-pointer"
                 >
                   Pause
                 </button>
@@ -419,7 +420,7 @@ export function FloorCard({
               <button
                 type="button"
                 onClick={() => onEndSession(table.session!.sessionId)}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3 py-1 rounded-md transition-colors shadow-sm"
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-3 py-1 rounded-md transition-colors shadow-sm cursor-pointer"
               >
                 End Session
               </button>

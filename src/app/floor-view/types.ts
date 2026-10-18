@@ -1,6 +1,7 @@
 export type FloorTableStatus =
   | "available"
   | "occupied"
+  | "paused"
   | "maintenance"
   | "reserved"
   | "inactive";
@@ -25,6 +26,8 @@ export interface FloorViewSession {
     | "paused";
   isPaused: boolean;
   isOvertime: boolean;
+  pausedAt?: string | null;
+  pauses?: Array<{ pausedAt?: string | null; resumedAt?: string | null }> | null;
 }
 
 export interface FloorViewTable {
