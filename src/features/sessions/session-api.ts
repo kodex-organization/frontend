@@ -15,6 +15,7 @@ import {
 import { getCachedBranchCurrency } from "@/features/tenancy/branch-currency-cache";
 import type { ActiveSession, Customer, TableOption } from "./types";
 import { addCachedTable, readCachedTables, saveCachedTables } from "./offline-tables-cache";
+import { getServerNowMs } from "./session-timing";
 
 const request = <T>(path: string, options?: RequestInit) =>
   apiFetch<T>(path, options);
@@ -162,7 +163,14 @@ export const sessionApi = {
 
         // Obsolete sessions that are no longer active on the server and not pending start
         const obsoleteIds = existingBranchItems
-          .filter((item) => (!serverActiveIds.has(item.id) && !pendingStartIds.has(item.id)) || pendingEndIds.has(item.id) || item.data?.status === "ended")
+          .filter(
+            (item) =>
+              item.data?.status === "ended" ||
+              pendingEndIds.has(item.id) ||
+              (item.data?.status === "active" &&
+                !serverActiveIds.has(item.id) &&
+                !pendingStartIds.has(item.id)),
+          )
           .map((item) => item.id);
 
         if (obsoleteIds.length > 0) {
@@ -449,7 +457,7 @@ export const sessionApi = {
 
     const updateOfflineDb = async () => {
       try {
-        const actionAt = new Date().toISOString();
+        const actionAt = new Date(getServerNowMs()).toISOString();
         if (action === "end") {
           await offlineDB.cachedTables.delete(id);
         } else {

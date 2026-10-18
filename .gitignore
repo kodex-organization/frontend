@@ -19,3 +19,13 @@ public/swe-worker-*.js.map
 !README.md
 ../private/
 tsconfig.tsbuildinfo
+
+# Test files and directories
+tests/
+test/
+*.test.ts
+*.test.tsx
+*.test.js
+*.test.jsx
+*.spec.ts
+*.spec.tsx

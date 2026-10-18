@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { toast } from "@/lib/toast";
+import { getServerNowMs } from "@/features/sessions/session-timing";
 
 interface SwitchTableState {
   session: ActiveSession;
@@ -123,7 +124,9 @@ export default function SessionsPage() {
         sessionApi.active(effectiveBranchId),
         sessionApi.paused(effectiveBranchId),
       ]);
-      setItems([...active, ...paused]);
+      const sessionMap = new Map<string, ActiveSession>();
+      [...active, ...paused].forEach((s) => sessionMap.set(s.id, s));
+      setItems(Array.from(sessionMap.values()));
     } catch (e) {
       setError(e instanceof Error ? e.message : t.failedLoad);
     } finally {
@@ -154,7 +157,7 @@ export default function SessionsPage() {
 
   async function action(id: string, nextAction: "pause" | "resume" | "end") {
     const previousItems = [...items];
-    const nowIso = new Date().toISOString();
+    const nowIso = new Date(getServerNowMs()).toISOString();
 
     // 1. Optimistic Update (Immediate UI response: 0ms lag)
     setItems((current) => {

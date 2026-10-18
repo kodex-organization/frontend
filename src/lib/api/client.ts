@@ -1,6 +1,7 @@
 import { env } from "@/config/env";
 import { tokenStorage, AUTH_SESSION_CLEARED_EVENT, AUTH_SESSION_REPLACED_EVENT } from "@/lib/auth/session";
 import { createSessionRefresh } from '@/lib/auth/session-refresh';
+import { updateServerTimeOffset } from "@/features/sessions/session-timing";
 
 export class ApiError extends Error {
   constructor(
@@ -122,6 +123,8 @@ export async function apiFetch<T>(
 
   try {
     response = await doFetch();
+    const serverDate = response.headers.get("date");
+    if (serverDate) updateServerTimeOffset(serverDate);
   } catch {
     throw new ApiError(
       "Could not reach the server. Check your connection and try again.",
