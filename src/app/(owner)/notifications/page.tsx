@@ -32,6 +32,7 @@ import {
 } from "@/features/notifications/api";
 import {
   isUnread,
+  isNotificationVisible,
   notificationHref,
   notificationMessage,
   type Notification,
@@ -433,8 +434,28 @@ function DeliveryLogSection() {
                       <td className="whitespace-nowrap py-3 pr-4 text-xs text-slate-500" title={new Date(item.updatedAt).toLocaleString()}>
                         {formatRelativeTime(item.updatedAt)}
                       </td>
-                      <td className="max-w-xs py-3 pr-4 text-xs text-slate-500" title={item.error?.message ?? undefined}>
-                        <span className="block truncate">{item.error?.message ?? "—"}</span>
+                      <td
+                        className="max-w-sm py-3 pr-4 text-xs text-slate-600"
+                        title={[item.title, item.message, item.reference].filter(Boolean).join(" · ") || item.error?.message || undefined}
+                      >
+                        <span className="block truncate font-medium text-slate-700">
+                          {item.title ?? item.error?.message ?? "No additional details"}
+                        </span>
+                        {item.message && (
+                          <span className="mt-0.5 block truncate text-slate-500">
+                            {item.message}
+                          </span>
+                        )}
+                        {item.reference && (
+                          <span className="mt-0.5 block truncate text-slate-500">
+                            Reference: {item.reference}
+                          </span>
+                        )}
+                        {item.error?.message && item.title && (
+                          <span className="mt-0.5 block truncate text-rose-700">
+                            Delivery error: {item.error.message}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 text-right">
                         {isOwner && item.channel === "push" && item.status === "failed" && (
@@ -464,6 +485,14 @@ function DeliveryLogSection() {
                     </div>
                     <StatusBadge status={item.status} />
                   </div>
+                  {(item.title || item.message || item.reference) && (
+                    <div className="mt-2 space-y-0.5 text-xs text-slate-600">
+                      {item.title && <p className="font-medium text-slate-700">{item.title}</p>}
+                      {item.message && <p>{item.message}</p>}
+                      {item.reference && <p>Reference: {item.reference}</p>}
+                      {item.error?.message && <p className="text-rose-700">Delivery error: {item.error.message}</p>}
+                    </div>
+                  )}
                   <div className="mt-2 flex items-end justify-between gap-3 text-xs text-slate-500">
                     <span title={new Date(item.updatedAt).toLocaleString()}>
                       {formatRelativeTime(item.updatedAt)}
@@ -632,16 +661,7 @@ export default function NotificationsPage() {
 
   // Filter out future/scheduled announcements so they never appear before startsAt
   const visibleNotifications = useMemo(() => {
-    const now = Date.now();
-    return notifications.filter((item) => {
-      if (item.category === "announcement") {
-        const { startsAt } = getAnnouncementDates(item);
-        if (startsAt && startsAt.getTime() > now) {
-          return false;
-        }
-      }
-      return true;
-    });
+    return notifications.filter((item) => isNotificationVisible(item));
   }, [notifications]);
 
   const categories = useMemo(

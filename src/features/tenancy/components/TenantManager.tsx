@@ -361,7 +361,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
         branchName,
         subscriptionPlanId: subscriptionPlanId || undefined,
         status: onboardStatus,
-        trialDays: Number(trialDays),
+        trialDays: onboardStatus === "trial" ? Number(trialDays) : undefined,
         currency,
         timezone,
         ownerName,
@@ -899,6 +899,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                       min={1}
                       max={90}
                       value={trialDays}
+                      disabled={onboardStatus !== "trial"}
                       onChange={(e) => setTrialDays(Number(e.target.value))}
                     />
                   </FormField>

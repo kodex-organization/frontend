@@ -231,8 +231,7 @@ export function useUdhaarLedger() {
       return true;
     } catch (requestError) {
       if (isNetworkFailure(requestError)) return saveOffline();
-      setError(requestError instanceof Error ? requestError.message : "Unable to save adjustment.");
-      return false;
+      throw requestError;
     }
   };
 

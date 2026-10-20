@@ -45,6 +45,9 @@ export type DeliveryLog = {
   notificationId: string | null;
   channel: string;
   category: string | null;
+  title: string | null;
+  message: string | null;
+  reference: string | null;
   status: string;
   attempts: number;
   error: { code?: string | null; message?: string | null } | null;

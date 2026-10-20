@@ -89,6 +89,7 @@ export default function UdhaarPage() {
     approvedByPin: "",
   });
   const [adjustmentState, setAdjustmentState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
@@ -153,6 +154,7 @@ export default function UdhaarPage() {
     setCustomerSearch("");
     setShowCustomerDropdown(false);
     setAdjustmentState("idle");
+    setAdjustmentError(null);
   };
 
   const openAdjustmentModal = (customerId?: string) => {
@@ -170,6 +172,7 @@ export default function UdhaarPage() {
     }
     setShowCustomerDropdown(false);
     setAdjustmentState("idle");
+    setAdjustmentError(null);
     setShowAdjustment(true);
   };
 
@@ -274,20 +277,40 @@ export default function UdhaarPage() {
       return;
     }
     if (!adjustmentForm.customerId) {
+      setAdjustmentError("Please select a customer.");
       setAdjustmentState("error");
       return;
     }
+    if (!Number.isFinite(Number(adjustmentForm.amount)) || Number(adjustmentForm.amount) === 0) {
+      setAdjustmentError("Enter a valid adjustment amount greater than or less than zero.");
+      setAdjustmentState("error");
+      return;
+    }
+    const reason = adjustmentForm.reason.trim();
+    if (reason.length < 3) {
+      setAdjustmentError("Please enter an audit reason with at least 3 characters.");
+      setAdjustmentState("error");
+      return;
+    }
+
     setAdjustmentState("loading");
-    const saved = await addAdjustment({
-      customerId: adjustmentForm.customerId,
-      amount: Number(adjustmentForm.amount),
-      reason: adjustmentForm.reason,
-      approvedByPin: adjustmentForm.approvedByPin || undefined,
-    });
-    if (saved) {
-      setAdjustmentState("success");
-      setTimeout(() => closeModal(), 1000);
-    } else {
+    setAdjustmentError(null);
+    try {
+      const saved = await addAdjustment({
+        customerId: adjustmentForm.customerId,
+        amount: Number(adjustmentForm.amount),
+        reason,
+        approvedByPin: adjustmentForm.approvedByPin || undefined,
+      });
+      if (saved) {
+        setAdjustmentState("success");
+        setTimeout(() => closeModal(), 1000);
+      } else {
+        setAdjustmentError("Unable to save adjustment. Please check the details and try again.");
+        setAdjustmentState("error");
+      }
+    } catch (error) {
+      setAdjustmentError(error instanceof Error ? error.message : "Unable to save adjustment.");
       setAdjustmentState("error");
     }
   };
@@ -997,13 +1020,19 @@ export default function UdhaarPage() {
                   <textarea
                     required
                     rows={2}
+                    minLength={3}
                     placeholder="e.g., Billing discrepancy correction, Cash received directly"
                     value={adjustmentForm.reason}
-                    onChange={(e) =>
-                      setAdjustmentForm((cur) => ({ ...cur, reason: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setAdjustmentForm((cur) => ({ ...cur, reason: e.target.value }));
+                      setAdjustmentError(null);
+                      setAdjustmentState("idle");
+                    }}
                     className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-900 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                   />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Enter at least 3 characters explaining this adjustment.
+                  </p>
                 </div>
 
                 <div>
@@ -1028,7 +1057,7 @@ export default function UdhaarPage() {
                 )}
                 {adjustmentState === "error" && (
                   <div className="rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs font-medium text-rose-700">
-                    ✗ Please verify the fields and try again.
+                    ✗ {adjustmentError ?? "Please check the fields and try again."}
                   </div>
                 )}
 

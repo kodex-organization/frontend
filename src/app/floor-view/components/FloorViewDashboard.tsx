@@ -250,11 +250,11 @@ export function FloorViewDashboard() {
           setStartSessionModalOpen(false);
           setSelectedTableIdForStart(undefined);
         }}
-        onStarted={async (session) => {
+        onStarted={(session) => {
           if (session) {
             startSessionOptimistically(session);
           }
-          if (isOnline) await fetchData();
+          if (isOnline) void fetchData();
         }}
       />
 
@@ -272,4 +272,3 @@ export function FloorViewDashboard() {
     </div>
   );
 }
-
