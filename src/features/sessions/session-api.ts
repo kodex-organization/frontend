@@ -415,12 +415,16 @@ export const sessionApi = {
         body: JSON.stringify(body),
       });
 
-      await offlineDB.cachedTables.put({
-        id: liveSession.id,
-        branchId: effectiveBranchId,
-        data: liveSession,
-        cachedAt: new Date().toISOString(),
-      });
+      void offlineDB.cachedTables
+        .put({
+          id: liveSession.id,
+          branchId: effectiveBranchId,
+          data: liveSession,
+          cachedAt: new Date().toISOString(),
+        })
+        .catch((error: unknown) => {
+          console.warn("Could not cache started session for offline use", error);
+        });
 
       return liveSession;
     } catch {

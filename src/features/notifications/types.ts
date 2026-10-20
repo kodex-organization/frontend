@@ -17,6 +17,18 @@ export function isUnread(notification: Notification) {
   return notification.status !== "read" && notification.readAt === null;
 }
 
+export function isNotificationVisible(notification: Notification, now = Date.now()) {
+  if (notification.category !== "announcement" || !notification.payload) return true;
+  try {
+    const payload: unknown = JSON.parse(notification.payload);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return true;
+    const startsAt = (payload as Record<string, unknown>).startsAt;
+    return typeof startsAt !== "string" || new Date(startsAt).getTime() <= now;
+  } catch {
+    return true;
+  }
+}
+
 export function notificationPayload(notification: Notification): Record<string, unknown> {
   if (!notification.payload) return {};
   try {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AnomalyAlertItem,
   AuditKPIs,
@@ -60,6 +60,7 @@ export default function AuditPage() {
   const [activeAlertTab, setActiveAlertTab] = useState<"active" | "resolved">("active");
 
   const [isLoading, setIsLoading] = useState(true);
+  const isLoadingDataRef = useRef(false);
   // True while the page shows the saved copy because the server cannot be reached.
   const [offlineMode, setOfflineMode] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -83,6 +84,8 @@ export default function AuditPage() {
   const [isSubmittingResolution, setIsSubmittingResolution] = useState(false);
 
   const loadData = useCallback(async (isSilent = false) => {
+    if (isLoadingDataRef.current) return;
+    isLoadingDataRef.current = true;
     try {
       if (!isSilent) setIsLoading(true);
       // Remember which calls failed, so a failed call is never shown or saved as real data.
@@ -170,6 +173,7 @@ export default function AuditPage() {
     } catch (err) {
       if (!isSilent) toast.error("Failed to load audit data.");
     } finally {
+      isLoadingDataRef.current = false;
       setIsLoading(false);
     }
   }, [page, search, severityFilter, activeAlertTab]);
@@ -191,11 +195,9 @@ export default function AuditPage() {
     window.addEventListener("cuecloud:anomaly-invalidated", handleRevalidate);
     window.addEventListener("cuecloud:audit-invalidated", handleRevalidate);
     window.addEventListener("cuecloud:invoice-voided", handleRevalidate);
-    window.addEventListener("cuecloud:authenticated-heartbeat", handleRevalidate);
     window.addEventListener("online", handleRevalidate);
 
-    // Dynamic polling interval (every 8s) to react to background changes
-    const timer = setInterval(handleRevalidate, 8000);
+    const timer = setInterval(handleRevalidate, 30_000);
 
     return () => {
       window.removeEventListener("focus", handleRevalidate);
@@ -203,7 +205,6 @@ export default function AuditPage() {
       window.removeEventListener("cuecloud:anomaly-invalidated", handleRevalidate);
       window.removeEventListener("cuecloud:audit-invalidated", handleRevalidate);
       window.removeEventListener("cuecloud:invoice-voided", handleRevalidate);
-      window.removeEventListener("cuecloud:authenticated-heartbeat", handleRevalidate);
       window.removeEventListener("online", handleRevalidate);
       clearInterval(timer);
     };

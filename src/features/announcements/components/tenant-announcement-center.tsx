@@ -40,6 +40,8 @@ export function TenantAnnouncementCenter() {
 
   useEffect(() => {
     void loadAnnouncements();
+    const timer = window.setInterval(() => void loadAnnouncements(), 60_000);
+    return () => window.clearInterval(timer);
   }, [loadAnnouncements]);
 
   const visible = useMemo(
