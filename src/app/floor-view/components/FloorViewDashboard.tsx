@@ -277,11 +277,11 @@ export function FloorViewDashboard() {
           setInitialBillingType("hourly");
           setInitialGameCount(1);
         }}
-        onStarted={async (session) => {
+        onStarted={(session) => {
           if (session) {
             startSessionOptimistically(session);
           }
-          if (isOnline) await fetchData();
+          if (isOnline) void fetchData();
         }}
       />
 
@@ -299,3 +299,4 @@ export function FloorViewDashboard() {
     </div>
   );
 }
+

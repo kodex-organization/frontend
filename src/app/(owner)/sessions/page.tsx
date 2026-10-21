@@ -140,6 +140,16 @@ export default function SessionsPage() {
     }
   }, [authLoading, isAuthenticated, selectedBranchId, t.failedLoad]);
 
+  const handleSessionStarted = useCallback((session?: ActiveSession) => {
+    if (session) {
+      setItems((current) => [
+        session,
+        ...current.filter((item) => item.id !== session.id),
+      ]);
+    }
+    void load();
+  }, [load]);
+
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       void load();
@@ -488,7 +498,7 @@ export default function SessionsPage() {
         initialBillingType={initialBillingType}
         initialGameCount={initialGameCount}
         returnTo="/sessions"
-        onStarted={load}
+        onStarted={handleSessionStarted}
       />
 
       <ConfirmModal

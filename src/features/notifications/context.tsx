@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { checkFcmTokenRegistration, getNotificationPreferences, getNotifications, markAllNotificationsRead as apiMarkAllNotificationsRead, markNotificationRead, registerFcmToken, revokeFcmToken, saveNotificationPreferences, type NotificationPreference } from "./api";
 import { flushNotificationQueue, queueNotificationPreferences, queueNotificationRead, queueNotificationsReadAll } from "./offline";
 import { cacheNotifications, cachePreferences, markCachedNotificationsRead, readCachedNotifications, readCachedPreferences } from "./offline-cache";
-import { isUnread, type Notification } from "./types";
+import { isNotificationVisible, isUnread, type Notification } from "./types";
 import { getExistingPushToken, listenForForegroundMessages, requestPushPermission, revokePushToken, type PushSetupResult } from "./firebase";
 import { toast } from "react-toastify";
 
@@ -71,14 +71,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     if (!online) {
       const cached = await readCachedNotifications();
       if (scopeVersion === branchScopeVersion.current) {
-        if (cached) setNotifications(cached);
+        if (cached) setNotifications(cached.filter((item) => isNotificationVisible(item)));
         setLoading(false);
       }
       return;
     }
     setLoading(true);
     try {
-      const nextNotifications = await getNotifications();
+      const nextNotifications = (await getNotifications()).filter((item) =>
+        isNotificationVisible(item),
+      );
       cacheNotifications(nextNotifications);
       if (scopeVersion === branchScopeVersion.current) {
         setNotifications(nextNotifications);
