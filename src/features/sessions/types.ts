@@ -8,6 +8,8 @@ export interface TableOption {
   id: string;
   tableNumber: string;
   defaultHourlyRate: number | string;
+  defaultPerGameRate?: number | string | null;
+  perGameRate?: number | string | null;
   currency?: string | null;
 }
 export interface SessionPause {
@@ -21,7 +23,10 @@ export interface ActiveSession {
   pausedAt?: string | null;
   startedAt: string;
   endedAt: string | null;
-  appliedHourlyRate: number | string;
+  appliedHourlyRate: number | string | null;
+  appliedPerGameRate?: number | string | null;
+  billingType?: "hourly" | "per_game";
+  gameCount?: number | null;
   table: TableOption;
   branch: {
     id?: string;

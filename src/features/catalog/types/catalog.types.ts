@@ -11,6 +11,7 @@ export interface SnookerTable {
   branch?: { id: string; name: string | null };
   tableNumber: string;
   defaultHourlyRate: number;
+  defaultPerGameRate?: number | string | null;
   status: TableStatus;
   isActive: boolean;
   deletedAt: string | null;
@@ -25,6 +26,7 @@ export interface SnookerTable {
 export interface CreateTableInput {
   tableNumber: string;
   hourlyRate: number;
+  perGameRate?: number | null;
   status?: string;
   branchId?: string;
 }

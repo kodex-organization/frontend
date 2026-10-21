@@ -30,6 +30,9 @@ export default function RecordPaymentModal({
   currency,
   isCustomerBlocked = false,
   concessionTaxPercent = 5,
+  hasCustomer = true,
+  linkedCustomerId = null,
+  onRequireCustomer,
   onClose,
   onSuccess,
 }: {
@@ -40,6 +43,9 @@ export default function RecordPaymentModal({
   currency: string | null;
   isCustomerBlocked?: boolean;
   concessionTaxPercent?: number;
+  hasCustomer?: boolean;
+  linkedCustomerId?: string | null;
+  onRequireCustomer?: () => void;
   onClose: () => void;
   onSuccess: (result: PaymentResult) => void;
 }) {
@@ -92,6 +98,12 @@ export default function RecordPaymentModal({
       return;
     }
 
+    // Walk-in invoice paying by Udhaar: add the customer details first, then come back
+    if (tenderType === "udhaar" && !hasCustomer && !linkedCustomerId && onRequireCustomer) {
+      onRequireCustomer();
+      return;
+    }
+
     // In offline mode, payments are saved locally and queued for automatic sync.
 
     setSubmitting(true);
@@ -101,6 +113,7 @@ export default function RecordPaymentModal({
       const result = await invoiceService.addPayment(invoiceId, {
         amount: numericAmount,
         tenderType,
+        ...(tenderType === "udhaar" && linkedCustomerId ? { customerId: linkedCustomerId } : {}),
         ...(payerLabel.trim()
           ? { payerLabel: payerLabel.trim() }
           : {}),
@@ -159,11 +172,13 @@ export default function RecordPaymentModal({
         {tenderType === "card" && cardTotal !== undefined && standardTotal !== undefined && standardTotal > cardTotal && (
           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
             <div className="flex items-center gap-1.5 font-bold">
-              <span>💡 PRA {concessionTaxPercent}% Card Tax Concession Applied</span>
+              <span>{concessionTaxPercent > 0 ? `💡 PRA ${concessionTaxPercent}% Card Tax Concession Applied` : "💡 No tax on card payments"}</span>
               {/* PRA 5% Card Tax Concession */}
             </div>
             <p className="mt-1 text-emerald-800">
-              Card payments receive a reduced {concessionTaxPercent}% sales tax rate (saving {formatCurrency(standardTotal - cardTotal, currency)}). Total due is {formatCurrency(cardTotal, currency)}.
+              {concessionTaxPercent > 0
+                ? `Card payments receive a reduced ${concessionTaxPercent}% sales tax rate (saving ${formatCurrency(standardTotal - cardTotal, currency)}). Total due is ${formatCurrency(cardTotal, currency)}.`
+                : `Card payments are tax free (saving ${formatCurrency(standardTotal - cardTotal, currency)}). Total due is ${formatCurrency(cardTotal, currency)}.`}
             </p>
           </div>
         )}
@@ -214,6 +229,11 @@ export default function RecordPaymentModal({
             {tenderType === "udhaar" && isCustomerBlocked && (
               <p className="mt-1 text-xs text-rose-600 font-medium">
                 Customer is marked as blocked and cannot receive credit.
+              </p>
+            )}
+            {tenderType === "udhaar" && !hasCustomer && !linkedCustomerId && !isCustomerBlocked && (
+              <p className="mt-1 text-xs text-amber-700 font-medium">
+                Walk-in invoice: you will be taken to the customer form to add details first.
               </p>
             )}
           </label>

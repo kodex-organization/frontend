@@ -20,6 +20,7 @@ export function createTable(
     body: JSON.stringify({
       tableNumber: input.tableNumber,
       defaultHourlyRate: input.hourlyRate,
+      ...(input.perGameRate && { defaultPerGameRate: input.perGameRate }),
       branchId: input.branchId,
     }),
   });
@@ -34,6 +35,7 @@ export function updateTable(
     body: JSON.stringify({
       ...(input.tableNumber && { tableNumber: input.tableNumber }),
       ...(input.hourlyRate && { defaultHourlyRate: input.hourlyRate }),
+      ...(input.perGameRate !== undefined && { defaultPerGameRate: input.perGameRate }),
       ...(input.status && { status: input.status }),
     }),
   });

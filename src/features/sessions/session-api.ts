@@ -315,6 +315,8 @@ export const sessionApi = {
     branchId?: string;
     tableId: string;
     customerId?: string | null;
+    billingType?: "hourly" | "per_game";
+    gameCount?: number;
   }): Promise<ActiveSession & { offlineQueued?: boolean }> => {
     const effectiveBranchId =
       body.branchId || getActiveOfflineBranchId() || "default";
@@ -347,6 +349,9 @@ export const sessionApi = {
 
     const sanitizedCustomerId = body.customerId && body.customerId.trim() !== "" ? body.customerId.trim() : null;
     const appliedHourlyRate = String(matchedTable?.defaultHourlyRate ?? (matchedTable as any)?.hourlyRate ?? "700.00");
+    const billingType = body.billingType ?? "hourly";
+    const appliedPerGameRate =
+      matchedTable?.defaultPerGameRate ?? matchedTable?.perGameRate ?? null;
 
     const offlineSession: ActiveSession = {
       id: sessionId,
@@ -354,6 +359,9 @@ export const sessionApi = {
       startedAt,
       endedAt: null,
       appliedHourlyRate,
+      appliedPerGameRate,
+      billingType,
+      gameCount: billingType === "per_game" ? body.gameCount ?? null : null,
       customer: matchedCustomer,
       table: {
         id: body.tableId,
@@ -446,7 +454,7 @@ export const sessionApi = {
     }
   },
 
-  action: async (id: string, action: "pause" | "resume" | "end"): Promise<{ ok?: boolean; offlineQueued?: boolean }> => {
+  action: async (id: string, action: "pause" | "resume" | "end"): Promise<{ ok?: boolean; offlineQueued?: boolean; invoiceId?: string }> => {
     const effectiveBranchId = getActiveOfflineBranchId() || "default";
 
     let existingSessionData: ActiveSession | undefined;
@@ -496,8 +504,8 @@ export const sessionApi = {
       } catch {}
     };
 
-    const synthesizeOfflineInvoice = async (sess?: ActiveSession) => {
-      if (!sess) return;
+    const synthesizeOfflineInvoice = async (sess?: ActiveSession): Promise<string | undefined> => {
+      if (!sess) return undefined;
       try {
         const invoiceId = crypto.randomUUID();
         const now = new Date();
@@ -637,18 +645,21 @@ export const sessionApi = {
           window.dispatchEvent(new Event("cuecloud:offline-queue-changed"));
           window.dispatchEvent(new CustomEvent("cuecloud:invoice-created", { detail: offlineInvoice }));
         }
+        return invoiceId;
       } catch (err) {
         console.warn("Could not synthesize offline invoice:", err);
       }
+      return undefined;
     };
 
     const queueAction = action === "pause" ? "PAUSE" : action === "resume" ? "RESUME" : "END";
+    let offlineInvoiceId: string | undefined;
     const queueOfflineAction = async () => {
       await updateOfflineDb();
       if (action === "end") {
         // The cache only held tables that were free when it was saved; bring this one back.
         if (existingSessionData?.table) addCachedTable(effectiveBranchId, existingSessionData.table);
-        await synthesizeOfflineInvoice(existingSessionData);
+        offlineInvoiceId = await synthesizeOfflineInvoice(existingSessionData);
       }
       const payload = {
         id,
@@ -673,7 +684,7 @@ export const sessionApi = {
 
     if (isAppOffline()) {
       await queueOfflineAction();
-      return { ok: true, offlineQueued: true };
+      return { ok: true, offlineQueued: true, invoiceId: offlineInvoiceId };
     }
 
     try {
@@ -684,7 +695,7 @@ export const sessionApi = {
       return response;
     } catch {
       await queueOfflineAction();
-      return { ok: true, offlineQueued: true };
+      return { ok: true, offlineQueued: true, invoiceId: offlineInvoiceId };
     }
   },
 

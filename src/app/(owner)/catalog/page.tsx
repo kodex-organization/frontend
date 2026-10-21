@@ -60,6 +60,7 @@ export default function CatalogPage() {
   const [editingTable, setEditingTable] = useState<SnookerTable | null>(null);
   const [tableNumber, setTableNumber] = useState("");
   const [hourlyRate, setHourlyRate] = useState("");
+  const [perGameRate, setPerGameRate] = useState("");
   const [tableStatus, setTableStatus] = useState("available");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -121,6 +122,7 @@ export default function CatalogPage() {
     setEditingTable(null);
     setTableNumber("");
     setHourlyRate("");
+    setPerGameRate("");
     setTableStatus("available");
     setSelectedBranchId(user?.branchId || (branches[0]?.id ?? ""));
     setFormError(null);
@@ -131,6 +133,7 @@ export default function CatalogPage() {
     setEditingTable(table);
     setTableNumber(table.tableNumber);
     setHourlyRate(String((table as any).hourlyRate ?? table.defaultHourlyRate ?? ""));
+    setPerGameRate(table.defaultPerGameRate != null ? String(Number(table.defaultPerGameRate)) : "");
     setTableStatus(table.status);
     setSelectedBranchId(table.branchId ?? (table.branch as any)?.id ?? user?.branchId ?? "");
     setFormError(null);
@@ -154,6 +157,10 @@ export default function CatalogPage() {
       setFormError("Enter a valid hourly rate");
       return;
     }
+    if (perGameRate && Number(perGameRate) <= 0) {
+      setFormError("Enter a valid per game rate");
+      return;
+    }
 
     const targetBranchId =
       selectedBranchId ||
@@ -170,6 +177,7 @@ export default function CatalogPage() {
     const input: CreateTableInput = {
       tableNumber: tableNumber.trim(),
       hourlyRate: Number(hourlyRate),
+      perGameRate: perGameRate ? Number(perGameRate) : null,
       branchId: targetBranchId,
       ...(editingTable && { status: tableStatus }),
     };
@@ -398,6 +406,7 @@ export default function CatalogPage() {
                 <th className="px-4 py-3 border-b">Table No.</th>
                 <th className="px-4 py-3 border-b">Branch</th>
                 <th className="px-4 py-3 border-b">Hourly Rate</th>
+                <th className="px-4 py-3 border-b">Per Game Rate</th>
                 <th className="px-4 py-3 border-b">Status</th>
                 <th className="px-4 py-3 border-b">Actions</th>
               </tr>
@@ -432,6 +441,11 @@ export default function CatalogPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-600 font-medium">
                       {formatCurrency(Number(rate), currency)}/hr
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 font-medium">
+                      {table.defaultPerGameRate != null
+                        ? `${formatCurrency(Number(table.defaultPerGameRate), currency)}/game`
+                        : "—"}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -528,6 +542,20 @@ export default function CatalogPage() {
                   value={hourlyRate}
                   onChange={(e) => setHourlyRate(e.target.value)}
                   placeholder="e.g. 200"
+                  min={1}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Per Game Rate ({selectedCurrency}) <span className="text-slate-400 font-normal">- optional</span>
+                </label>
+                <input
+                  type="number"
+                  value={perGameRate}
+                  onChange={(e) => setPerGameRate(e.target.value)}
+                  placeholder="e.g. 100 (leave empty if not offered)"
                   min={1}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />

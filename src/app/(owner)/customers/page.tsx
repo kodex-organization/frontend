@@ -31,6 +31,7 @@ import {
   saveCachedBranches,
 } from "@/features/customers/customer-offline-cache";
 import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
+import { safeReturnTo, withCustomerId } from "@/features/customers/customer-redirect";
 
 export default function CustomersPage() {
   const router = useRouter();
@@ -57,6 +58,9 @@ export default function CustomersPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Set when another screen sent the user here to add a customer and come back
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  const openedFromRedirect = useRef(false);
   const deleteInFlight = useRef(false);
   const deletedCustomerIds = useRef(new Set<string>());
 
@@ -164,6 +168,17 @@ export default function CustomersPage() {
     setCustomerModalOpen(true);
   };
 
+  // Opened as /customers?new=1&returnTo=...: show the new customer form right away
+  useEffect(() => {
+    if (openedFromRedirect.current || !user) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") !== "1") return;
+    openedFromRedirect.current = true;
+    setReturnTo(safeReturnTo(params.get("returnTo")));
+    openCreateModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   const handleSubmitCustomer = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -192,7 +207,7 @@ export default function CustomersPage() {
       } else {
         // The tag is passed into create(): it is saved with the customer
         // online, or queued together with the customer when offline.
-        await customerApi.create({
+        const created = await customerApi.create({
           fullName,
           phone,
           cnic: cnic || null,
@@ -201,6 +216,12 @@ export default function CustomersPage() {
         });
 
         toast.success("New customer created successfully.");
+
+        // Came from a session/invoice: go back there with the new customer
+        if (returnTo) {
+          router.push(withCustomerId(returnTo, created.id));
+          return;
+        }
       }
 
       resetForm();

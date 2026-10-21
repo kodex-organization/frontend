@@ -1,12 +1,10 @@
-// JWT session handling — auth module (Developer 1)
+// JWT session handling.
 
 import { z } from "zod";
 
 /**
  * Full-credential-login roles per SRS §3.1 (Owner, Manager, Accountant);
- * Cashier uses PIN login. Team lead confirmed 2026-07-02: follow the SRS,
- * Accountant is in scope even though task.pdf's per-developer breakdown
- * didn't call it out.
+ * Cashier uses PIN login.
  */
 export type UserRole = "OWNER" | "MANAGER" | "ACCOUNTANT" | "CASHIER";
 
@@ -201,7 +199,7 @@ export const tokenStorage = {
   },
 };
 
-/** Where to send each role after a successful login (task.pdf, Dev 1 scope). */
+/** Where to send each role after a successful login. */
 export function redirectPathForRoles(roles: UserRole[]): string {
   if (roles.includes("OWNER") || roles.includes("MANAGER")) {
     return "/dashboard";

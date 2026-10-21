@@ -11,7 +11,11 @@ function queueMethod(tenderType: TenderType): "cash" | "card" | "udhaar" | "onli
   if (tenderType === "mobile_wallet") return "online";
   return "cash";
 }
-export async function recordSplitPaymentOffline(invoiceId: string, tenders: SplitTender[]) {
+export async function recordSplitPaymentOffline(
+  invoiceId: string,
+  tenders: SplitTender[],
+  linkedCustomerId: string | null = null,
+) {
   if (tenders.length === 0) throw new Error("Add at least one tender value to continue.");
 
   const cachedInvoice = await offlineDB.cachedInvoices.get(invoiceId);
@@ -21,7 +25,7 @@ export async function recordSplitPaymentOffline(invoiceId: string, tenders: Spli
   const invoice = cachedInvoice.data as Invoice;
 
   const usesUdhaar = tenders.some((tender) => tender.tenderType === "udhaar");
-  const customerId = invoice.customerId ?? invoice.customer?.id ?? null;
+  const customerId = invoice.customerId ?? invoice.customer?.id ?? linkedCustomerId;
   if (usesUdhaar && !customerId) {
     throw new Error("A customer must be linked to the invoice to use Udhaar.");
   }

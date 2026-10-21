@@ -127,6 +127,7 @@ export interface RecordPaymentInput {
   tenderType: TenderType;
   payerLabel?: string;
   paymentReference?: string;
+  customerId?: string;
 }
 
 export interface PaymentResult {

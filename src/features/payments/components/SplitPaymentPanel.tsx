@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { apiFetch } from "@/lib/api/client";
 import { isAppOffline } from "@/lib/connectivity/online-status";
 import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
 import { recordSplitPaymentOffline } from "../split-payment-offline";
+import { customerFormUrl } from "@/features/customers/customer-redirect";
 
 export default function SplitPaymentPanel({
   invoiceId,
@@ -17,6 +19,8 @@ export default function SplitPaymentPanel({
   hasCustomer,
   currency,
   concessionTaxPercent = 5,
+  linkedCustomerId = null,
+  returnTo,
 }: {
   invoiceId: string;
   standardTotal: number;
@@ -26,7 +30,10 @@ export default function SplitPaymentPanel({
   hasCustomer: boolean;
   currency: string;
   concessionTaxPercent?: number;
+  linkedCustomerId?: string | null;
+  returnTo?: string;
 }) {
+  const router = useRouter();
   const [cash, setCash] = useState<string>("0");
   const [card, setCard] = useState<string>("0");
   const [wallet, setWallet] = useState<string>("0");
@@ -36,7 +43,9 @@ export default function SplitPaymentPanel({
   const cashVal = parseFloat(cash) || 0;
   const cardVal = parseFloat(card) || 0;
   const walletVal = parseFloat(wallet) || 0;
-  const canUseUdhaar = hasCustomer && !isCustomerBlocked;
+  // A customer added through the redirect counts as linked (sent with the payment)
+  const hasLinkedCustomer = hasCustomer || Boolean(linkedCustomerId);
+  const canUseUdhaar = hasLinkedCustomer && !isCustomerBlocked;
   const udhaarVal = canUseUdhaar ? parseFloat(udhaar) || 0 : 0;
 
   // --- DYNAMIC TAX CONCESSION TARGET ---
@@ -69,7 +78,7 @@ export default function SplitPaymentPanel({
     // Offline / server unreachable: save the split on this device and sync it later.
     const saveOffline = async () => {
       try {
-        await recordSplitPaymentOffline(invoiceId, tenders as any);
+        await recordSplitPaymentOffline(invoiceId, tenders as any, hasCustomer ? null : linkedCustomerId);
         toast.success("Payment saved on this device. It will sync when the connection returns.");
         onSuccess();
       } catch (offlineError: any) {
@@ -87,7 +96,10 @@ export default function SplitPaymentPanel({
 
       await apiFetch(`/billing/invoices/${encodeURIComponent(invoiceId)}/payments`, {
         method: "POST",
-        body: JSON.stringify({ tenders }),
+        body: JSON.stringify({
+          tenders,
+          ...(!hasCustomer && linkedCustomerId ? { customerId: linkedCustomerId } : {}),
+        }),
       });
 
       toast.success("Payment settled successfully!");
@@ -132,7 +144,7 @@ export default function SplitPaymentPanel({
 
         <div>
           <label className="block text-xs font-semibold text-slate-700">
-            Card {is100PercentCard && <span className="text-emerald-600 font-bold">({concessionTaxPercent}% Concession)</span>}
+            Card {is100PercentCard && <span className="text-emerald-600 font-bold">{concessionTaxPercent > 0 ? `(${concessionTaxPercent}% Concession)` : "(No tax)"}</span>}
           </label>
           <input
             type="number"
@@ -160,8 +172,11 @@ export default function SplitPaymentPanel({
             {isCustomerBlocked && (
               <span className="text-[11px] text-rose-600 font-bold">Blocked - Credit Restricted</span>
             )}
-            {!hasCustomer && (
+            {!hasLinkedCustomer && (
               <span className="text-[11px] text-slate-500 font-bold">Customer required</span>
+            )}
+            {!hasCustomer && linkedCustomerId && (
+              <span className="text-[11px] text-emerald-600 font-bold">Customer linked</span>
             )}
           </label>
           <input
@@ -176,7 +191,7 @@ export default function SplitPaymentPanel({
             placeholder={
               isCustomerBlocked
                 ? "Blocked from credit"
-                : hasCustomer
+                : hasLinkedCustomer
                   ? "0"
                   : "Customer required"
             }
@@ -192,6 +207,15 @@ export default function SplitPaymentPanel({
                 ? "This customer is marked as blocked and cannot receive credit."
                 : "Walk-in invoices need a linked customer before Udhaar can be used."}
             </p>
+          )}
+          {!hasLinkedCustomer && !isCustomerBlocked && (
+            <button
+              type="button"
+              onClick={() => router.push(customerFormUrl(returnTo ?? `/billing/${invoiceId}`))}
+              className="mt-2 rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+            >
+              Add customer details for Udhaar
+            </button>
           )}
         </div>
       </div>

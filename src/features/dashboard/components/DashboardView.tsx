@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Activity, CreditCard, Users, RefreshCw, AlertTriangle, ChevronRight, TrendingUp } from "lucide-react";
 import { FullPageLoader } from "@/components/ui/loader";
+import { CashReconciliationCard } from "./CashReconciliationCard";
 import { toast } from "@/lib/toast";
 import {
   cacheScopedJson,
@@ -313,6 +314,9 @@ export function DashboardView() {
           It will refresh automatically when the connection returns.
         </div>
       )}
+
+      {/* Daily cash reconciliation */}
+      <CashReconciliationCard />
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
