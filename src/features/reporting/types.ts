@@ -30,6 +30,9 @@ export interface DailyZReport {
 export interface CashReconciliation {
   branchId: string;
   date: string;
+  openingCash?: number;
+  cashTenderTotal?: number;
+  isSealed?: boolean;
   expectedCash: number;
   actualCashCounted: number;
   discrepancy: number;
@@ -44,6 +47,9 @@ export interface MonthlySummary {
   previousMonthRevenue: number;
   trendPercent: number | null;
   revenueByBranch: Array<{ branchId: string; revenue: number }>;
+  timeZone?: string;
+  dailyRevenue?: Array<{ date: string; revenue: number }>;
+  weeklyRevenue?: Array<{ week: number; from: string; to: string; revenue: number }>;
 }
 
 export interface AgingReport {

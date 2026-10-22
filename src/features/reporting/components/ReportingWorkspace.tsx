@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   BarChart3,
@@ -51,6 +52,7 @@ import {
   saveSchedulesSnapshot,
 } from "../reports-offline";
 import { prefetchReports } from "../reports-prefetch";
+import MonthlyRevenueChart from "./MonthlyRevenueChart";
 
 type ReportData = Record<string, unknown> | unknown[] | null;
 
@@ -226,12 +228,26 @@ const uuidPattern =
 
 export default function ReportingWorkspace() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const currency = useBranchCurrency();
   const money = (value: unknown) => formatCurrency(Number(value ?? 0), currency);
   const [tab, setTab] = useState<ReportTab>("z-report");
   const [branchId, setBranchId] = useState(
     () => tokenStorage.getAccessContext()?.branchId ?? user?.branchId ?? ""
   );
+
+  useEffect(() => {
+    const requestedTab = searchParams.get("tab") as ReportTab | null;
+    const roles = (user?.roles ?? []).map((role) => role.toUpperCase());
+    const requestedConfig = tabs.find((item) => item.id === requestedTab);
+    if (
+      requestedConfig &&
+      (!requestedConfig.roles ||
+        requestedConfig.roles.some((role) => roles.includes(role)))
+    ) {
+      setTab(requestedConfig.id);
+    }
+  }, [searchParams, user?.roles]);
 
   useEffect(() => {
     const updateBranch = () => {
@@ -728,6 +744,8 @@ export default function ReportingWorkspace() {
     revenueByBranch?: Array<{ branchId: string; revenue: number }>;
     hasUnreflectedCorrections?: boolean;
     datesWithCorrections?: string[];
+    dailyRevenue?: Array<{ date: string; revenue: number }>;
+    weeklyRevenue?: Array<{ week: number; from: string; to: string; revenue: number }>;
   } | null;
 
   const aging = data as {
@@ -1311,6 +1329,13 @@ export default function ReportingWorkspace() {
                     </div>
                   ))}
                 </div>
+                {(summary?.dailyRevenue?.length ?? 0) > 0 && (
+                  <MonthlyRevenueChart
+                    daily={summary?.dailyRevenue ?? []}
+                    weekly={summary?.weeklyRevenue ?? []}
+                    formatMoney={money}
+                  />
+                )}
                 {(summary?.revenueByBranch?.length ?? 0) > 0 && (
                   <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
                     <table className="min-w-[520px] w-full text-left text-sm">

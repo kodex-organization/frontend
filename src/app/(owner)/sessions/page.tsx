@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ApiError } from "@/lib/api/client";
 import { SessionClock } from "@/features/sessions/session-clock";
 import { sessionApi } from "@/features/sessions/session-api";
@@ -46,6 +47,8 @@ function formatTableRate(table: TableOption) {
 export default function SessionsPage() {
   const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const isOnline = useOnlineStatus();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -112,6 +115,9 @@ export default function SessionsPage() {
 
   const t = strings[user?.language ?? "en"];
   const [modal, setModal] = useState(false);
+  const [initialCustomerId, setInitialCustomerId] = useState<string | null>(null);
+  const [initialBillingType, setInitialBillingType] = useState<"hourly" | "per_game">("hourly");
+  const [initialGameCount, setInitialGameCount] = useState(1);
   const [switchState, setSwitchState] = useState<SwitchTableState | null>(null);
 
   const load = useCallback(async () => {
@@ -149,6 +155,16 @@ export default function SessionsPage() {
       void load();
     }
   }, [authLoading, isAuthenticated, load]);
+
+  useEffect(() => {
+    if (searchParams.get("startSession") !== "1") return;
+
+    setInitialCustomerId(searchParams.get("customerId"));
+    setInitialBillingType(searchParams.get("billingType") === "per_game" ? "per_game" : "hourly");
+    setInitialGameCount(Math.max(1, Number(searchParams.get("gameCount")) || 1));
+    setModal(true);
+    router.replace("/sessions");
+  }, [router, searchParams]);
 
   useEffect(() => {
     const handleSyncChange = () => {
@@ -213,9 +229,18 @@ export default function SessionsPage() {
 
     try {
       const result = await sessionApi.action(id, nextAction);
+      const openInvoice = () =>
+        router.push(result?.invoiceId ? `/billing/${result.invoiceId}` : "/billing");
 
       if (!isOnline || (result && "offlineQueued" in result)) {
         toast.info("Saved offline. Action queued for sync.");
+        if (nextAction === "end") openInvoice();
+        return;
+      }
+
+      // After ending a session, go straight to its invoice
+      if (nextAction === "end") {
+        openInvoice();
         return;
       }
 
@@ -469,6 +494,10 @@ export default function SessionsPage() {
       <StartSessionModal
         open={modal}
         onClose={() => setModal(false)}
+        initialCustomerId={initialCustomerId}
+        initialBillingType={initialBillingType}
+        initialGameCount={initialGameCount}
+        returnTo="/sessions"
         onStarted={handleSessionStarted}
       />
 

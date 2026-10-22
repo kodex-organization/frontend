@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 
 import { useAuth } from "@/lib/auth/auth-context";
@@ -18,7 +19,9 @@ import InvoicePayments from "./InvoicePayments";
 import RecordPaymentModal from "./RecordPaymentModal";
 import StatusBadge from "./StatusBadge";
 import VoidInvoiceModal from "./VoidInvoiceModal";
+import ReportIssueModal from "./ReportIssueModal";
 import SplitPaymentPanel from "@/features/payments/components/SplitPaymentPanel";
+import { customerFormUrl } from "@/features/customers/customer-redirect";
 
 function parseErrorMessage(err: any): string {
   if (typeof err === "string") return err;
@@ -43,11 +46,20 @@ export default function InvoiceDetails({
 }) {
   const { user } = useAuth() as any;
   const isOnline = useOnlineStatus();
+  const router = useRouter();
+  const pathname = usePathname() || `/billing/${invoiceId}`;
   const [showVoidModal, setShowVoidModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(null);
 
   const { invoice, loading, error, refresh, setInvoice } = useInvoice(invoiceId);
+
+  useEffect(() => {
+    const customerId = new URLSearchParams(window.location.search).get("customerId");
+    if (customerId) setLinkedCustomerId(customerId);
+  }, []);
 
   if (loading) {
     return <div className="h-64 animate-pulse rounded-2xl bg-slate-200" />;
@@ -81,9 +93,9 @@ export default function InvoiceDetails({
   const netSubtotal = Math.max(0, subtotal - discountAmount);
   const serviceCharge = Number(invoice.serviceCharge ?? 0);
 
-  // Branch tax rates (defaulting to 16% standard, 5% card concession if not specified)
+  // Branch tax rates (card payments default to no tax unless configured otherwise)
   const standardTaxRatePercent = Number(invoice.branch?.standardTaxPercent ?? 16);
-  const concessionTaxRatePercent = Number(invoice.branch?.concessionTaxPercent ?? 5);
+  const concessionTaxRatePercent = Number(invoice.branch?.concessionTaxPercent ?? 0);
   const standardTaxRate = standardTaxRatePercent / 100;
   const concessionTaxRate = concessionTaxRatePercent / 100;
 
@@ -140,6 +152,10 @@ export default function InvoiceDetails({
   const canVoid =
     !isVoid &&
     userRoles.some((role) => ["OWNER", "MANAGER"].includes(role));
+
+  // Only managers (not owners) report transaction issues to the owner
+  const canReportIssue =
+    userRoles.includes("MANAGER") && !userRoles.includes("OWNER");
 
   const canPay =
     userRoles.some((role) => ["OWNER", "MANAGER", "CASHIER"].includes(role)) &&
@@ -212,6 +228,18 @@ export default function InvoiceDetails({
               className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
             >
               Record payment
+            </button>
+          )}
+
+          {canReportIssue && (
+            <button
+              type="button"
+              onClick={() => setShowReportModal(true)}
+              disabled={!isOnline}
+              title={!isOnline ? "Reconnect to the internet to report an issue" : undefined}
+              className="rounded-xl border border-amber-300 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Report issue
             </button>
           )}
 
@@ -347,6 +375,8 @@ export default function InvoiceDetails({
               onSuccess={() => void refresh()}
               isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
               hasCustomer={Boolean(invoice.customer?.id)}
+              linkedCustomerId={linkedCustomerId}
+              returnTo={pathname}
             />
           ) : (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
@@ -373,6 +403,9 @@ export default function InvoiceDetails({
           concessionTaxPercent={concessionTaxRatePercent}
           currency={currency}
           isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
+          hasCustomer={Boolean(invoice.customer?.id)}
+          linkedCustomerId={linkedCustomerId}
+          onRequireCustomer={() => router.push(customerFormUrl(pathname))}
           onClose={() => setShowPaymentModal(false)}
           onSuccess={(result) => {
             if (result?.invoice) {
@@ -394,6 +427,18 @@ export default function InvoiceDetails({
             setInvoice(updatedInvoice);
             setShowDiscountModal(false);
             toast.success("Invoice discount applied successfully.");
+          }}
+        />
+      )}
+
+      {showReportModal && (
+        <ReportIssueModal
+          invoiceId={invoice.id}
+          invoiceNumber={invoice.invoiceNumber}
+          onClose={() => setShowReportModal(false)}
+          onSuccess={() => {
+            setShowReportModal(false);
+            toast.success("Issue reported to the owner.");
           }}
         />
       )}
@@ -606,7 +651,7 @@ function ApplyDiscountModal({
           {!isOwnerOrManager && (
             <div>
               <label className="block text-xs font-semibold text-slate-700">
-                Owner Authorization Password *
+                Owner Authorization Password *  
               </label>
               <input
                 type="password"

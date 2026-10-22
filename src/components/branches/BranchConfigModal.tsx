@@ -30,7 +30,7 @@ export function BranchConfigModal({
     maxUdhaarPerCustomer: 5000,
     maxSessionMinutes: 240,
     standardTaxPercent: 16,
-    concessionTaxPercent: 5,
+    concessionTaxPercent: 0,
     taxRegistrationNumber: "",
     serviceChargePercent: 0,
     operatingHoursStart: "10:00",
@@ -48,7 +48,7 @@ export function BranchConfigModal({
         maxUdhaarPerCustomer: Number(branch.maxUdhaarPerCustomer ?? 5000),
         maxSessionMinutes: branch.maxSessionMinutes ?? 240,
         standardTaxPercent: Number(branch.standardTaxPercent ?? 16),
-        concessionTaxPercent: Number(branch.concessionTaxPercent ?? 5),
+        concessionTaxPercent: Number(branch.concessionTaxPercent ?? 0),
         taxRegistrationNumber: branch.taxRegistrationNumber || "",
         serviceChargePercent: Number(branch.serviceChargePercent ?? 0),
         operatingHoursStart: branch.operatingHoursStart || "10:00",
@@ -280,7 +280,7 @@ export function BranchConfigModal({
 
               <div>
                 <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Concession Tax (%)
+                  Card Payment Tax (%)
                 </label>
                 <input
                   type="number"
@@ -293,7 +293,7 @@ export function BranchConfigModal({
                   required
                 />
                 <span className="text-[11px] text-zinc-400 mt-1 block">
-                  Concessional rate applied on food/canteen POS orders.
+                  Tax rate when an invoice is paid fully by card. Set 0 for no tax on card payments.
                 </span>
               </div>
 

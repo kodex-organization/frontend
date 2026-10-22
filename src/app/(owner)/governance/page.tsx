@@ -22,7 +22,8 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { OwnerApprovalsTable } from "@/features/governance/OwnerApprovalsTable";
 
-function formatRate(value: number | string) {
+function formatRate(value: number | string | null) {
+  if (value == null) return "Rate unavailable";
   const rate = Number(value);
   return Number.isFinite(rate)
     ? `${rate.toFixed(2)}/hr`

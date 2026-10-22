@@ -13,13 +13,20 @@ import { sessionApi } from "@/features/sessions/session-api";
 import { StartSessionModal } from "@/features/sessions/start-session-modal";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { toast } from "@/lib/toast";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export function FloorViewDashboard() {
   const { user } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const selectedBranchId = user?.branchId ?? "";
   const [startSessionModalOpen, setStartSessionModalOpen] = useState(false);
   const [selectedTableIdForStart, setSelectedTableIdForStart] = useState<string | undefined>(undefined);
+  const [initialCustomerId, setInitialCustomerId] = useState<string | null>(null);
+  const [initialBillingType, setInitialBillingType] = useState<"hourly" | "per_game">("hourly");
+  const [initialGameCount, setInitialGameCount] = useState(1);
   const [pendingEndSessionId, setPendingEndSessionId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -47,6 +54,17 @@ export function FloorViewDashboard() {
     overtime: tables.filter((t) => t.session?.isOvertime).length,
     paused: tables.filter((t) => t.session?.isPaused).length,
   };
+
+  useEffect(() => {
+    if (pathname !== "/floor-view" || searchParams.get("startSession") !== "1") return;
+
+    setSelectedTableIdForStart(searchParams.get("tableId") || undefined);
+    setInitialCustomerId(searchParams.get("customerId"));
+    setInitialBillingType(searchParams.get("billingType") === "per_game" ? "per_game" : "hourly");
+    setInitialGameCount(Math.max(1, Number(searchParams.get("gameCount")) || 1));
+    setStartSessionModalOpen(true);
+    router.replace("/floor-view");
+  }, [pathname, router, searchParams]);
 
   const handlePause = async (sessionId: string) => {
     try {
@@ -96,6 +114,8 @@ export function FloorViewDashboard() {
         toast.success("Session ended and invoice generated successfully");
         await fetchData();
       }
+      // Open the invoice that was just generated
+      router.push(result.invoiceId ? `/billing/${result.invoiceId}` : "/billing");
     } catch (err: any) {
       toast.error(err?.message || "Failed to end session");
     } finally {
@@ -246,9 +266,16 @@ export function FloorViewDashboard() {
       <StartSessionModal
         open={startSessionModalOpen}
         defaultTableId={selectedTableIdForStart}
+        initialCustomerId={initialCustomerId}
+        initialBillingType={initialBillingType}
+        initialGameCount={initialGameCount}
+        returnTo="/floor-view"
         onClose={() => {
           setStartSessionModalOpen(false);
           setSelectedTableIdForStart(undefined);
+          setInitialCustomerId(null);
+          setInitialBillingType("hourly");
+          setInitialGameCount(1);
         }}
         onStarted={(session) => {
           if (session) {
@@ -272,3 +299,4 @@ export function FloorViewDashboard() {
     </div>
   );
 }
+

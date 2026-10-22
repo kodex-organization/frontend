@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -8,12 +9,17 @@ import { toast } from "@/lib/toast";
 
 import { sessionApi } from "./session-api";
 import type { ActiveSession, Customer, TableOption } from "./types";
+import { customerFormUrl } from "@/features/customers/customer-redirect";
 
 interface StartSessionModalProps {
   open: boolean;
   onClose: () => void;
   onStarted: (session?: ActiveSession) => void | Promise<void>;
   defaultTableId?: string;
+  initialCustomerId?: string | null;
+  initialBillingType?: "hourly" | "per_game";
+  initialGameCount?: number;
+  returnTo?: string;
 }
 
 function formatRate(table: TableOption) {
@@ -52,9 +58,14 @@ export function StartSessionModal({
   onClose,
   onStarted,
   defaultTableId,
+  initialCustomerId = null,
+  initialBillingType = "hourly",
+  initialGameCount = 1,
+  returnTo = "/floor-view",
 }: StartSessionModalProps) {
   const isOnline = useOnlineStatus();
   const { user } = useAuth();
+  const router = useRouter();
   const selectedBranchId = user?.branchId ?? "";
   const [tables, setTables] = useState<TableOption[]>([]);
   const [query, setQuery] = useState("");
@@ -62,6 +73,9 @@ export function StartSessionModal({
   const [tableId, setTableId] = useState(defaultTableId ?? "");
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [walkIn, setWalkIn] = useState(true);
+  const [createNewCustomer, setCreateNewCustomer] = useState(false);
+  const [billingType, setBillingType] = useState<"hourly" | "per_game">(initialBillingType);
+  const [gameCount, setGameCount] = useState(String(initialGameCount));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -72,6 +86,17 @@ export function StartSessionModal({
       setTableId("");
     }
   }, [defaultTableId, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (initialCustomerId) {
+      setCustomerId(initialCustomerId);
+      setWalkIn(false);
+      setCreateNewCustomer(false);
+    }
+    setBillingType(initialBillingType);
+    setGameCount(String(initialGameCount));
+  }, [initialBillingType, initialCustomerId, initialGameCount, open]);
 
   useEffect(() => {
     if (!open || !selectedBranchId) return;
@@ -136,10 +161,31 @@ export function StartSessionModal({
     setBusy(true);
     setError("");
     try {
+      let selectedCustomerId = walkIn ? null : customerId;
+      if (!tableId) throw new Error("Select an available table");
+      if (!walkIn && createNewCustomer) {
+        const params = new URLSearchParams({
+          startSession: "1",
+          tableId,
+          billingType,
+          returnTo,
+        });
+        if (billingType === "per_game") params.set("gameCount", String(Number(gameCount)));
+        router.push(customerFormUrl(`${returnTo}?${params.toString()}`));
+        return;
+      }
+      if (
+        billingType === "per_game" &&
+        (!Number.isInteger(Number(gameCount)) || Number(gameCount) <= 0)
+      ) {
+        throw new Error("Enter a valid number of games");
+      }
       const started = await sessionApi.start({
         branchId: selectedBranchId || undefined,
         tableId,
-        customerId: walkIn ? null : customerId,
+        customerId: selectedCustomerId,
+        billingType,
+        ...(billingType === "per_game" ? { gameCount: Number(gameCount) } : {}),
       });
       await onStarted(started);
       if (!isOnline || "offlineQueued" in started) {
@@ -188,7 +234,13 @@ export function StartSessionModal({
           <select
             className="mt-1 w-full rounded-lg border p-3 bg-white"
             value={tableId}
-            onChange={(event) => setTableId(event.target.value)}
+            onChange={(event) => {
+              const nextTableId = event.target.value;
+              setTableId(nextTableId);
+              if (!tables.find((table) => table.id === nextTableId)?.perGameRate) {
+                setBillingType("hourly");
+              }
+            }}
             disabled={busy || !selectedBranchId}
           >
             <option value="">
@@ -219,19 +271,45 @@ export function StartSessionModal({
 
         {!walkIn && (
           <div className="mt-4">
-            <input
-              className="w-full rounded-lg border p-3"
-              placeholder="Search name or phone"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              disabled={busy}
-            />
-            {!isOnline && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={createNewCustomer}
+                onChange={(event) => {
+                  setCreateNewCustomer(event.target.checked);
+                  setCustomerId(null);
+                }}
+                disabled={busy}
+              />
+              New customer in Customer Directory
+            </label>
+            {createNewCustomer ? (
+              <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                Add the customer details. Session setup will continue automatically after saving.
+                <button
+                  type="button"
+                  onClick={() => void submit()}
+                  disabled={busy || !tableId}
+                  className="mt-3 w-full rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {busy ? "Opening Customer Directory..." : "Add Customer in Customer Directory"}
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  className="mt-2 w-full rounded-lg border p-3"
+                  placeholder="Search name or phone"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  disabled={busy}
+                />
+                {!isOnline && (
               <p className="mt-1 text-xs text-slate-500">
                 Offline: searching customers saved on this device.
               </p>
-            )}
-            <div className="mt-2 max-h-36 overflow-auto rounded-lg border">
+                )}
+                <div className="mt-2 max-h-36 overflow-auto rounded-lg border">
               {customers.length === 0 && query.trim() !== "" ? (
                 <p className="p-3 text-xs text-slate-400">No customers found</p>
               ) : (
@@ -252,8 +330,42 @@ export function StartSessionModal({
                   </button>
                 ))
               )}
-            </div>
+                </div>
+              </>
+            )}
           </div>
+        )}
+
+        <label className="mt-4 block text-sm font-medium">
+          Billing
+          <select
+            className="mt-1 w-full rounded-lg border p-3 bg-white"
+            value={billingType}
+            onChange={(event) => setBillingType(event.target.value as "hourly" | "per_game")}
+            disabled={busy}
+          >
+            <option value="hourly">Hourly</option>
+            <option
+              value="per_game"
+              disabled={!tables.find((table) => table.id === tableId)?.perGameRate}
+            >
+              Per game
+            </option>
+          </select>
+        </label>
+        {billingType === "per_game" && (
+          <label className="mt-3 block text-sm font-medium">
+            Number of games/sets
+            <input
+              type="number"
+              min={1}
+              step={1}
+              className="mt-1 w-full rounded-lg border p-3"
+              value={gameCount}
+              onChange={(event) => setGameCount(event.target.value)}
+              disabled={busy}
+            />
+          </label>
         )}
 
         {!isOnline && (
@@ -267,7 +379,7 @@ export function StartSessionModal({
           type="button"
           disabled={
             !tableId ||
-            (!walkIn && !customerId) ||
+            (!walkIn && !createNewCustomer && !customerId) ||
             busy
           }
           onClick={() => void submit()}
