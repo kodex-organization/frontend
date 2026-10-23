@@ -1,5 +1,6 @@
 "use client";
 
+import { navigateTo, cleanUrl } from "@/lib/connectivity/offline-navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ApiError } from "@/lib/api/client";
@@ -116,6 +117,8 @@ export default function SessionsPage() {
   const t = strings[user?.language ?? "en"];
   const [modal, setModal] = useState(false);
   const [initialCustomerId, setInitialCustomerId] = useState<string | null>(null);
+  // Table picked before going to add a customer.
+  const [initialTableId, setInitialTableId] = useState<string | undefined>(undefined);
   const [initialBillingType, setInitialBillingType] = useState<"hourly" | "per_game">("hourly");
   const [initialGameCount, setInitialGameCount] = useState(1);
   const [switchState, setSwitchState] = useState<SwitchTableState | null>(null);
@@ -160,10 +163,11 @@ export default function SessionsPage() {
     if (searchParams.get("startSession") !== "1") return;
 
     setInitialCustomerId(searchParams.get("customerId"));
+    setInitialTableId(searchParams.get("tableId") || undefined);
     setInitialBillingType(searchParams.get("billingType") === "per_game" ? "per_game" : "hourly");
     setInitialGameCount(Math.max(1, Number(searchParams.get("gameCount")) || 1));
     setModal(true);
-    router.replace("/sessions");
+    cleanUrl(router, "/sessions");
   }, [router, searchParams]);
 
   useEffect(() => {
@@ -230,7 +234,7 @@ export default function SessionsPage() {
     try {
       const result = await sessionApi.action(id, nextAction);
       const openInvoice = () =>
-        router.push(result?.invoiceId ? `/billing/${result.invoiceId}` : "/billing");
+        navigateTo(router, result?.invoiceId ? `/billing/${result.invoiceId}` : "/billing");
 
       if (!isOnline || (result && "offlineQueued" in result)) {
         toast.info("Saved offline. Action queued for sync.");
@@ -493,7 +497,12 @@ export default function SessionsPage() {
 
       <StartSessionModal
         open={modal}
-        onClose={() => setModal(false)}
+        onClose={() => {
+          setModal(false);
+          setInitialCustomerId(null);
+          setInitialTableId(undefined);
+        }}
+        defaultTableId={initialTableId}
         initialCustomerId={initialCustomerId}
         initialBillingType={initialBillingType}
         initialGameCount={initialGameCount}

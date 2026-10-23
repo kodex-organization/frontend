@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { navigateTo } from "@/lib/connectivity/offline-navigation";
 import { toast } from "react-toastify";
 import { formatCurrency } from "@/features/invoice/utils/formatCurrency";
 import { apiFetch } from "@/lib/api/client";
@@ -211,7 +212,7 @@ export default function SplitPaymentPanel({
           {!hasLinkedCustomer && !isCustomerBlocked && (
             <button
               type="button"
-              onClick={() => router.push(customerFormUrl(returnTo ?? `/billing/${invoiceId}`))}
+              onClick={() => navigateTo(router, customerFormUrl(returnTo ?? `/billing/${invoiceId}`))}
               className="mt-2 rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
             >
               Add customer details for Udhaar

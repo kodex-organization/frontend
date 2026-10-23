@@ -1,6 +1,7 @@
 // src/modules/floor-view/components/FloorViewDashboard.tsx
 "use client";
 
+import { navigateTo, cleanUrl } from "@/lib/connectivity/offline-navigation";
 import { useFloorView } from "../hooks/useFloorView";
 import type { Stats } from "../types";
 import { FloorCard } from "./FloorCard";
@@ -63,7 +64,7 @@ export function FloorViewDashboard() {
     setInitialBillingType(searchParams.get("billingType") === "per_game" ? "per_game" : "hourly");
     setInitialGameCount(Math.max(1, Number(searchParams.get("gameCount")) || 1));
     setStartSessionModalOpen(true);
-    router.replace("/floor-view");
+    cleanUrl(router, "/floor-view");
   }, [pathname, router, searchParams]);
 
   const handlePause = async (sessionId: string) => {
@@ -115,7 +116,7 @@ export function FloorViewDashboard() {
         await fetchData();
       }
       // Open the invoice that was just generated
-      router.push(result.invoiceId ? `/billing/${result.invoiceId}` : "/billing");
+      navigateTo(router, result.invoiceId ? `/billing/${result.invoiceId}` : "/billing");
     } catch (err: any) {
       toast.error(err?.message || "Failed to end session");
     } finally {
