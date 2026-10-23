@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { apiFetch } from "@/lib/api/client";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
@@ -13,6 +13,50 @@ const ISSUE_TYPES = [
   { value: "wrong_customer", label: "Wrong customer / udhaar" },
   { value: "other", label: "Other" },
 ];
+
+const OFFLINE_REPORTS_KEY = "cuecloud_offline_invoice_issue_reports";
+
+type OfflineReport = {
+  invoiceId: string;
+  issueType: string;
+  description: string;
+};
+
+function readOfflineReports(): OfflineReport[] {
+  try {
+    const raw = localStorage.getItem(OFFLINE_REPORTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeOfflineReports(reports: OfflineReport[]) {
+  localStorage.setItem(OFFLINE_REPORTS_KEY, JSON.stringify(reports));
+}
+
+export async function flushOfflineInvoiceIssueReports() {
+  if (typeof window === "undefined" || !navigator.onLine) return;
+  const reports = readOfflineReports();
+  if (reports.length === 0) return;
+
+  const remaining: OfflineReport[] = [];
+  for (const report of reports) {
+    try {
+      await apiFetch(`/billing/invoices/${encodeURIComponent(report.invoiceId)}/report-issue`, {
+        method: "POST",
+        body: JSON.stringify({
+          issueType: report.issueType,
+          description: report.description,
+        }),
+      });
+    } catch {
+      remaining.push(report);
+    }
+  }
+  writeOfflineReports(remaining);
+}
 
 export default function ReportIssueModal({
   invoiceId,
@@ -31,6 +75,13 @@ export default function ReportIssueModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    void flushOfflineInvoiceIssueReports();
+    const handleOnline = () => void flushOfflineInvoiceIssueReports();
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, []);
+
   async function submitReport() {
     if (!issueType) {
       setError("Select the type of issue.");
@@ -45,6 +96,18 @@ export default function ReportIssueModal({
     setError("");
 
     try {
+      if (!isOnline) {
+        const reports = readOfflineReports();
+        reports.push({
+          invoiceId,
+          issueType,
+          description: description.trim(),
+        });
+        writeOfflineReports(reports);
+        onSuccess();
+        return;
+      }
+
       await apiFetch(`/billing/invoices/${encodeURIComponent(invoiceId)}/report-issue`, {
         method: "POST",
         body: JSON.stringify({ issueType, description: description.trim() }),
@@ -87,7 +150,7 @@ export default function ReportIssueModal({
         <div className="space-y-4 px-6 py-5">
           {!isOnline && (
             <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              You are offline. Reconnect to the internet to send this report.
+              You are offline. This report will be saved on this device and sent when the connection returns.
             </p>
           )}
 
@@ -140,10 +203,10 @@ export default function ReportIssueModal({
           <button
             type="button"
             onClick={() => void submitReport()}
-            disabled={submitting || !isOnline}
+            disabled={submitting}
             className="rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? "Sending…" : "Send to owner"}
+            {submitting ? "Saving…" : isOnline ? "Send to owner" : "Save report"}
           </button>
         </div>
       </div>

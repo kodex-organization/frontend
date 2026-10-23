@@ -74,11 +74,18 @@ export default function UdhaarPage() {
     refresh,
     loadStatement,
     addAdjustment,
-    statement,
+    statement: loadedStatement,
   } = useUdhaarLedger();
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [statementRange, setStatementRange] = useState({ from: "", to: "" });
+  const [statementLoading, setStatementLoading] = useState(false);
+  // Changes on every Statement click so it scrolls again.
+  const [statementScrollTick, setStatementScrollTick] = useState(0);
+  const statementSectionRef = useRef<HTMLElement>(null);
+  // Hide a previous customer's ledger.
+  const statement =
+    loadedStatement && loadedStatement.customerId === selectedCustomerId ? loadedStatement : null;
 
   // Manual Adjustment State
   const [showAdjustment, setShowAdjustment] = useState(false);
@@ -260,15 +267,54 @@ export default function UdhaarPage() {
     }
   };
 
+  // Statement click: scroll to the section and load all dates.
   const handleStatementOpen = async (customerId: string) => {
     setSelectedCustomerId(customerId);
     setStatementRange({ from: "", to: "" });
+    setStatementScrollTick((tick) => tick + 1);
+    setStatementLoading(true);
+    try {
+      await loadStatement(customerId, "", "");
+    } finally {
+      setStatementLoading(false);
+    }
   };
 
+  // Either date may be empty.
   const handleStatementView = async () => {
-    if (!selectedCustomerId || !statementRange.from || !statementRange.to) return;
-    await loadStatement(selectedCustomerId, statementRange.from, statementRange.to);
+    if (!selectedCustomerId) return;
+    const { from, to } = statementRange;
+    if (from && to && from > to) {
+      toast.error("The 'from' date must be before the 'to' date.");
+      return;
+    }
+    setStatementLoading(true);
+    try {
+      await loadStatement(selectedCustomerId, from, to);
+    } finally {
+      setStatementLoading(false);
+    }
   };
+
+  const handleStatementClearDates = async () => {
+    setStatementRange({ from: "", to: "" });
+    if (!selectedCustomerId) return;
+    setStatementLoading(true);
+    try {
+      await loadStatement(selectedCustomerId, "", "");
+    } finally {
+      setStatementLoading(false);
+    }
+  };
+
+  // Scroll after the section is rendered.
+  useEffect(() => {
+    if (!statementScrollTick) return;
+    const frame = requestAnimationFrame(() => {
+      statementSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [statementScrollTick]);
 
   const handleAdjustmentSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -711,7 +757,9 @@ export default function UdhaarPage() {
         {/* Customer Statement Inspection Drawer */}
         {selectedCustomerId && (
           <section
+            ref={statementSectionRef}
             id="printable-account-statement"
+            style={{ scrollMarginTop: "1rem" }}
             className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 print:border-none print:shadow-none print:p-0 print:m-0"
           >
             {/* Screen Controls Header (Hidden in Print) */}
@@ -748,11 +796,21 @@ export default function UdhaarPage() {
                   className="h-8.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
                 />
                 <button
-                  className="h-8.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700 cursor-pointer"
+                  className="h-8.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
                   onClick={() => void handleStatementView()}
+                  disabled={statementLoading}
                 >
-                  Fetch
+                  {statementLoading ? "Loading…" : "Fetch"}
                 </button>
+                {(statementRange.from || statementRange.to) && (
+                  <button
+                    className="h-8.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                    onClick={() => void handleStatementClearDates()}
+                    disabled={statementLoading}
+                  >
+                    All dates
+                  </button>
+                )}
                 {statement && (
                   <>
                     <button
@@ -820,7 +878,9 @@ export default function UdhaarPage() {
             </div>
 
             <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 print:border-none print:bg-white print:p-0">
-              {statement ? (
+              {statementLoading && !statement ? (
+                <p className="text-center py-6 text-xs text-slate-500">Loading ledger entries…</p>
+              ) : statement ? (
                 statement.entries.length === 0 ? (
                   <p className="text-center py-6 text-xs text-slate-500">
                     No ledger entries recorded for this date range.
@@ -915,7 +975,7 @@ export default function UdhaarPage() {
                 )
               ) : (
                 <p className="text-center py-6 text-xs text-slate-500">
-                  Pick dates above and click <strong>Fetch</strong> to inspect entries.
+                  No statement loaded yet. Click <strong>Fetch</strong> to load the entries.
                 </p>
               )}
             </div>

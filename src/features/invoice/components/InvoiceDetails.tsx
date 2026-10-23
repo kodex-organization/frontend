@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { navigateTo } from "@/lib/connectivity/offline-navigation";
 import { toast } from "react-toastify";
 
 import { useAuth } from "@/lib/auth/auth-context";
@@ -19,7 +20,9 @@ import InvoicePayments from "./InvoicePayments";
 import RecordPaymentModal from "./RecordPaymentModal";
 import StatusBadge from "./StatusBadge";
 import VoidInvoiceModal from "./VoidInvoiceModal";
-import ReportIssueModal from "./ReportIssueModal";
+import ReportIssueModal, {
+  flushOfflineInvoiceIssueReports,
+} from "./ReportIssueModal";
 import SplitPaymentPanel from "@/features/payments/components/SplitPaymentPanel";
 import { customerFormUrl } from "@/features/customers/customer-redirect";
 
@@ -59,6 +62,13 @@ export default function InvoiceDetails({
   useEffect(() => {
     const customerId = new URLSearchParams(window.location.search).get("customerId");
     if (customerId) setLinkedCustomerId(customerId);
+  }, []);
+
+  useEffect(() => {
+    void flushOfflineInvoiceIssueReports();
+    const handleOnline = () => void flushOfflineInvoiceIssueReports();
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
   }, []);
 
   if (loading) {
@@ -235,8 +245,6 @@ export default function InvoiceDetails({
             <button
               type="button"
               onClick={() => setShowReportModal(true)}
-              disabled={!isOnline}
-              title={!isOnline ? "Reconnect to the internet to report an issue" : undefined}
               className="rounded-xl border border-amber-300 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Report issue
@@ -405,7 +413,7 @@ export default function InvoiceDetails({
           isCustomerBlocked={Boolean(invoice.customer?.isBlocked)}
           hasCustomer={Boolean(invoice.customer?.id)}
           linkedCustomerId={linkedCustomerId}
-          onRequireCustomer={() => router.push(customerFormUrl(pathname))}
+          onRequireCustomer={() => navigateTo(router, customerFormUrl(pathname))}
           onClose={() => setShowPaymentModal(false)}
           onSuccess={(result) => {
             if (result?.invoice) {

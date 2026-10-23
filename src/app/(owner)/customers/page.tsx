@@ -32,6 +32,7 @@ import {
 } from "@/features/customers/customer-offline-cache";
 import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
 import { safeReturnTo, withCustomerId } from "@/features/customers/customer-redirect";
+import { navigateTo } from "@/lib/connectivity/offline-navigation";
 
 export default function CustomersPage() {
   const router = useRouter();
@@ -61,6 +62,7 @@ export default function CustomersPage() {
   // Set when another screen sent the user here to add a customer and come back
   const [returnTo, setReturnTo] = useState<string | null>(null);
   const openedFromRedirect = useRef(false);
+  const customerReturnToKey = "cuecloud_customer_return_to";
   const deleteInFlight = useRef(false);
   const deletedCustomerIds = useRef(new Set<string>());
 
@@ -170,14 +172,21 @@ export default function CustomersPage() {
 
   // Opened as /customers?new=1&returnTo=...: show the new customer form right away
   useEffect(() => {
-    if (openedFromRedirect.current || !user) return;
+    if (openedFromRedirect.current) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("new") !== "1") return;
     openedFromRedirect.current = true;
-    setReturnTo(safeReturnTo(params.get("returnTo")));
+    const redirectReturnTo = safeReturnTo(params.get("returnTo"));
+    setReturnTo(redirectReturnTo);
+    if (redirectReturnTo) {
+      sessionStorage.setItem(customerReturnToKey, redirectReturnTo);
+    }
     openCreateModal();
+    // Do not let a browser refresh reopen the redirect flow. The return path
+    // is already held in state and is still used after the customer is saved.
+    window.history.replaceState(window.history.state, "", "/customers");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, []);
 
   const handleSubmitCustomer = async (e: FormEvent) => {
     e.preventDefault();
@@ -218,8 +227,11 @@ export default function CustomersPage() {
         toast.success("New customer created successfully.");
 
         // Came from a session/invoice: go back there with the new customer
-        if (returnTo) {
-          router.push(withCustomerId(returnTo, created.id));
+        const redirectReturnTo =
+          returnTo || sessionStorage.getItem(customerReturnToKey);
+        if (redirectReturnTo) {
+          sessionStorage.removeItem(customerReturnToKey);
+          navigateTo(router, withCustomerId(redirectReturnTo, created.id));
           return;
         }
       }

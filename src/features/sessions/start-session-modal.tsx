@@ -10,6 +10,9 @@ import { toast } from "@/lib/toast";
 import { sessionApi } from "./session-api";
 import type { ActiveSession, Customer, TableOption } from "./types";
 import { customerFormUrl } from "@/features/customers/customer-redirect";
+import { offlineDB } from "@/lib/sync/offline-db";
+import { navigateTo } from "@/lib/connectivity/offline-navigation";
+import { customerApi } from "@/features/customers/customer-api";
 
 interface StartSessionModalProps {
   open: boolean;
@@ -72,6 +75,8 @@ export function StartSessionModal({
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [tableId, setTableId] = useState(defaultTableId ?? "");
   const [customerId, setCustomerId] = useState<string | null>(null);
+  // Chosen or newly created customer, kept visible even if search misses it.
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [walkIn, setWalkIn] = useState(true);
   const [createNewCustomer, setCreateNewCustomer] = useState(false);
   const [billingType, setBillingType] = useState<"hourly" | "per_game">(initialBillingType);
@@ -88,11 +93,45 @@ export function StartSessionModal({
   }, [defaultTableId, open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setQuery("");
+      setSelectedCustomer(null);
+      return;
+    }
     if (initialCustomerId) {
       setCustomerId(initialCustomerId);
       setWalkIn(false);
       setCreateNewCustomer(false);
+
+      // Put the newly created customer in the search bar and select it.
+      let cancelled = false;
+      void (async () => {
+        let found: Customer | null = null;
+        try {
+          const row = await offlineDB.cachedCustomers.get(initialCustomerId);
+          if (row?.data) found = row.data as unknown as Customer;
+        } catch {
+          // try the API next
+        }
+        if (!found) {
+          try {
+            found = (await customerApi.get(initialCustomerId)) as unknown as Customer;
+          } catch {
+            found = null;
+          }
+        }
+        if (cancelled || !found) return;
+        setSelectedCustomer({
+          id: found.id,
+          fullName: found.fullName,
+          phone: found.phone,
+          cnic: (found as { cnic?: string | null }).cnic ?? null,
+        } as Customer);
+        setQuery(found.fullName || found.phone || "");
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
     setBillingType(initialBillingType);
     setGameCount(String(initialGameCount));
@@ -157,6 +196,11 @@ export function StartSessionModal({
 
   if (!open) return null;
 
+  // Selected customer first, no duplicates.
+  const visibleCustomers = selectedCustomer
+    ? [selectedCustomer, ...customers.filter((c) => c.id !== selectedCustomer.id)]
+    : customers;
+
   async function submit() {
     setBusy(true);
     setError("");
@@ -171,7 +215,7 @@ export function StartSessionModal({
           returnTo,
         });
         if (billingType === "per_game") params.set("gameCount", String(Number(gameCount)));
-        router.push(customerFormUrl(`${returnTo}?${params.toString()}`));
+        navigateTo(router, customerFormUrl(`${returnTo}?${params.toString()}`));
         return;
       }
       if (
@@ -310,14 +354,17 @@ export function StartSessionModal({
               </p>
                 )}
                 <div className="mt-2 max-h-36 overflow-auto rounded-lg border">
-              {customers.length === 0 && query.trim() !== "" ? (
+              {visibleCustomers.length === 0 && query.trim() !== "" ? (
                 <p className="p-3 text-xs text-slate-400">No customers found</p>
               ) : (
-                customers.map((customer) => (
+                visibleCustomers.map((customer) => (
                   <button
                     key={customer.id}
                     type="button"
-                    onClick={() => setCustomerId(customer.id)}
+                    onClick={() => {
+                      setCustomerId(customer.id);
+                      setSelectedCustomer(customer);
+                    }}
                     className={`block w-full p-3 text-left text-sm cursor-pointer ${
                       customerId === customer.id
                         ? "bg-brand-50 border-l-4 border-brand-600"

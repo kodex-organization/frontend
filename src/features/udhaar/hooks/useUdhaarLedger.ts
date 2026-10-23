@@ -51,17 +51,22 @@ const statementCacheName = (customerId: string, from: string, to: string) =>
 
 const isBrowserOffline = () => typeof navigator !== "undefined" && !navigator.onLine;
 
-/**
- * The date pickers give "2026-10-01". The server reads that as midnight, which
- * would cut off the whole last day. Send the full local day instead.
- */
+// Date inputs give "YYYY-MM-DD"; send the full local day so the last day is included.
+const FIRST_POSSIBLE_DATE = "1970-01-01T00:00:00.000Z";
 function toServerRange(from: string, to: string) {
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
   return {
-    from: dateOnly.test(from) ? new Date(`${from}T00:00:00`).toISOString() : from,
-    to: dateOnly.test(to) ? new Date(`${to}T23:59:59.999`).toISOString() : to,
+    from: !from ? FIRST_POSSIBLE_DATE : dateOnly.test(from) ? new Date(`${from}T00:00:00`).toISOString() : from,
+    to: !to ? endOfToday.toISOString() : dateOnly.test(to) ? new Date(`${to}T23:59:59.999`).toISOString() : to,
   };
 }
+
+const inRange = (createdAt: string, range: { from: string; to: string }) => {
+  const time = new Date(createdAt).getTime();
+  return time >= new Date(range.from).getTime() && time <= new Date(range.to).getTime();
+};
 
 export function useUdhaarLedger() {
   const [customers, setCustomers] = useState<UdhaarCustomerSummary[]>([]);
@@ -144,9 +149,11 @@ export function useUdhaarLedger() {
     }
   };
 
-  const loadStatement = async (customerId: string, from: string, to: string) => {
+  // Empty from/to loads the whole history.
+  const loadStatement = async (customerId: string, from = "", to = ""): Promise<boolean> => {
+    const range = toServerRange(from, to);
+
     const withWaitingEntries = async (entries: UdhaarStatementEntry[]) => {
-      const range = toServerRange(from, to);
       const pending = await getPendingUdhaarEntries();
       const known = new Set(entries.map((entry) => entry.id));
       const extra = pendingStatementEntries(customerId, range.from, range.to, pending).filter(
@@ -158,30 +165,42 @@ export function useUdhaarLedger() {
     };
 
     try {
-      const range = toServerRange(from, to);
       const result = await getUdhaarStatement(customerId, range.from, range.to);
       void cacheScopedJson<LedgerStatement>(statementCacheName(customerId, from, to), result);
       setStatement({ customerId, from, to, entries: await withWaitingEntries(result.entries) });
+      return true;
     } catch (requestError) {
       if (isNetworkFailure(requestError)) {
-        const saved = await readScopedJson<LedgerStatement>(statementCacheName(customerId, from, to));
+        // Use the saved range, else the saved full history filtered by date.
+        const exact = await readScopedJson<LedgerStatement>(statementCacheName(customerId, from, to));
+        const full = exact ? null : await readScopedJson<LedgerStatement>(statementCacheName(customerId, "", ""));
+        const saved = exact ?? full;
+        const entries = exact
+          ? exact.data.entries
+          : (full?.data.entries ?? []).filter((entry) => inRange(entry.createdAt, range));
+
         if (saved) {
-          setStatement({ customerId, from, to, entries: await withWaitingEntries(saved.data.entries) });
+          setStatement({ customerId, from, to, entries: await withWaitingEntries(entries) });
           toast.warning(`Offline: showing the statement saved on ${new Date(saved.savedAt).toLocaleString()}.`);
-        } else {
-          // Do not replace the whole ledger with an error page just for this.
-          toast.warning("You are offline. This statement was not saved earlier, so it needs a connection.");
+          return true;
         }
-        return;
+
+        // Nothing saved: show pending entries only.
+        const waiting = await withWaitingEntries([]);
+        setStatement({ customerId, from, to, entries: waiting });
+        toast.warning(
+          waiting.length
+            ? "You are offline. Showing only entries saved on this device (older history needs a connection once)."
+            : "You are offline. Older history of this customer needs a connection once.",
+        );
+        return true;
       }
       setError(requestError instanceof Error ? requestError.message : "Unable to load customer statement.");
+      return false;
     }
   };
 
-  /**
-   * Customer pays back udhaar (SRS 3.7: partial settlement allowed, credit entry).
-   * Online -> server. Offline / server down -> saved here and synced later.
-   */
+  // Records a udhaar repayment: online to the server, offline saved and synced later.
   const recordLedgerSettlement = async (input: {
     customerId: string;
     amount: number;
