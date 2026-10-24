@@ -365,11 +365,13 @@ export function FloorCard({
               </span>
               <span className="text-xs font-bold text-slate-800">
                 {formatAmount(
-                  table.session.appliedHourlyRate,
+                  table.session.billingType === "per_game" && table.session.appliedPerGameRate
+                    ? table.session.appliedPerGameRate
+                    : table.session.appliedHourlyRate,
                   table.currency,
                 )}
                 <span className="text-[10px] text-slate-400 font-normal">
-                  /hr
+                  {table.session.billingType === "per_game" ? "/game" : "/hr"}
                 </span>
               </span>
             </div>

@@ -12,6 +12,7 @@ import {
   getCachedBranchName,
 } from "@/features/tenancy/branch-currency-cache";
 import { filterCachedInvoices } from "../utils/filterCachedInvoices";
+import { takeSeededInvoice } from "../utils/seededInvoice";
 import type {
   BillingTransaction,
   Invoice,
@@ -196,6 +197,20 @@ export const invoiceService = {
       const cached = await findInCache();
       if (cached) return cached;
       throw new Error("Invoice details unavailable offline.");
+    }
+
+    // Invoice just created by End session; skip the extra request.
+    const seeded = takeSeededInvoice(id);
+    if (seeded) {
+      void offlineDB.cachedInvoices
+        .put({
+          id: seeded.id,
+          branchId: seeded.branch?.id || getActiveOfflineBranchId() || "default",
+          data: seeded,
+          cachedAt: new Date().toISOString(),
+        })
+        .catch(() => {});
+      return seeded;
     }
 
     try {

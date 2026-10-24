@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { apiFetch } from "@/lib/api/client";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { queueInvoiceIssueChange } from "@/lib/sync/offline-db";
 
 const ISSUE_TYPES = [
   { value: "wrong_amount", label: "Wrong amount" },
@@ -13,50 +14,6 @@ const ISSUE_TYPES = [
   { value: "wrong_customer", label: "Wrong customer / udhaar" },
   { value: "other", label: "Other" },
 ];
-
-const OFFLINE_REPORTS_KEY = "cuecloud_offline_invoice_issue_reports";
-
-type OfflineReport = {
-  invoiceId: string;
-  issueType: string;
-  description: string;
-};
-
-function readOfflineReports(): OfflineReport[] {
-  try {
-    const raw = localStorage.getItem(OFFLINE_REPORTS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeOfflineReports(reports: OfflineReport[]) {
-  localStorage.setItem(OFFLINE_REPORTS_KEY, JSON.stringify(reports));
-}
-
-export async function flushOfflineInvoiceIssueReports() {
-  if (typeof window === "undefined" || !navigator.onLine) return;
-  const reports = readOfflineReports();
-  if (reports.length === 0) return;
-
-  const remaining: OfflineReport[] = [];
-  for (const report of reports) {
-    try {
-      await apiFetch(`/billing/invoices/${encodeURIComponent(report.invoiceId)}/report-issue`, {
-        method: "POST",
-        body: JSON.stringify({
-          issueType: report.issueType,
-          description: report.description,
-        }),
-      });
-    } catch {
-      remaining.push(report);
-    }
-  }
-  writeOfflineReports(remaining);
-}
 
 export default function ReportIssueModal({
   invoiceId,
@@ -75,13 +32,6 @@ export default function ReportIssueModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    void flushOfflineInvoiceIssueReports();
-    const handleOnline = () => void flushOfflineInvoiceIssueReports();
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, []);
-
   async function submitReport() {
     if (!issueType) {
       setError("Select the type of issue.");
@@ -97,13 +47,17 @@ export default function ReportIssueModal({
 
     try {
       if (!isOnline) {
-        const reports = readOfflineReports();
-        reports.push({
+        const queued = await queueInvoiceIssueChange({
           invoiceId,
+          invoiceNumber,
           issueType,
           description: description.trim(),
+          reportedAt: new Date().toISOString(),
         });
-        writeOfflineReports(reports);
+        if (queued === null) {
+          setError("Could not save the report on this device. Please try again.");
+          return;
+        }
         onSuccess();
         return;
       }
