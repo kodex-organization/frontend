@@ -102,7 +102,8 @@ export type OfflineEntity =
   | "notification"
   | "canteen_order"
   | "canteen_category"
-  | "canteen_item";
+  | "canteen_item"
+  | "invoice_issue";
 
 export type PendingSyncItem = {
   id?: number;
@@ -267,6 +268,34 @@ export async function queueInvoiceChange(
     });
   } catch (err) {
     console.warn("Could not queue invoice change to Dexie pendingQueue:", err);
+    return null;
+  }
+}
+
+export async function queueInvoiceIssueChange(payload: {
+  invoiceId: string;
+  invoiceNumber?: string | null;
+  issueType: string;
+  description: string;
+  reportedAt: string;
+}) {
+  const branchId = getActiveOfflineBranchId();
+  if (!branchId) return null;
+  try {
+    return await offlineDB.pendingQueue.add({
+      branchId,
+      entity: "invoice_issue",
+      entityId: payload.invoiceId,
+      action: "REPORT_ISSUE",
+      payload,
+      status: "pending",
+      idempotencyKey: crypto.randomUUID(),
+      originTimestamp: payload.reportedAt,
+      retryCount: 0,
+      lastError: null,
+    });
+  } catch (err) {
+    console.warn("Could not queue invoice issue to Dexie pendingQueue:", err);
     return null;
   }
 }

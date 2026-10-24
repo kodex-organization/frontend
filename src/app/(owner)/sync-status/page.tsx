@@ -115,6 +115,8 @@ function getEntityIcon(entity: string) {
       return <CreditCard size={18} />;
     case "udhaar":
       return <BookOpen size={18} />;
+    case "invoice_issue":
+      return <AlertTriangle size={18} />;
     default:
       return <Cloud size={18} />;
   }
@@ -132,9 +134,16 @@ function getEntityBadgeColor(entity: string) {
       return "bg-amber-50 text-amber-700 border-amber-200";
     case "udhaar":
       return "bg-rose-50 text-rose-700 border-rose-200";
+    case "invoice_issue":
+      return "bg-orange-50 text-orange-700 border-orange-200";
     default:
       return "bg-slate-50 text-slate-700 border-slate-200";
   }
+}
+
+function operationLabel(item: PendingSyncItem) {
+  if (item.entity === "invoice_issue") return "Report Issue";
+  return `${item.action} ${item.entity}`;
 }
 
 function itemDescription(item: PendingSyncItem, currency: string) {
@@ -160,6 +169,10 @@ function itemDescription(item: PendingSyncItem, currency: string) {
   if (item.entity === "udhaar") {
     const payload = item.payload as UdhaarOfflinePayload;
     return `Udhaar ${payload.entryType || "CHARGE"} ${formatCurrency(Number(payload.amount || 0), currency)}`;
+  }
+  if (item.entity === "invoice_issue") {
+    const payload = item.payload as { invoiceNumber?: string | null; issueType?: string };
+    return `Issue on ${payload.invoiceNumber ? `Invoice ${payload.invoiceNumber}` : "invoice"} · ${payload.issueType ?? "other"}`;
   }
   return `Offline mutation (${item.action})`;
 }
@@ -647,7 +660,7 @@ export default function SyncStatusPage() {
                           </span>
                           <div>
                             <span className="font-bold text-slate-900 capitalize">
-                              {item.action} {item.entity}
+                              {operationLabel(item)}
                             </span>
                             <span className="block text-[10px] text-slate-400 font-mono">
                               Key: {item.idempotencyKey.slice(0, 8)}…
@@ -723,7 +736,7 @@ export default function SyncStatusPage() {
                 </span>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 capitalize">
-                    {inspectItem.action} {inspectItem.entity} Payload
+                    {operationLabel(inspectItem)} Payload
                   </h3>
                   <p className="text-[11px] text-slate-400">Idempotency: {inspectItem.idempotencyKey}</p>
                 </div>

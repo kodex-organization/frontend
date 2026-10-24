@@ -48,6 +48,10 @@ function formatRate(table: TableOption) {
   }
 }
 
+function hasPerGameRate(table?: TableOption) {
+  return Number(table?.defaultPerGameRate ?? table?.perGameRate) > 0;
+}
+
 function getTableDisplayName(table: TableOption) {
   const identifier = table.tableNumber || (table as any).name || "";
   if (!identifier) return "Table";
@@ -281,7 +285,7 @@ export function StartSessionModal({
             onChange={(event) => {
               const nextTableId = event.target.value;
               setTableId(nextTableId);
-              if (!tables.find((table) => table.id === nextTableId)?.perGameRate) {
+              if (!hasPerGameRate(tables.find((table) => table.id === nextTableId))) {
                 setBillingType("hourly");
               }
             }}
@@ -394,7 +398,7 @@ export function StartSessionModal({
             <option value="hourly">Hourly</option>
             <option
               value="per_game"
-              disabled={!tables.find((table) => table.id === tableId)?.perGameRate}
+              disabled={!hasPerGameRate(tables.find((table) => table.id === tableId))}
             >
               Per game
             </option>

@@ -16,6 +16,8 @@ import { getCachedBranchCurrency } from "@/features/tenancy/branch-currency-cach
 import type { ActiveSession, Customer, TableOption } from "./types";
 import { addCachedTable, readCachedTables, saveCachedTables } from "./offline-tables-cache";
 import { getServerNowMs } from "./session-timing";
+import { seedInvoice } from "@/features/invoice/utils/seededInvoice";
+import type { Invoice } from "@/features/invoice/types/invoice";
 
 const request = <T>(path: string, options?: RequestInit) =>
   apiFetch<T>(path, options);
@@ -367,6 +369,7 @@ export const sessionApi = {
         id: body.tableId,
         tableNumber: matchedTable?.tableNumber ?? "Offline Table",
         defaultHourlyRate: matchedTable?.defaultHourlyRate ?? "700.00",
+        defaultPerGameRate: matchedTable?.defaultPerGameRate ?? matchedTable?.perGameRate ?? null,
         currency: branchCurrency,
       },
       branch: {
@@ -384,6 +387,9 @@ export const sessionApi = {
       startedAt,
       status: "active" as const,
       appliedHourlyRate,
+      // Server needs this to invoice a per-game session synced from offline.
+      appliedPerGameRate:
+        billingType === "per_game" && appliedPerGameRate != null ? String(appliedPerGameRate) : null,
       tableId: body.tableId,
       customerId: sanitizedCustomerId,
     };
@@ -522,7 +528,13 @@ export const sessionApi = {
         const rawDurationHours = Math.max(0.01, (now.getTime() - startedAt.getTime() - pausedMs) / (1000 * 60 * 60));
         const durationHours = Number(rawDurationHours.toFixed(2));
         const hourlyRate = Number(sess.appliedHourlyRate) || Number(sess.table?.defaultHourlyRate) || 700;
-        const subtotal = Number((durationHours * hourlyRate).toFixed(2));
+        const isPerGame =
+          sess.billingType === "per_game" &&
+          Number(sess.appliedPerGameRate) > 0 &&
+          Number(sess.gameCount) > 0;
+        const itemQty = isPerGame ? Number(sess.gameCount) : durationHours;
+        const itemRate = isPerGame ? Number(sess.appliedPerGameRate) : hourlyRate;
+        const subtotal = Number((itemQty * itemRate).toFixed(2));
         const invoiceNumber = `INV-${now.getTime().toString().slice(-6)}`;
 
         let canteenSubtotal = 0;
@@ -609,8 +621,8 @@ export const sessionApi = {
               sourceSessionId: id,
               sourceOrderItemId: null,
               itemName: `Table ${sess.table?.tableNumber || ""} Time`,
-              quantity: durationHours,
-              unitPrice: hourlyRate,
+              quantity: itemQty,
+              unitPrice: itemRate,
               lineTotal: subtotal,
             },
             ...canteenInvoiceItems,
@@ -692,9 +704,11 @@ export const sessionApi = {
     }
 
     try {
-      const response = await request<{ ok?: boolean }>(`/sessions/${id}/${action}`, {
+      const response = await request<{ ok?: boolean; invoice?: Invoice }>(`/sessions/${id}/${action}`, {
         method: "POST",
       });
+      // Hand the fresh invoice to the billing page so it opens without a second fetch.
+      if (action === "end" && response?.invoice) seedInvoice(response.invoice);
       await updateOfflineDb();
       return response;
     } catch {

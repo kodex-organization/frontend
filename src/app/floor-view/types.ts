@@ -12,6 +12,9 @@ export interface FloorViewSession {
   startedAt: string | null;
   expectedEndTime: string | null;
   appliedHourlyRate: number | null;
+  billingType?: "hourly" | "per_game";
+  gameCount?: number | null;
+  appliedPerGameRate?: number | null;
   durationSeconds: number;
   pauseDurationSeconds: number;
   billableDurationSeconds: number;

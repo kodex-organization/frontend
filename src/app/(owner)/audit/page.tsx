@@ -20,6 +20,7 @@ import {
 
 import { toast } from "@/lib/toast";
 import { tokenStorage } from "@/lib/auth/session";
+import { useAuth } from "@/lib/auth/auth-context";
 import {
   cacheScopedJson,
   isNetworkFailure,
@@ -50,6 +51,13 @@ function filterSavedLogs(
 }
 
 export default function AuditPage() {
+  const { user } = useAuth();
+  const userRoles = (user?.roles ?? []).map((role: string) => String(role).toUpperCase());
+  const isOwnerRole = userRoles.includes("OWNER");
+  // Owner resolves everything; manager resolves all except issues a manager reported.
+  const canResolveAlert = (alert: AnomalyAlertItem) =>
+    isOwnerRole ||
+    (userRoles.includes("MANAGER") && alert.anomalyType !== "MANAGER_REPORTED_ISSUE");
   const [kpis, setKpis] = useState<AuditKPIs | null>(null);
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [alerts, setAlerts] = useState<AnomalyAlertItem[]>([]);
@@ -647,7 +655,13 @@ export default function AuditPage() {
                   )}
                 </div>
 
-                {!alert.isResolved && (
+                {!alert.isResolved && !canResolveAlert(alert) && (
+                  <span className="text-[11px] font-medium text-slate-400 shrink-0">
+                    {alert.anomalyType === "MANAGER_REPORTED_ISSUE" ? "Owner review only" : "View only"}
+                  </span>
+                )}
+
+                {!alert.isResolved && canResolveAlert(alert) && (
                   <button
                     onClick={() => handleOpenResolveModal(alert)}
                     disabled={offlineMode}
