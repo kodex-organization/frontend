@@ -20,9 +20,7 @@ import InvoicePayments from "./InvoicePayments";
 import RecordPaymentModal from "./RecordPaymentModal";
 import StatusBadge from "./StatusBadge";
 import VoidInvoiceModal from "./VoidInvoiceModal";
-import ReportIssueModal, {
-  flushOfflineInvoiceIssueReports,
-} from "./ReportIssueModal";
+import ReportIssueModal from "./ReportIssueModal";
 import SplitPaymentPanel from "@/features/payments/components/SplitPaymentPanel";
 import { customerFormUrl } from "@/features/customers/customer-redirect";
 
@@ -62,13 +60,6 @@ export default function InvoiceDetails({
   useEffect(() => {
     const customerId = new URLSearchParams(window.location.search).get("customerId");
     if (customerId) setLinkedCustomerId(customerId);
-  }, []);
-
-  useEffect(() => {
-    void flushOfflineInvoiceIssueReports();
-    const handleOnline = () => void flushOfflineInvoiceIssueReports();
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
   }, []);
 
   if (loading) {
@@ -446,7 +437,11 @@ export default function InvoiceDetails({
           onClose={() => setShowReportModal(false)}
           onSuccess={() => {
             setShowReportModal(false);
-            toast.success("Issue reported to the owner.");
+            toast.success(
+              isOnline
+                ? "Issue reported to the owner."
+                : "Saved offline. It will be sent to the owner when the connection returns.",
+            );
           }}
         />
       )}

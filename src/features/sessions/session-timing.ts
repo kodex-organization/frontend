@@ -30,6 +30,9 @@ export interface SessionTimingInput {
   pauses?: Array<{ pausedAt?: string | Date | null; resumedAt?: string | Date | null }> | null;
   pausedAt?: string | Date | null;
   appliedHourlyRate?: number | string | null;
+  billingType?: string | null;
+  gameCount?: number | string | null;
+  appliedPerGameRate?: number | string | null;
   isPaused?: boolean;
   billingState?: string | null;
 }
@@ -139,7 +142,12 @@ export function computeSessionTiming(
   const totalSeconds = billableSeconds + pauseSeconds;
 
   const rate = Number(session.appliedHourlyRate) || 0;
-  const charge = Number(((rate * billableSeconds) / 3600).toFixed(2));
+  const perGameRate = Number(session.appliedPerGameRate) || 0;
+  const gameCount = Number(session.gameCount) || 0;
+  const charge =
+    session.billingType === "per_game" && perGameRate > 0 && gameCount > 0
+      ? Number((perGameRate * gameCount).toFixed(2))
+      : Number(((rate * billableSeconds) / 3600).toFixed(2));
 
   const hours = Math.floor(billableSeconds / 3600);
   const minutes = Math.floor((billableSeconds % 3600) / 60);
