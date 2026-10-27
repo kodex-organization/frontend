@@ -21,8 +21,11 @@ import { sessionApi } from "@/features/sessions/session-api";
 import { readCachedTables } from "@/features/sessions/offline-tables-cache";
 import { getActiveOfflineBranchId } from "@/lib/sync/offline-db";
 import type { ActiveSession, TableOption } from "@/features/sessions/types";
-import { getSyncQueue } from "@/lib/offline-sync";
-import { getServerNowMs } from "@/features/sessions/session-timing";
+import { getSyncQueue, type QueueItem } from "@/lib/offline-sync";
+import { computeSessionTiming, getServerNowMs } from "@/features/sessions/session-timing";
+import { queueNotificationRead } from "@/features/notifications/offline";
+import { markCachedNotificationsRead, readCachedNotifications } from "@/features/notifications/offline-cache";
+import { isNotificationVisible } from "@/features/notifications/types";
 
 const POLL_INTERVAL_MS = 8_000;
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -35,6 +38,43 @@ function requestErrorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : "The floor view could not be refreshed.";
+}
+
+// Replays queued PAUSE/RESUME on server data so a paused table stays frozen until sync completes.
+function applyPendingPauseActions(table: FloorViewTable, actions: QueueItem[]): FloorViewTable {
+  const session = table.session;
+  if (!session) return table;
+  const mine = actions
+    .filter((action) => action.entityId === session.sessionId)
+    .sort((a, b) => String(a.originTimestamp).localeCompare(String(b.originTimestamp)));
+  if (mine.length === 0) return table;
+
+  const pauses = Array.isArray(session.pauses) ? session.pauses.map((pause) => ({ ...pause })) : [];
+  let paused = session.isPaused;
+  for (const action of mine) {
+    if (action.action === "PAUSE" && !paused) {
+      pauses.push({ pausedAt: action.originTimestamp, resumedAt: null });
+      paused = true;
+    } else if (action.action === "RESUME" && paused) {
+      const openIndex = pauses.map((pause) => pause.resumedAt ?? null).lastIndexOf(null);
+      if (openIndex >= 0) pauses[openIndex] = { ...pauses[openIndex], resumedAt: action.originTimestamp };
+      paused = false;
+    }
+  }
+  if (paused === session.isPaused) return table;
+
+  const openPause = [...pauses].reverse().find((pause) => !pause.resumedAt && pause.pausedAt);
+  return {
+    ...table,
+    status: paused ? ("paused" as const) : ("occupied" as const),
+    session: {
+      ...session,
+      isPaused: paused,
+      billingState: (paused ? "paused" : "accruing") as FloorViewSession["billingState"],
+      pausedAt: paused ? openPause?.pausedAt ?? null : null,
+      pauses,
+    },
+  };
 }
 
 export function useFloorView(selectedBranchId?: string) {
@@ -237,10 +277,26 @@ export function useFloorView(selectedBranchId?: string) {
             const merged: FloorViewTable[] = cached.map((table) => {
               const active = sessionByTableId.get(table.tableId);
               if (active) {
-                const now = Date.now();
-                const startedAtMs = active.startedAt ? new Date(active.startedAt).getTime() : now;
-                const durationSeconds = Math.max(0, Math.floor((now - startedAtMs) / 1000));
                 const rate = Number(active.appliedHourlyRate) || Number(active.table?.defaultHourlyRate) || 0;
+                const isPausedSession = active.status === "paused";
+                // Keep the pause history; without it a paused table kept counting time and charges.
+                const pauses = Array.isArray(active.pauses)
+                  ? active.pauses.map((pause) => ({
+                      pausedAt: pause.pausedAt ?? null,
+                      resumedAt: pause.resumedAt ?? null,
+                    }))
+                  : [];
+                const timing = computeSessionTiming({
+                  startedAt: active.startedAt,
+                  status: active.status,
+                  pauses,
+                  pausedAt: active.pausedAt ?? null,
+                  appliedHourlyRate: rate,
+                  billingType: active.billingType,
+                  gameCount: active.gameCount,
+                  appliedPerGameRate: active.appliedPerGameRate,
+                  isPaused: isPausedSession,
+                });
                 const sessionData: FloorViewSession = {
                   sessionId: active.id,
                   customerName: active.customer?.fullName || "Walk-in",
@@ -250,21 +306,24 @@ export function useFloorView(selectedBranchId?: string) {
                   billingType: active.billingType,
                   gameCount: active.gameCount ?? null,
                   appliedPerGameRate: Number(active.appliedPerGameRate) || null,
-                  durationSeconds,
-                  pauseDurationSeconds: 0,
-                  billableDurationSeconds: durationSeconds,
-                  estimatedCharge: rate > 0 ? (rate * durationSeconds) / 3600 : null,
-                  billingState: (active.status === "paused" ? "paused" : "accruing") as FloorViewSession["billingState"],
-                  isPaused: active.status === "paused",
+                  durationSeconds: timing.totalSeconds,
+                  pauseDurationSeconds: timing.pauseSeconds,
+                  billableDurationSeconds: timing.billableSeconds,
+                  estimatedCharge:
+                    rate > 0 || active.billingType === "per_game" ? timing.charge : null,
+                  billingState: (isPausedSession ? "paused" : "accruing") as FloorViewSession["billingState"],
+                  isPaused: isPausedSession,
                   isOvertime: false,
+                  pausedAt: isPausedSession ? active.pausedAt ?? null : null,
+                  pauses,
                 };
                 return {
                   ...table,
-                  status: "occupied" as const,
+                  status: isPausedSession ? ("paused" as const) : ("occupied" as const),
                   session: sessionData,
                 };
               }
-              if (table.status === "occupied" && !active) {
+              if ((table.status === "occupied" || table.status === "paused") && !active) {
                 return {
                   ...table,
                   status: "available" as const,
@@ -277,6 +336,16 @@ export function useFloorView(selectedBranchId?: string) {
             if (mountedRef.current) {
               setTables(merged);
               setLastUpdated(new Date());
+            }
+          } catch {}
+
+          // Offline: show the last saved notifications instead of an empty bell.
+          try {
+            const cachedNotifications = await readCachedNotifications();
+            if (mountedRef.current && cachedNotifications) {
+              setNotifications(
+                cachedNotifications.filter((item) => isNotificationVisible(item)) as Notification[],
+              );
             }
           } catch {}
         };
@@ -312,7 +381,14 @@ export function useFloorView(selectedBranchId?: string) {
           ? new Set(getSyncQueue().filter((q) => q.entityType === "Session" && q.action === "END").map((q) => q.entityId))
           : new Set<string>();
 
-        const resolvedTables = nextTables.map((table) => {
+        const pendingPauseActions = typeof window !== "undefined"
+          ? getSyncQueue().filter(
+              (q) => q.entityType === "Session" && (q.action === "PAUSE" || q.action === "RESUME"),
+            )
+          : [];
+
+        const resolvedTables = nextTables.map((serverTable) => {
+          const table = applyPendingPauseActions(serverTable, pendingPauseActions);
           if (table.session && pendingEnds.has(table.session.sessionId)) {
             return { ...table, status: "available" as const, session: null };
           }
@@ -523,6 +599,22 @@ export function useFloorView(selectedBranchId?: string) {
       notificationMutationsRef.current.add(id);
 
       try {
+        if (!isOnline) {
+          // Offline: mark locally now and let the notification queue sync it later.
+          await queueNotificationRead(id);
+          void markCachedNotificationsRead(id);
+          if (mountedRef.current) {
+            const readAt = new Date().toISOString();
+            setNotifications((current) =>
+              current.map((notification) =>
+                notification.id === id
+                  ? { ...notification, status: "read" as const, readAt }
+                  : notification,
+              ),
+            );
+          }
+          return;
+        }
         const result = await markNotificationAsRead(id);
         if (!mountedRef.current) return;
         setNotifications((current) =>
@@ -548,7 +640,7 @@ export function useFloorView(selectedBranchId?: string) {
         notificationMutationsRef.current.delete(id);
       }
     },
-    [authScope],
+    [authScope, isOnline],
   );
 
   const markAllAsRead = useCallback(async (): Promise<void> => {

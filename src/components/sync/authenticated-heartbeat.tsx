@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { tokenStorage } from "@/lib/auth/session";
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
 import { sendHeartbeat } from "@/services/sync.service";
-import { initSyncManager } from "@/lib/sync/sync-manager";
+import { initSyncManager, performAutoSync } from "@/lib/sync/sync-manager";
 
 export const AUTHENTICATED_HEARTBEAT_EVENT =
   "cuecloud:authenticated-heartbeat";
@@ -18,11 +18,18 @@ export function AuthenticatedHeartbeat() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const isOnline = useOnlineStatus();
 
+  // Keep the sync manager alive while signed in so it can react to the browser's own online event.
   useEffect(() => {
-    if (!isAuthenticated || !isOnline) return;
+    if (!isAuthenticated) return;
     const cleanupSync = initSyncManager();
     return () => cleanupSync();
-  }, [isAuthenticated, isOnline, user]);
+  }, [isAuthenticated, user]);
+
+  // The moment the server is reachable again, push whatever was saved offline.
+  useEffect(() => {
+    if (!isAuthenticated || !isOnline) return;
+    void performAutoSync();
+  }, [isAuthenticated, isOnline]);
 
   useEffect(() => {
     if (

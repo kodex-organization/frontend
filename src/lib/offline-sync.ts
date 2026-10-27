@@ -88,6 +88,14 @@ export async function triggerSyncPush(): Promise<{ pushedCount: number }> {
   if (tokenStorage.getSessionVersion() !== version || !tokenStorage.getAccessContext()) {
     return { pushedCount: 0 };
   }
-  clearSyncQueue();
+  // Keep anything queued while the request was in flight; drop only what was sent.
+  const sentKeys = new Set(changes.map((c) => c.idempotencyKey));
+  const remaining = getSyncQueue().filter((c) => !sentKeys.has(c.idempotencyKey));
+  if (remaining.length === 0) {
+    clearSyncQueue();
+  } else {
+    saveSyncQueue(remaining);
+    if (canUseStorage()) window.dispatchEvent(new Event("cuecloud:offline-queue-changed"));
+  }
   return { pushedCount: response.processed ?? response.acceptedChanges?.length ?? changes.length };
 }

@@ -246,7 +246,7 @@ export default function InvoiceDetails({
             <button
               type="button"
               onClick={() => setShowVoidModal(true)}
-              disabled={!isOnline}
+              title={!isOnline ? "Void will be saved offline and synced when the connection returns" : undefined}
               className="rounded-xl border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50"
             >
               Void invoice
@@ -266,6 +266,27 @@ export default function InvoiceDetails({
           </div>
         </article>
       </section>
+
+      {/* --- VOID REASON (shown for voided invoices) --- */}
+      {isVoid && (
+        <section className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-red-800">
+            Void reason
+          </h2>
+          <p className="mt-2 break-words text-sm font-medium text-red-900">
+            {invoice.voidReason?.trim() || "No reason was recorded for this void."}
+          </p>
+          {invoice.voidedAt && (
+            <p className="mt-1 text-xs text-red-700">
+              Voided{" "}
+              {new Intl.DateTimeFormat(undefined, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }).format(new Date(invoice.voidedAt))}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* --- DUAL TAX COMPARISON CARD FOR OPEN INVOICES --- */}
       {!isFinalized && (
@@ -450,10 +471,14 @@ export default function InvoiceDetails({
         <VoidInvoiceModal
           invoice={invoice}
           onClose={() => setShowVoidModal(false)}
-          onSuccess={(updated) => {
+          onSuccess={(updated, meta) => {
             setInvoice(updated);
             setShowVoidModal(false);
-            toast.success("Invoice voided and audit record created.");
+            toast.success(
+              meta?.offline
+                ? "Invoice voided offline. It will sync when the connection returns."
+                : "Invoice voided and audit record created.",
+            );
           }}
         />
       )}
