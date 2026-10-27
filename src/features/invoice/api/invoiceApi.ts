@@ -71,7 +71,7 @@ import {
 } from "@/lib/sync/offline-db";
 import { tokenStorage } from "@/lib/auth/session";
 import { isAppOffline } from "@/lib/connectivity/online-status";
-import { queueInvoiceChange } from "@/lib/sync/offline-db";
+import { queueInvoiceChange, type InvoiceOfflinePayload } from "@/lib/sync/offline-db";
 
 export interface SettleInvoicePayload {
   tenders: Array<{
@@ -252,11 +252,35 @@ export interface VoidInvoicePayload {
   managerPin?: string;
 }
 
-export async function voidInvoice(invoiceId: string, payload: VoidInvoicePayload) {
+// Finds the invoice by id, then by session id; falls back to the invoice already on screen.
+async function findInvoiceForOfflineVoid(invoiceId: string, onScreenInvoice?: unknown) {
+  const direct = await findCachedInvoice(invoiceId);
+  if (direct?.data) return direct;
+  const all = await offlineDB.cachedInvoices.toArray();
+  const match = all.find(
+    (row) => row.id === invoiceId || row.data?.id === invoiceId || row.data?.sessionId === invoiceId,
+  );
+  if (match?.data) return match;
+  const fallback = onScreenInvoice as (InvoiceDetails & { branchId?: string }) | undefined;
+  if (fallback?.id) {
+    return {
+      id: fallback.id,
+      branchId: fallback.branchId || fallback.branch?.id || getActiveOfflineBranchId() || "default",
+      data: fallback,
+      cachedAt: new Date().toISOString(),
+    };
+  }
+  return undefined;
+}
+
+export async function voidInvoice(invoiceId: string, payload: VoidInvoicePayload, onScreenInvoice?: unknown) {
   if (isAppOffline()) {
-    const cached = await findCachedInvoice(invoiceId);
+    const cached = await findInvoiceForOfflineVoid(invoiceId, onScreenInvoice);
     if (!cached?.data) throw new Error("Invoice details unavailable offline.");
     const invoice = cached.data as InvoiceDetails & { branchId?: string };
+    if (["void", "voided"].includes(String(invoice.status ?? "").toLowerCase())) {
+      throw new Error("Invoice is already voided.");
+    }
     const now = new Date().toISOString();
     const updatedInvoice = {
       ...invoice,
@@ -269,8 +293,8 @@ export async function voidInvoice(invoiceId: string, payload: VoidInvoicePayload
       updatedAt: now,
     };
     await offlineDB.cachedInvoices.put({ ...cached, data: updatedInvoice });
-    await queueInvoiceChange({
-      id: invoiceId,
+    const voidChange: InvoiceOfflinePayload & { voidReason: string } = {
+      id: cached.id || invoice.id || invoiceId,
       branchId: cached.branchId || invoice.branch?.id || getActiveOfflineBranchId() || "default",
       invoiceNumber: invoice.invoiceNumber,
       sessionId: invoice.sessionId || null,
@@ -287,7 +311,9 @@ export async function voidInvoice(invoiceId: string, payload: VoidInvoicePayload
       voidedInvoiceId: null,
       createdById: tokenStorage.getAccessContext()?.userId ?? null,
       createdAt: invoice.createdAt,
-    }, "update");
+      voidReason: payload.reason,
+    };
+    await queueInvoiceChange(voidChange, "update");
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("cuecloud:invoice-voided", { detail: { invoiceId, reason: payload.reason } }));
       window.dispatchEvent(new Event("cuecloud:offline-queue-changed"));

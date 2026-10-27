@@ -39,6 +39,8 @@ import {
 } from "@/features/notifications/types";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { cacheScopedJson, isNetworkFailure, readScopedJson } from "@/lib/sync/offline-reference-cache";
 
 const PAGE_SIZE = 10;
 const defaultChannels = ["push", "sms"];
@@ -295,27 +297,67 @@ function DeliveryLogSection() {
   const [error, setError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const online = useOnlineStatus();
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const cacheName = user ? `notifications:delivery-logs:${user.id}:${user.branchId}` : null;
+
+  // Keeps the latest delivery logs on this device so they can be filtered offline.
+  useEffect(() => {
+    if (!online || !cacheName) return;
+    void getDeliveryLogs({ page: 1, pageSize: 100 })
+      .then((result) => cacheScopedJson(cacheName, result.items))
+      .catch(() => {});
+  }, [online, cacheName, reloadNonce]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    void getDeliveryLogs({ page, pageSize: PAGE_SIZE, channel, status, category })
-      .then((result) => {
+
+    // Offline: apply the same filters and paging to the saved copy.
+    const loadSaved = async (): Promise<boolean> => {
+      if (!cacheName) return false;
+      const saved = await readScopedJson<DeliveryLog[]>(cacheName);
+      if (!saved || !active) return false;
+      const rows = saved.data.filter(
+        (row) =>
+          (!channel || row.channel === channel) &&
+          (!status || row.status === status) &&
+          (!category || row.category === category),
+      );
+      setItems(rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE));
+      setTotal(rows.length);
+      setSavedAt(saved.savedAt);
+      setError(null);
+      return true;
+    };
+
+    const load = async () => {
+      try {
+        if (!online) {
+          if (!(await loadSaved()) && active) {
+            setError("You are offline and no saved delivery logs are available yet.");
+          }
+          return;
+        }
+        const result = await getDeliveryLogs({ page, pageSize: PAGE_SIZE, channel, status, category });
         if (!active) return;
         setItems(result.items);
         setTotal(result.total);
+        setSavedAt(null);
         setError(null);
-      })
-      .catch((err) => {
-        if (active) setError(err instanceof ApiError ? err.message : "Could not load delivery logs.");
-      })
-      .finally(() => {
+      } catch (err) {
+        if (!active) return;
+        if (isNetworkFailure(err) && (await loadSaved())) return;
+        setError(err instanceof ApiError ? err.message : "Could not load delivery logs.");
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    };
+    void load();
     return () => {
       active = false;
     };
-  }, [page, channel, status, category, reloadNonce]);
+  }, [page, channel, status, category, reloadNonce, online, cacheName]);
 
   function filterChanged(setter: (value: string) => void, value: string) {
     setter(value);
@@ -331,6 +373,10 @@ function DeliveryLogSection() {
 
   async function retry(item: DeliveryLog) {
     if (!isOwner || retryingId) return;
+    if (!online) {
+      setError("Reconnect to retry a delivery.");
+      return;
+    }
     setRetryingId(item.id);
     setError(null);
     try {
@@ -400,6 +446,11 @@ function DeliveryLogSection() {
         </div>
       </div>
       <div className="p-5">
+        {savedAt && (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Offline: showing delivery logs saved {formatRelativeTime(savedAt)}. Filters work on the saved copy.
+          </p>
+        )}
         {loading ? (
           <Loading message="Loading delivery logs…" />
         ) : error && items.length === 0 ? (

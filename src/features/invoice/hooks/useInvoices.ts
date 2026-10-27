@@ -100,11 +100,13 @@ export function useInvoices(filters: InvoiceListFilters = {}) {
       window.addEventListener("cuecloud:invoice-created", handleEvents);
       window.addEventListener("cuecloud:invoice-voided", handleEvents);
       window.addEventListener("cuecloud:payment-recorded", handleEvents);
+      window.addEventListener("cuecloud:sync-pushed", handleEvents);
       return () => {
         window.removeEventListener("cuecloud:offline-queue-changed", handleEvents);
         window.removeEventListener("cuecloud:invoice-created", handleEvents);
         window.removeEventListener("cuecloud:invoice-voided", handleEvents);
         window.removeEventListener("cuecloud:payment-recorded", handleEvents);
+        window.removeEventListener("cuecloud:sync-pushed", handleEvents);
       };
     }
   }, [fetchInvoices]);

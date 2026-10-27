@@ -11,20 +11,28 @@ import {
   getServerTime,
 } from "@/services/sync.service";
 import { tokenStorage } from "@/lib/auth/session";
-import { getConnectionStatus } from '@/lib/connectivity/online-status';
+import { checkServerConnection, getConnectionStatus } from '@/lib/connectivity/online-status';
 import { triggerSyncPush } from "@/lib/offline-sync";
 
 export const SYNC_STATUS_EVENT = "cuecloud:sync-status-changed";
+export const SYNC_PUSHED_EVENT = "cuecloud:sync-pushed";
+
+const SYNC_STALL_MS = 60_000;
+const RECONNECT_RETRY_DELAYS_MS = [3_000, 8_000, 20_000];
 
 let syncInterval: NodeJS.Timeout | null = null;
 let isSyncing = false;
+let syncStartedAt = 0;
+let syncRunId = 0;
+let lastPullServerTime: string | undefined;
 
 export async function performAutoSync(): Promise<{
   pushed: number;
   pulled: number;
   errors: number;
 }> {
-  if (isSyncing) return { pushed: 0, pulled: 0, errors: 0 };
+  // A hung request must not block auto-sync forever.
+  if (isSyncing && Date.now() - syncStartedAt < SYNC_STALL_MS) return { pushed: 0, pulled: 0, errors: 0 };
   if (typeof window === "undefined" || !navigator.onLine || getConnectionStatus() === 'offline') {
     return { pushed: 0, pulled: 0, errors: 0 };
   }
@@ -45,6 +53,8 @@ export async function performAutoSync(): Promise<{
   }
 
   isSyncing = true;
+  syncStartedAt = Date.now();
+  const runId = ++syncRunId;
   let pushedCount = 0;
   let pulledCount = 0;
   let errorCount = 0;
@@ -70,9 +80,14 @@ export async function performAutoSync(): Promise<{
     if (!sessionIsCurrent()) return result();
     const pendingItems = await getPendingSyncItems();
     if (!sessionIsCurrent()) return result();
-    const itemsToPush = pendingItems.filter(
-      (item) => item.status === "pending" || item.status === "failed",
-    );
+    // Oldest first so e.g. an invoice create always reaches the server before its void.
+    const itemsToPush = pendingItems
+      .filter((item) => item.status === "pending" || item.status === "failed")
+      .sort(
+        (a, b) =>
+          String(a.originTimestamp).localeCompare(String(b.originTimestamp)) ||
+          (a.id ?? 0) - (b.id ?? 0),
+      );
 
     if (itemsToPush.length > 0) {
       try {
@@ -108,7 +123,7 @@ export async function performAutoSync(): Promise<{
 
         await markItemsAsSynced(acceptedIds);
         if (!sessionIsCurrent()) return result();
-        pushedCount = acceptedIds.length;
+        pushedCount += acceptedIds.length;
 
         for (const item of itemsToPush.filter(
           (entry) => !acceptedKeys.has(entry.idempotencyKey),
@@ -132,9 +147,10 @@ export async function performAutoSync(): Promise<{
     // 3. Pull Recent Changes
     if (!sessionIsCurrent()) return result();
     try {
-      const pullResponse = await pullSyncChanges(deviceId);
+      const pullResponse = await pullSyncChanges(deviceId, lastPullServerTime);
       if (!sessionIsCurrent()) return result();
       pulledCount = pullResponse.changeCount;
+      lastPullServerTime = pullResponse.serverTime;
     } catch {
       // Pull best effort
     }
@@ -147,9 +163,11 @@ export async function performAutoSync(): Promise<{
           detail: { pushedCount, pulledCount, errorCount, timestamp: Date.now() },
         }),
       );
+      // Lets lists (billing etc.) reload server data once local changes have been sent.
+      if (pushedCount > 0) window.dispatchEvent(new Event(SYNC_PUSHED_EVENT));
     }
   } finally {
-    isSyncing = false;
+    if (runId === syncRunId) isSyncing = false;
   }
 
   return { pushed: pushedCount, pulled: pulledCount, errors: errorCount };
@@ -158,11 +176,48 @@ export async function performAutoSync(): Promise<{
 export function initSyncManager() {
   if (typeof window === "undefined") return () => {};
 
+  let retryTimers: ReturnType<typeof setTimeout>[] = [];
+  let queueDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  const clearRetries = () => {
+    retryTimers.forEach(clearTimeout);
+    retryTimers = [];
+  };
+
+  // Right after reconnecting the network is often not ready yet, so retry a few times.
+  const syncWithRetries = async () => {
+    clearRetries();
+    try {
+      await checkServerConnection();
+    } catch {
+      // The sync below re-checks the connection itself.
+    }
+    const outcome = await performAutoSync();
+    if (outcome.errors === 0 && getConnectionStatus() === "online") return;
+    RECONNECT_RETRY_DELAYS_MS.forEach((delay) => {
+      retryTimers.push(
+        setTimeout(() => {
+          if (navigator.onLine) void performAutoSync();
+        }, delay),
+      );
+    });
+  };
+
   const handleOnline = () => {
-    void performAutoSync();
+    void syncWithRetries();
+  };
+
+  // Changes queued while the app thinks it is online should not wait for the next interval.
+  const handleQueueChanged = () => {
+    if (!navigator.onLine) return;
+    if (queueDebounce) clearTimeout(queueDebounce);
+    queueDebounce = setTimeout(() => {
+      void performAutoSync();
+    }, 1_500);
   };
 
   window.addEventListener("online", handleOnline);
+  window.addEventListener("cuecloud:offline-queue-changed", handleQueueChanged);
 
   if (syncInterval) clearInterval(syncInterval);
   const interval = setInterval(() => {
@@ -174,11 +229,14 @@ export function initSyncManager() {
 
   // Trigger immediate sync on init if online
   if (navigator.onLine) {
-    void performAutoSync();
+    void syncWithRetries();
   }
 
   return () => {
     window.removeEventListener("online", handleOnline);
+    window.removeEventListener("cuecloud:offline-queue-changed", handleQueueChanged);
+    clearRetries();
+    if (queueDebounce) clearTimeout(queueDebounce);
     clearInterval(interval);
     if (syncInterval === interval) syncInterval = null;
   };

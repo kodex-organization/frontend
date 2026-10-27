@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { useOnlineStatus } from "@/lib/connectivity/online-status";
+import { isNetworkFailure } from "@/lib/sync/offline-reference-cache";
 import { invoiceService } from "../services/invoiceService";
 import { voidInvoice as voidInvoiceOfflineAware } from "../api/invoiceApi";
 import type { Invoice } from "../types/invoice";
@@ -14,7 +15,7 @@ export default function VoidInvoiceModal({
 }: {
   invoice: Invoice;
   onClose: () => void;
-  onSuccess: (invoice: Invoice) => void;
+  onSuccess: (invoice: Invoice, meta?: { offline: boolean }) => void;
 }) {
   const isOnline = useOnlineStatus();
   const [reason, setReason] = useState("");
@@ -31,10 +32,24 @@ export default function VoidInvoiceModal({
     setError("");
 
     try {
-      const updated = !isOnline
-        ? await voidInvoiceOfflineAware(invoice.id, { reason: reason.trim() })
-        : { data: await invoiceService.voidInvoice(invoice.id, reason.trim()) };
-      onSuccess(updated.data as Invoice);
+      const voidOffline = () =>
+        voidInvoiceOfflineAware(invoice.id, { reason: reason.trim() }, invoice);
+
+      if (!isOnline) {
+        const updated = await voidOffline();
+        onSuccess(updated.data as unknown as Invoice, { offline: true });
+        return;
+      }
+
+      try {
+        const updated = await invoiceService.voidInvoice(invoice.id, reason.trim());
+        onSuccess(updated, { offline: false });
+      } catch (requestError) {
+        // Connection dropped mid-request: save the void locally instead of failing.
+        if (!isNetworkFailure(requestError)) throw requestError;
+        const updated = await voidOffline();
+        onSuccess(updated.data as unknown as Invoice, { offline: true });
+      }
     } catch (requestError) {
       setError(
         requestError instanceof Error
