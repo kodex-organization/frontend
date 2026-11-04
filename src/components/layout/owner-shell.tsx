@@ -486,25 +486,13 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
               <Menu size={20} />
             </button>
 
-            {/* Quick Access Button */}
+            {/* Quick Access Button: clean, text-only, no background color, no border, no emoji */}
             <Link
               href="/quick-access"
-              className={`flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-xl font-bold text-xs sm:text-sm transition-all duration-150 shadow-xs ${
-                pathname === "/quick-access"
-                  ? "bg-brand-600 text-white shadow-md shadow-brand-500/25 ring-2 ring-brand-500/30"
-                  : "bg-slate-900 text-white hover:bg-brand-600 hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
-              }`}
+              className="inline-flex items-center px-1.5 py-1 font-bold text-sm text-black hover:opacity-75 transition-opacity"
               title={t.quickAccess}
             >
-              <Zap
-                size={15}
-                className={`shrink-0 ${
-                  pathname === "/quick-access"
-                    ? "fill-amber-300 text-amber-300"
-                    : "fill-amber-400 text-amber-400"
-                }`}
-              />
-              <span className="tracking-tight">{t.quickAccess}</span>
+              <span>{t.quickAccess}</span>
             </Link>
 
             <div className="hidden sm:flex items-center gap-2">

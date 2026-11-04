@@ -13,6 +13,8 @@ import {
   type TenantAnnouncement,
 } from "@/features/platform-admin/announcements";
 
+const DISMISSED_STORAGE_KEY = "cuecloud_dismissed_announcements";
+
 export function TenantAnnouncementCenter() {
   const { user } = useAuth();
   const [announcements, setAnnouncements] = useState<TenantAnnouncement[]>([]);
@@ -20,6 +22,15 @@ export function TenantAnnouncementCenter() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [locallyDismissedIds, setLocallyDismissedIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const stored = window.localStorage.getItem(DISMISSED_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const loadAnnouncements = useCallback(async () => {
     if (!user) return;
@@ -43,8 +54,11 @@ export function TenantAnnouncementCenter() {
   }, [loadAnnouncements]);
 
   const visible = useMemo(
-    () => getVisibleTenantAnnouncements(announcements),
-    [announcements],
+    () =>
+      getVisibleTenantAnnouncements(announcements).filter(
+        (a) => !locallyDismissedIds.includes(a.id),
+      ),
+    [announcements, locallyDismissedIds],
   );
   const unreadCount = visible.filter((announcement) => !announcement.readAt).length;
   const banner = visible.find((announcement) => !announcement.readAt) ?? visible[0];
@@ -53,6 +67,13 @@ export function TenantAnnouncementCenter() {
     if (announcement.readAt || pendingId) return;
     setPendingId(announcement.id);
     setError(null);
+    setAnnouncements((current) =>
+      current.map((item) =>
+        item.id === announcement.id
+          ? { ...item, readAt: new Date().toISOString() }
+          : item,
+      ),
+    );
     try {
       const receipt = await markTenantAnnouncementRead(announcement.id);
       setAnnouncements((current) =>
@@ -60,38 +81,36 @@ export function TenantAnnouncementCenter() {
           item.id === announcement.id ? { ...item, readAt: receipt.readAt } : item,
         ),
       );
-    } catch (requestError) {
-      setError(
-        requestError instanceof ApiError
-          ? requestError.message
-          : "Could not mark the announcement as read.",
-      );
+    } catch {
+      // Optimistic update remains
     } finally {
       setPendingId(null);
     }
   };
 
   const dismiss = async (announcement: TenantAnnouncement) => {
-    if (pendingId) return;
-    setPendingId(announcement.id);
-    setError(null);
+    // Optimistically and permanently dismiss locally so it never reappears
+    setLocallyDismissedIds((prev) => {
+      const next = Array.from(new Set([...prev, announcement.id]));
+      try {
+        window.localStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    setAnnouncements((current) =>
+      current.map((item) =>
+        item.id === announcement.id
+          ? { ...item, dismissedAt: new Date().toISOString() }
+          : item,
+      ),
+    );
+
+    // Sync with backend in background
     try {
-      const receipt = await dismissTenantAnnouncement(announcement.id);
-      setAnnouncements((current) =>
-        current.map((item) =>
-          item.id === announcement.id
-            ? { ...item, dismissedAt: receipt.dismissedAt }
-            : item,
-        ),
-      );
-    } catch (requestError) {
-      setError(
-        requestError instanceof ApiError
-          ? requestError.message
-          : "Could not dismiss the announcement.",
-      );
-    } finally {
-      setPendingId(null);
+      await dismissTenantAnnouncement(announcement.id);
+    } catch {
+      // Background call failed, but local dismissal prevents re-appearance
     }
   };
 

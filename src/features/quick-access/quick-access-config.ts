@@ -57,7 +57,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER", "MANAGER", "CASHIER"],
     badge: "Live Status",
     badgeUrdu: "لائیو",
-    accentColor: "emerald",
   },
   {
     id: "sessions",
@@ -71,7 +70,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER", "MANAGER", "CASHIER"],
     badge: "Counter",
     badgeUrdu: "کاؤنٹر",
-    accentColor: "cyan",
   },
   {
     id: "customers",
@@ -83,7 +81,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     iconName: "Users",
     category: "operations",
     allowedRoles: ["OWNER", "MANAGER", "CASHIER"],
-    accentColor: "blue",
   },
 
   // ── POS & Canteen ───────────────────────────────────────────
@@ -99,7 +96,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER", "MANAGER", "CASHIER", "ACCOUNTANT"],
     badge: "POS",
     badgeUrdu: "پی او ایس",
-    accentColor: "indigo",
   },
   {
     id: "canteen",
@@ -113,7 +109,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER", "MANAGER", "CASHIER"],
     badge: "Quick Sale",
     badgeUrdu: "فوری فروخت",
-    accentColor: "amber",
   },
 
   // ── Financials & Khata ──────────────────────────────────────
@@ -129,7 +124,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER", "MANAGER", "ACCOUNTANT", "CASHIER"],
     badge: "Khata",
     badgeUrdu: "کھاتہ",
-    accentColor: "rose",
   },
   {
     id: "reporting",
@@ -143,7 +137,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER", "MANAGER", "ACCOUNTANT"],
     badge: "Reports",
     badgeUrdu: "رپورٹس",
-    accentColor: "indigo",
   },
   {
     id: "audit",
@@ -155,7 +148,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     iconName: "ClipboardList",
     category: "financials",
     allowedRoles: ["OWNER", "MANAGER", "ACCOUNTANT"],
-    accentColor: "slate",
   },
 
   // ── Management & Staff ──────────────────────────────────────
@@ -171,7 +163,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER", "MANAGER"],
     badge: "Management",
     badgeUrdu: "مینجمنٹ",
-    accentColor: "emerald",
   },
   {
     id: "governance",
@@ -183,7 +174,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     iconName: "Scale",
     category: "management",
     allowedRoles: ["OWNER", "MANAGER", "CASHIER"],
-    accentColor: "violet",
   },
   {
     id: "catalog",
@@ -195,7 +185,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     iconName: "Armchair",
     category: "management",
     allowedRoles: ["OWNER", "MANAGER"],
-    accentColor: "amber",
   },
   {
     id: "staff-settings",
@@ -207,7 +196,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     iconName: "Settings",
     category: "management",
     allowedRoles: ["OWNER", "MANAGER"],
-    accentColor: "violet",
   },
   {
     id: "cross-branch-reports",
@@ -221,7 +209,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER"],
     badge: "Owner Only",
     badgeUrdu: "مالک کیلئے",
-    accentColor: "emerald",
   },
 
   // ── System & Security ───────────────────────────────────────
@@ -237,7 +224,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER", "MANAGER", "CASHIER", "ACCOUNTANT"],
     badge: "Sync",
     badgeUrdu: "سنک",
-    accentColor: "emerald",
   },
   {
     id: "branch-controls",
@@ -251,7 +237,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER"],
     badge: "Owner Only",
     badgeUrdu: "مالک کیلئے",
-    accentColor: "cyan",
   },
   {
     id: "peak-hours",
@@ -265,7 +250,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER"],
     badge: "Owner Only",
     badgeUrdu: "مالک کیلئے",
-    accentColor: "amber",
   },
   {
     id: "security-settings",
@@ -279,7 +263,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER"],
     badge: "Owner Only",
     badgeUrdu: "مالک کیلئے",
-    accentColor: "slate",
   },
   {
     id: "data-export",
@@ -293,7 +276,6 @@ export const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
     allowedRoles: ["OWNER"],
     badge: "Owner Only",
     badgeUrdu: "مالک کیلئے",
-    accentColor: "blue",
   },
 ];
 
@@ -360,4 +342,3 @@ export function searchQuickAccessItems(
     );
   });
 }
-
