@@ -31,6 +31,7 @@ import {
   ChevronRight,
   Globe,
   UtensilsCrossed,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { redirectPathForRoles } from "@/lib/auth/session";
@@ -145,6 +146,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       language: "Language",
       logout: "Log out",
       notifications: "Notifications",
+      quickAccess: "Quick Access",
     },
     ur: {
       operations: "آپریشنز",
@@ -175,6 +177,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       language: "زبان",
       logout: "لاگ آؤٹ",
       notifications: "اطلاعات",
+      quickAccess: "فوری رسائی",
     },
   };
 
@@ -185,6 +188,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     {
       title: t.operations,
       items: [
+        { href: "/quick-access", label: t.quickAccess, icon: Zap },
         ...(canOperateFloor
           ? [
               { href: "/floor-view", label: t.floorView, icon: MonitorSmartphone },
@@ -473,7 +477,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
 
         {/* Global Sticky Top Header */}
         <header className="sticky top-0 z-20 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-2 shadow-sm backdrop-blur-md sm:px-6 print:hidden">
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
@@ -481,6 +485,27 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
             >
               <Menu size={20} />
             </button>
+
+            {/* Quick Access Button */}
+            <Link
+              href="/quick-access"
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-xl font-bold text-xs sm:text-sm transition-all duration-150 shadow-xs ${
+                pathname === "/quick-access"
+                  ? "bg-brand-600 text-white shadow-md shadow-brand-500/25 ring-2 ring-brand-500/30"
+                  : "bg-slate-900 text-white hover:bg-brand-600 hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
+              }`}
+              title={t.quickAccess}
+            >
+              <Zap
+                size={15}
+                className={`shrink-0 ${
+                  pathname === "/quick-access"
+                    ? "fill-amber-300 text-amber-300"
+                    : "fill-amber-400 text-amber-400"
+                }`}
+              />
+              <span className="tracking-tight">{t.quickAccess}</span>
+            </Link>
 
             <div className="hidden sm:flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${connectionStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
