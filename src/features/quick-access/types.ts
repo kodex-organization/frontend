@@ -7,16 +7,6 @@ export type QuickAccessCategory =
   | "management"
   | "system";
 
-export type AccentColor =
-  | "emerald"
-  | "indigo"
-  | "amber"
-  | "violet"
-  | "rose"
-  | "cyan"
-  | "blue"
-  | "slate";
-
 export interface QuickAccessItem {
   id: string;
   title: string;
@@ -29,7 +19,6 @@ export interface QuickAccessItem {
   allowedRoles: UserRole[];
   badge?: string;
   badgeUrdu?: string;
-  accentColor: AccentColor;
 }
 
 export interface QuickAccessCategoryMeta {
@@ -39,4 +28,3 @@ export interface QuickAccessCategoryMeta {
   description: string;
   descriptionUrdu: string;
 }
-
