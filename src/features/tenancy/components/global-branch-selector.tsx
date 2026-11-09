@@ -131,7 +131,7 @@ export function GlobalBranchSelector({
   const [showManageAccess, setShowManageAccess] = useState(false);
 
   return (
-    <div className="w-48 min-w-0 max-w-full sm:w-56">
+    <div className="w-32 min-w-0 max-w-full min-[400px]:w-40 sm:w-56">
       {loading && branches.length === 0 ? (
         <span
           role="status"
@@ -164,9 +164,10 @@ export function GlobalBranchSelector({
         <button
           type="button"
           onClick={() => setShowRequestAccess(true)}
-          className="mt-1 block text-left text-[11px] font-medium text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
+          className="mt-1 block max-w-full truncate whitespace-nowrap text-left text-[11px] font-medium text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
         >
-          + Request branch access
+          <span className="sm:hidden">+ Request access</span>
+          <span className="hidden sm:inline">+ Request branch access</span>
         </button>
       )}
 
@@ -175,9 +176,10 @@ export function GlobalBranchSelector({
         <button
           type="button"
           onClick={() => setShowManageAccess(true)}
-          className="mt-1 block text-left text-[11px] font-medium text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
+          className="mt-1 block max-w-full truncate whitespace-nowrap text-left text-[11px] font-medium text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
         >
-          + Manage branch access
+          <span className="sm:hidden">+ Manage access</span>
+          <span className="hidden sm:inline">+ Manage branch access</span>
         </button>
       )}
 

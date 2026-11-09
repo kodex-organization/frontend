@@ -2,6 +2,8 @@
 
 import {
   Activity,
+  Menu,
+  X,
   CreditCard,
   FileSearch,
   LogOut,
@@ -12,6 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { usePlatformAdminAuth } from "@/lib/platform-admin/auth-context";
 import { ImpersonationBanner } from "@/features/platform-admin/components/impersonation-banner";
@@ -28,18 +31,45 @@ const navItems = [
 export function SuperAdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { admin, logout } = usePlatformAdminAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Close the mobile drawer whenever the route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
-      <aside className="relative flex w-64 shrink-0 flex-col border-r border-slate-200/80 bg-white p-4 shadow-sm z-10">
+    <div className="fixed inset-0 flex overflow-hidden bg-slate-50 font-sans">
+      {/* Mobile drawer overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm lg:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-slate-200/80 bg-white p-4 shadow-sm transition-transform duration-300 ease-in-out lg:static lg:z-10 lg:translate-x-0 ${
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="mb-5 flex items-center gap-2.5 px-2 pb-3 border-b border-slate-100">
           <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
             <ShieldCheck className="h-5 w-5 text-brand-400" />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-bold text-slate-900">Platform Admin</p>
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Super Console</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Close menu"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 lg:hidden"
+          >
+            <X className="h-[18px] w-[18px]" />
+          </button>
         </div>
 
         <nav
@@ -98,9 +128,24 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="custom-scrollbar flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="custom-scrollbar flex-1 flex flex-col min-w-0 overflow-y-auto overflow-x-hidden">
         <ImpersonationBanner />
-        <main className="p-6 sm:p-8 max-w-7xl w-full mx-auto pb-24">{children}</main>
+        {/* Mobile top bar with hamburger */}
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur-md lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open menu"
+            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <ShieldCheck aria-hidden="true" className="h-5 w-5 text-brand-600" />
+            <span className="text-sm font-bold text-slate-900">Platform Admin</span>
+          </div>
+        </header>
+        <main className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-8 lg:pb-24">{children}</main>
       </div>
     </div>
   );

@@ -120,7 +120,7 @@ export default function BillingWorkspace({
   }
 
   return (
-    <main className="mx-auto w-full max-w-7xl pb-12">
+    <main className="mx-auto w-full max-w-7xl pb-0 sm:pb-12">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">

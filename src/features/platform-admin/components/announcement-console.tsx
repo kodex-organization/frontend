@@ -346,7 +346,7 @@ export function AnnouncementConsole() {
           {draft.audience === "selected_roles" ? (
             <fieldset>
               <legend className="text-sm font-medium text-slate-700">Tenant roles</legend>
-              <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {tenantRoles.map((role) => (
                   <label key={role} className="flex items-center gap-2 text-sm text-slate-700">
                     <input

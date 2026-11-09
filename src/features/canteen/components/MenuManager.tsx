@@ -638,7 +638,7 @@ export function MenuManager() {
       {/* --- MODAL: Add / Edit Category --- */}
       {categoryModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 space-y-5">
+          <div className="max-h-[90vh] overflow-y-auto w-full max-w-md rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-lg font-bold text-slate-900">
                 {editingCategory ? "Edit Category" : "Add New Category"}
@@ -720,7 +720,7 @@ export function MenuManager() {
       {/* --- MODAL: Add / Edit Product --- */}
       {itemModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 space-y-5">
+          <div className="max-h-[90vh] overflow-y-auto w-full max-w-lg rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-lg font-bold text-slate-900">
                 {editingItem ? "Edit Canteen Product" : "Add New Canteen Product"}

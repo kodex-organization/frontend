@@ -126,7 +126,7 @@ export default function CustomerDetailsPage() {
   const cameFromDashboard = initialTab === "udhaar";
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-0 sm:p-6 bg-slate-50 lg:min-h-screen text-slate-800 space-y-6">
       {/* Top Navigation Bar */}
       <div className="flex items-center justify-between gap-4">
         <button
@@ -273,7 +273,7 @@ export default function CustomerDetailsPage() {
 
       {/* Tabs Layout */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex border-b border-slate-200 px-6 pt-3 gap-6 text-sm font-semibold text-slate-600 bg-slate-50/50">
+        <div className="flex overflow-x-auto border-b border-slate-200 px-4 sm:px-6 pt-3 gap-6 [&>button]:shrink-0 [&>button]:whitespace-nowrap text-sm font-semibold text-slate-600 bg-slate-50/50">
           <button
             type="button"
             onClick={() => setActiveTab("visits")}

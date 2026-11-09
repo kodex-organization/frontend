@@ -36,14 +36,14 @@ export default function InvoiceTable({
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-5 py-3">Invoice</th>
-            <th className="px-5 py-3">Branch</th>
-            <th className="px-5 py-3">Session / table</th>
-            <th className="px-5 py-3 text-right">Total</th>
-            <th className="px-5 py-3 text-right">Remaining</th>
-            <th className="px-5 py-3">Status</th>
-            <th className="px-5 py-3">Created</th>
-            <th className="px-5 py-3 text-right">
+            <th className="px-3 sm:px-5 py-3">Invoice</th>
+            <th className="px-3 sm:px-5 py-3">Branch</th>
+            <th className="px-3 sm:px-5 py-3">Session / table</th>
+            <th className="px-3 sm:px-5 py-3 text-right">Total</th>
+            <th className="px-3 sm:px-5 py-3 text-right">Remaining</th>
+            <th className="px-3 sm:px-5 py-3">Status</th>
+            <th className="px-3 sm:px-5 py-3">Created</th>
+            <th className="px-3 sm:px-5 py-3 text-right">
               <span className="sr-only">Actions</span>
             </th>
           </tr>
@@ -71,7 +71,7 @@ export default function InvoiceTable({
 
             return (
               <tr key={invoice.id} className="hover:bg-slate-50">
-                <td className="whitespace-nowrap px-5 py-4">
+                <td className="whitespace-nowrap px-3 sm:px-5 py-4">
                   <p className="font-semibold text-slate-900">
                     {invoice.invoiceNumber ?? "Number pending"}
                   </p>
@@ -79,12 +79,12 @@ export default function InvoiceTable({
                     {branchName}
                   </p>
                 </td>
-                <td className="whitespace-nowrap px-5 py-4">
+                <td className="whitespace-nowrap px-3 sm:px-5 py-4">
                   <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
                     {branchName}
                   </span>
                 </td>
-                <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                <td className="whitespace-nowrap px-3 sm:px-5 py-4 text-slate-600">
                   <p>
                     {invoice.session?.table?.tableNumber
                       ? `Table ${invoice.session.table.tableNumber}`
@@ -96,22 +96,22 @@ export default function InvoiceTable({
                       : "Non-session invoice"}
                   </p>
                 </td>
-                <td className="whitespace-nowrap px-5 py-4 text-right font-medium text-slate-900">
+                <td className="whitespace-nowrap px-3 sm:px-5 py-4 text-right font-medium text-slate-900">
                   {currency(invoice, total)}
                 </td>
-                <td className="whitespace-nowrap px-5 py-4 text-right text-slate-700">
+                <td className="whitespace-nowrap px-3 sm:px-5 py-4 text-right text-slate-700">
                   {currency(invoice, remaining)}
                 </td>
-                <td className="whitespace-nowrap px-5 py-4">
+                <td className="whitespace-nowrap px-3 sm:px-5 py-4">
                   <StatusBadge status={invoice.status} />
                 </td>
-                <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                <td className="whitespace-nowrap px-3 sm:px-5 py-4 text-slate-600">
                   {new Intl.DateTimeFormat(undefined, {
                     dateStyle: "medium",
                     timeStyle: "short",
                   }).format(new Date(invoice.createdAt))}
                 </td>
-                <td className="whitespace-nowrap px-5 py-4 text-right">
+                <td className="whitespace-nowrap px-3 sm:px-5 py-4 text-right">
                   <Link
                     href={`${detailBasePath}/${invoice.id}`}
                     className="inline-flex rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"

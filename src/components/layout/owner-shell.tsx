@@ -270,7 +270,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
     .toUpperCase();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 font-sans print:h-auto print:overflow-visible print:bg-white">
+    <div className="fixed inset-0 flex overflow-hidden bg-slate-50 font-sans print:static print:inset-auto print:h-auto print:overflow-visible print:bg-white">
       {/* Mobile Drawer Overlay */}
       {mobileMenuOpen && (
         <div
@@ -470,14 +470,14 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main Content Area */}
-      <main className="custom-scrollbar flex-1 flex flex-col min-w-0 overflow-y-auto print:overflow-visible print:h-auto print:bg-white">
+      <main className="custom-scrollbar flex-1 flex flex-col min-w-0 overflow-y-auto overflow-x-hidden print:overflow-visible print:h-auto print:bg-white">
         <div className="print:hidden">
           <TenantAnnouncementCenter />
         </div>
 
         {/* Global Sticky Top Header */}
-        <header className="sticky top-0 z-20 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-2 shadow-sm backdrop-blur-md sm:px-6 print:hidden">
-          <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
+        <header className="sticky top-0 z-20 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white px-4 py-2 shadow-sm backdrop-blur-md sm:bg-white/80 sm:px-6 print:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
@@ -489,10 +489,10 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
             {/* Quick Access Button: clean, text-only, no background color, no border, no emoji */}
             <Link
               href="/quick-access"
-              className="inline-flex items-center px-1.5 py-1 font-bold text-sm text-black hover:opacity-75 transition-opacity"
+              className="inline-flex min-w-0 items-center truncate px-1.5 py-1 text-sm font-bold text-black transition-opacity hover:opacity-75"
               title={t.quickAccess}
             >
-              <span>{t.quickAccess}</span>
+              <span className="truncate">{t.quickAccess}</span>
             </Link>
 
             <div className="hidden sm:flex items-center gap-2">
@@ -503,7 +503,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <GlobalBranchSelector onSwitching={setBranchSwitching} />
             <NotificationBell
               notifications={notifications}
@@ -517,7 +517,7 @@ export function OwnerShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Body */}
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24 print:p-0 print:pb-0 print:m-0 print:max-w-none" key={`${user?.id}:${user?.branchId}`}>
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-6 sm:pb-12 lg:pb-24 print:p-0 print:pb-0 print:m-0 print:max-w-none" key={`${user?.id}:${user?.branchId}`}>
           {branchSwitching && <p role="status" className="mb-4 text-center text-slate-500">Switching active branch...</p>}
           <fieldset disabled={branchSwitching} className={`min-w-0 ${branchSwitching ? "pointer-events-none opacity-50" : ""}`}>
             {children}

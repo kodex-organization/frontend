@@ -829,7 +829,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
       ═══════════════════════════════════════════════════════════════════ */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-4 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
@@ -1009,7 +1009,7 @@ export function PosScreen({ sessionId: propSessionId }: { sessionId?: string }) 
             {/* SPLIT TENDER Fields */}
             {paymentMethod === "SPLIT" && (
               <div className="space-y-2.5 pt-1">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                       Cash Portion

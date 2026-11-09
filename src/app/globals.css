@@ -104,6 +104,28 @@ h1, h2, h3, h4, h5, h6 {
   @apply outline-none ring-2 ring-brand-500/20 ring-offset-1 border-brand-500;
 }
 
+/* ── Mobile responsiveness safety net ─────────────────────────── */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+/* iOS Safari zooms the page when a focused input has font-size < 16px */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* Print Media Styles */
 @media print {
   @page {

@@ -457,7 +457,7 @@ export default function SyncStatusPage() {
   }[status];
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 pb-16 font-sans">
+    <main className="mx-auto w-full max-w-6xl space-y-6 pb-4 sm:pb-16 font-sans">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center pb-4 border-b border-slate-200">
         <div>
@@ -728,7 +728,7 @@ export default function SyncStatusPage() {
       {/* Payload Inspection Modal */}
       {inspectItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl space-y-4">
+          <div className="max-h-[90vh] overflow-y-auto w-full max-w-lg rounded-2xl border border-slate-100 bg-white p-4 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <span className={`p-2 rounded-lg border ${getEntityBadgeColor(inspectItem.entity)}`}>

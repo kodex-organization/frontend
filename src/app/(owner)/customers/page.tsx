@@ -337,7 +337,7 @@ export default function CustomersPage() {
   }, [items, selectedFilterTag]);
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800 space-y-6">
+    <div className="p-0 sm:p-6 bg-slate-50 lg:min-h-screen text-slate-800 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-4 border-b border-slate-200">
         <div>
@@ -609,7 +609,7 @@ export default function CustomersPage() {
       {/* Customer Create/Edit Modal */}
       {customerModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 space-y-5">
+          <div className="max-h-[90vh] overflow-y-auto w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 sm:p-6 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h2 className="text-lg font-bold text-slate-900">
@@ -729,7 +729,7 @@ export default function CustomersPage() {
       {/* Customer Merge Modal */}
       {mergeSource && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 space-y-5">
+          <div className="max-h-[90vh] overflow-y-auto w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 sm:p-6 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-violet-50 text-violet-600 rounded-lg">

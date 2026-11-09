@@ -454,7 +454,7 @@ export default function UdhaarPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50/60 pb-16 text-slate-900 print:min-h-0 print:bg-white print:p-0 print:pb-0">
+    <main className="lg:min-h-screen bg-slate-50/60 pb-4 sm:pb-16 text-slate-900 print:min-h-0 print:bg-white print:p-0 print:pb-0">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6 print:p-0 print:m-0 print:max-w-none">
         <div className="udhaar-non-printable space-y-6 print:hidden">
           {snapshotAt && (
@@ -851,7 +851,7 @@ export default function UdhaarPage() {
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-4 rounded-lg bg-slate-50 p-3 text-xs border border-slate-200">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-lg bg-slate-50 p-3 text-xs border border-slate-200">
                 <div className="space-y-1">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Customer Details</div>
                   <p className="font-bold text-slate-900 text-sm">{selectedCustomer?.fullName ?? "Customer"}</p>

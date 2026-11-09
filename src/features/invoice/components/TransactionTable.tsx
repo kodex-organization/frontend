@@ -32,24 +32,24 @@ export default function TransactionTable({
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-5 py-3">Date</th>
-            <th className="px-5 py-3">Invoice</th>
-            <th className="px-5 py-3">Method</th>
-            <th className="px-5 py-3">Reference</th>
-            <th className="px-5 py-3 text-right">Amount</th>
-            <th className="px-5 py-3">Invoice status</th>
+            <th className="px-3 sm:px-5 py-3">Date</th>
+            <th className="px-3 sm:px-5 py-3">Invoice</th>
+            <th className="px-3 sm:px-5 py-3">Method</th>
+            <th className="px-3 sm:px-5 py-3">Reference</th>
+            <th className="px-3 sm:px-5 py-3 text-right">Amount</th>
+            <th className="px-3 sm:px-5 py-3">Invoice status</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
           {transactions.map((transaction) => (
             <tr key={transaction.id}>
-              <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+              <td className="whitespace-nowrap px-3 sm:px-5 py-4 text-slate-600">
                 {new Intl.DateTimeFormat(undefined, {
                   dateStyle: "medium",
                   timeStyle: "short",
                 }).format(new Date(transaction.createdAt))}
               </td>
-              <td className="px-5 py-4">
+              <td className="whitespace-nowrap px-3 sm:px-5 py-4">
                 <Link
                   href={`/billing/${transaction.invoice.id}`}
                   className="font-semibold text-emerald-700 hover:text-emerald-800"
@@ -58,19 +58,19 @@ export default function TransactionTable({
                     transaction.invoice.id.slice(0, 8)}
                 </Link>
               </td>
-              <td className="px-5 py-4 text-slate-700">
+              <td className="px-3 sm:px-5 py-4 text-slate-700">
                 {tenderLabel(transaction.tenderType)}
               </td>
-              <td className="px-5 py-4 text-slate-500">
+              <td className="px-3 sm:px-5 py-4 text-slate-500">
                 {transaction.paymentReference ?? "—"}
               </td>
-              <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-slate-900">
+              <td className="whitespace-nowrap px-3 sm:px-5 py-4 text-right font-semibold text-slate-900">
                 {formatCurrency(
                   transaction.amount,
                   transaction.invoice.branch.currency,
                 )}
               </td>
-              <td className="px-5 py-4">
+              <td className="px-3 sm:px-5 py-4">
                 <StatusBadge status={transaction.invoice.status} />
               </td>
             </tr>

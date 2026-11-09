@@ -439,7 +439,7 @@ export function OwnerApprovalsTable() {
       {rejectingItem && mounted &&
         createPortal(
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
+            <div className="max-h-[90vh] overflow-y-auto w-full max-w-md rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-200">
               <div className="flex items-center gap-2 text-rose-700 font-semibold mb-2">
                 <AlertCircle className="h-5 w-5" />
                 <span>Reject Request</span>

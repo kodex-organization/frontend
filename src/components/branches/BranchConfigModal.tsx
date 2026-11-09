@@ -132,7 +132,7 @@ export function BranchConfigModal({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-zinc-200 dark:border-zinc-800 px-5 pt-2 gap-4 text-xs font-medium bg-zinc-50/50 dark:bg-zinc-900/50">
+        <div className="flex overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 px-5 pt-2 gap-4 [&>button]:shrink-0 [&>button]:whitespace-nowrap text-xs font-medium bg-zinc-50/50 dark:bg-zinc-900/50">
           <button
             type="button"
             onClick={() => setActiveTab("pricing_limits")}

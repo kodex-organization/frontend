@@ -263,7 +263,7 @@ export function ReleaseConsole() {
             ) : null}
           </div>
           {feedback ? <Alert variant="error">{feedback}</Alert> : null}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Platform" htmlFor="release-platform">
               <Select
                 id="release-platform"

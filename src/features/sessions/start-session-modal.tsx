@@ -258,7 +258,7 @@ export function StartSessionModal({
       aria-modal="true"
       aria-labelledby="start-session-title"
     >
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+      <div className="max-h-[90vh] overflow-y-auto w-full max-w-lg rounded-2xl bg-white p-4 sm:p-6 shadow-xl">
         <div className="flex items-center justify-between">
           <h2 id="start-session-title" className="text-xl font-semibold">
             Start session

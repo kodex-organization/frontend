@@ -799,7 +799,7 @@ export default function ReportingWorkspace() {
     .join(" ");
 
   return (
-    <main className="min-h-screen bg-slate-50/60 text-slate-900 pb-16">
+    <main className="lg:min-h-screen bg-slate-50/60 text-slate-900 pb-4 sm:pb-16">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
         <header className="mb-8 flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-center">
@@ -1795,7 +1795,7 @@ export default function ReportingWorkspace() {
       {/* Correction Modal */}
       {correctingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 space-y-5">
+          <div className="max-h-[90vh] overflow-y-auto w-full max-w-md rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-100 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
