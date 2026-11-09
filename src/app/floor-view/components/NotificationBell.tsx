@@ -126,7 +126,7 @@ export function NotificationBell({
           />
           <section
             aria-label="Notification list"
-            className="absolute right-0 z-50 mt-2.5 flex max-h-[440px] w-80 origin-top-right flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl sm:w-96"
+            className="absolute right-0 z-50 mt-2.5 flex max-h-[440px] w-[min(20rem,calc(100vw-2rem))] origin-top-right flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl sm:w-96"
           >
             <header className="flex items-center justify-between border-b border-slate-100 p-3.5">
               <div>

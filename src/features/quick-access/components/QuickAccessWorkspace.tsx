@@ -80,7 +80,7 @@ export function QuickAccessWorkspace() {
 
   return (
     <div
-      className={`space-y-6 pb-16 ${
+      className={`space-y-6 pb-4 sm:pb-16 ${
         isUrdu ? "rtl" : "ltr"
       }`}
       dir={isUrdu ? "rtl" : "ltr"}

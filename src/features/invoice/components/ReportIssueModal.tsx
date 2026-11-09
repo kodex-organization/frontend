@@ -91,7 +91,7 @@ export default function ReportIssueModal({
       aria-modal="true"
       aria-labelledby="report-issue-title"
     >
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+      <div className="max-h-[90vh] overflow-y-auto w-full max-w-lg rounded-2xl bg-white shadow-xl">
         <div className="border-b border-slate-200 px-6 py-5">
           <h2 id="report-issue-title" className="text-lg font-semibold text-slate-950">
             Report issue on {invoiceNumber ?? "this invoice"}

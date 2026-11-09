@@ -255,7 +255,7 @@ export function DashboardView() {
             <p className="mt-1 text-sm text-slate-500">Go to Floor View to start a new session.</p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-left text-sm text-slate-600">
               <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-700">
                 <tr>
@@ -398,7 +398,7 @@ export function DashboardView() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 gap-6">
+      <div className="flex overflow-x-auto border-b border-slate-200 gap-6 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
         {(["live", "kpi", "heatmap", "udhaar", "staff", "anomalies"] as const).map((tab) => (
           <button
             key={tab}
@@ -629,7 +629,7 @@ export function DashboardView() {
                 <p className="text-slate-400 text-sm">All clear! No customer accounts have outstanding debt.</p>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-slate-200">
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
                 <table className="w-full text-left text-sm text-slate-600">
                   <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-700">
                     <tr>
@@ -673,7 +673,7 @@ export function DashboardView() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="rounded-xl border border-slate-200 overflow-x-auto">
                   <table className="w-full text-left text-sm text-slate-600">
                     <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-700">
                       <tr>
@@ -741,7 +741,7 @@ export function DashboardView() {
       {/* Drill-down transactions Modal */}
       {drilldownCategory && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+          <div className="max-h-[90vh] w-full max-w-4xl bg-white rounded-2xl shadow-xl overflow-y-auto border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <h3 className="text-lg font-bold text-slate-950">
                 Transaction Details: <span className="uppercase text-brand-600">{drilldownCategory.replace("_", " ")}</span>
@@ -765,7 +765,7 @@ export function DashboardView() {
                   <p className="text-slate-400 text-sm">No transactions found for this category today.</p>
                 </div>
               ) : (
-                <div className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="w-full text-left text-sm text-slate-600">
                     <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-700">
                       <tr>

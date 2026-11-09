@@ -129,7 +129,7 @@ export function FloorViewDashboard() {
   }
 
   return (
-    <div className="p-6 bg-slate-50 min-h-screen text-slate-800">
+    <div className="p-0 sm:p-6 bg-slate-50 lg:min-h-screen text-slate-800">
       {/* Enterprise Dashboard Header Control */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 pb-5 border-b border-slate-200/80">
         <div>

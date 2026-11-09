@@ -827,7 +827,7 @@ export default function AuditPage() {
       {/* Retention Policy Modal */}
       {isRetentionModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-4 sm:p-6 space-y-4">
             <h3 className="text-base font-bold text-slate-900">
               Audit Log Retention Policy
             </h3>
@@ -886,7 +886,7 @@ export default function AuditPage() {
       {/* Resolve Anomaly Modal */}
       {resolvingAlert && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4">
+          <div className="max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-4 sm:p-6 space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900">

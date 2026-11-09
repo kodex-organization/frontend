@@ -50,7 +50,7 @@ export function ConfirmModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="w-full max-w-md rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+      <div className="max-h-[90vh] overflow-y-auto w-full max-w-md rounded-2xl border border-slate-100 bg-white p-4 sm:p-6 shadow-2xl animate-in zoom-in-95 duration-150">
         <div className="flex items-start gap-4">
           <div
             className={`p-2.5 rounded-xl shrink-0 ${

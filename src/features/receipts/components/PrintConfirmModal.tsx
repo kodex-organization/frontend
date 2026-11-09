@@ -31,7 +31,7 @@ export default function PrintConfirmModal({
       aria-labelledby="print-receipt-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4"
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg">
+      <div className="max-h-[90vh] overflow-y-auto w-full max-w-md rounded-2xl bg-white p-4 sm:p-6 shadow-lg">
         <h3
           id="print-receipt-title"
           className="mb-3 text-lg font-semibold text-gray-800"

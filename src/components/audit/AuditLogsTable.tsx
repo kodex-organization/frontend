@@ -245,7 +245,7 @@ export function AuditLogsTable({
 
             {/* Content */}
             <div className="p-6 overflow-y-auto space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-4 bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-xl">
                 <div>
                   <span className="text-zinc-500 dark:text-zinc-400 block font-semibold uppercase text-[10px]">
                     Action Type

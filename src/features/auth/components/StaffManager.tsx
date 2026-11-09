@@ -535,7 +535,7 @@ export function StaffManager() {
       {/* Edit Staff Modal */}
       {editingStaff && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+          <div className="max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-4 sm:p-6 space-y-4">
             <h3 className="text-base font-bold text-slate-900">Edit Staff Member</h3>
             <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
               <div>
@@ -644,7 +644,7 @@ export function StaffManager() {
       {/* Reset Password Modal */}
       {passwordResetStaff && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full p-6 space-y-4">
+          <div className="max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full p-4 sm:p-6 space-y-4">
             <h3 className="text-base font-bold text-slate-900">Reset Password</h3>
             <p className="text-xs text-slate-500">
               Set a new secure password for <strong>{passwordResetStaff.fullName || passwordResetStaff.email}</strong>.
@@ -687,7 +687,7 @@ export function StaffManager() {
       {/* Reset PIN Modal */}
       {pinResetStaff && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full p-6 space-y-4">
+          <div className="max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full p-4 sm:p-6 space-y-4">
             <h3 className="text-base font-bold text-slate-900">Reset Quick-Login PIN</h3>
             <p className="text-xs text-slate-500">
               Set a 4 to 6 digit quick shift-login PIN for <strong>{pinResetStaff.fullName || pinResetStaff.email}</strong>.

@@ -158,48 +158,50 @@ export function PlatformAuditConsole() {
       {/* Navigation Tabs */}
       <div
         aria-label="Audit views"
-        className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm"
+        className="max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 shadow-sm"
         role="tablist"
       >
-        <button
-          aria-selected={activeTab === "logs"}
-          className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
-            activeTab === "logs"
-              ? "bg-slate-900 text-white shadow-sm"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("logs")}
-          role="tab"
-          type="button"
-        >
-          <FileSearch className="h-4 w-4" /> Platform & Tenant Logs
-        </button>
-        <button
-          aria-selected={activeTab === "anomalies"}
-          className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
-            activeTab === "anomalies"
-              ? "bg-slate-900 text-white shadow-sm"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("anomalies")}
-          role="tab"
-          type="button"
-        >
-          <AlertTriangle className="h-4 w-4" /> High-Risk Anomalies
-        </button>
-        <button
-          aria-selected={activeTab === "impersonation"}
-          className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
-            activeTab === "impersonation"
-              ? "bg-slate-900 text-white shadow-sm"
-              : "text-slate-600 hover:bg-slate-100"
-          }`}
-          onClick={() => setActiveTab("impersonation")}
-          role="tab"
-          type="button"
-        >
-          <ScanFace className="h-4 w-4" /> Impersonation Trail
-        </button>
+        <div className="inline-flex min-w-max">
+          <button
+            aria-selected={activeTab === "logs"}
+            className={`flex shrink-0 items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
+              activeTab === "logs"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+            onClick={() => setActiveTab("logs")}
+            role="tab"
+            type="button"
+          >
+            <FileSearch className="h-4 w-4" /> Platform & Tenant Logs
+          </button>
+          <button
+            aria-selected={activeTab === "anomalies"}
+            className={`flex shrink-0 items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
+              activeTab === "anomalies"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+            onClick={() => setActiveTab("anomalies")}
+            role="tab"
+            type="button"
+          >
+            <AlertTriangle className="h-4 w-4" /> High-Risk Anomalies
+          </button>
+          <button
+            aria-selected={activeTab === "impersonation"}
+            className={`flex shrink-0 items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-all ${
+              activeTab === "impersonation"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+            onClick={() => setActiveTab("impersonation")}
+            role="tab"
+            type="button"
+          >
+            <ScanFace className="h-4 w-4" /> Impersonation Trail
+          </button>
+        </div>
       </div>
 
       {/* Tab 1: Platform & Tenant Logs */}

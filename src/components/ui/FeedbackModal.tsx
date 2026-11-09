@@ -47,7 +47,7 @@ export function FeedbackModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-sm">
-      <div className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${config.card}`}>
+      <div className={`max-h-[90vh] overflow-y-auto w-full max-w-md rounded-2xl border p-4 sm:p-6 shadow-2xl ${config.card}`}>
         <div className="flex items-start gap-4">
           <div className={`flex h-12 w-12 items-center justify-center rounded-full ${config.iconClass}`}>
             <Icon className="h-6 w-6" />

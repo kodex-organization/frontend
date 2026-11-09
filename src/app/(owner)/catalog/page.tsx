@@ -351,7 +351,7 @@ export default function CatalogPage() {
   return (
     <div>
       {/* ── page header ── */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Tables & Rates</h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -399,8 +399,8 @@ export default function CatalogPage() {
 
       {/* ── tables list ── */}
       {!loading && tables.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs">
-          <table className="w-full text-sm">
+        <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto shadow-xs">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="bg-slate-50 text-left text-xs font-medium text-slate-500 uppercase">
                 <th className="px-4 py-3 border-b">Table No.</th>
@@ -500,7 +500,7 @@ export default function CatalogPage() {
       {/* ── ADD / EDIT TABLE MODAL ── */}
       {showForm && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+          <div className="max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex justify-between items-center mb-5">
               <h2 className="text-lg font-semibold text-slate-800">
                 {editingTable ? "Edit Table" : "Add New Table"}
@@ -625,7 +625,7 @@ export default function CatalogPage() {
       {/* ── RATE HISTORY MODAL ── */}
       {rateTable && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+          <div className="max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <div className="flex justify-between items-center mb-5">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800">

@@ -140,7 +140,7 @@ export default function RecordPaymentModal({
       aria-modal="true"
       aria-labelledby="record-payment-title"
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div className="max-h-[90vh] overflow-y-auto w-full max-w-md rounded-2xl bg-white p-4 sm:p-6 shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div>
             <h2

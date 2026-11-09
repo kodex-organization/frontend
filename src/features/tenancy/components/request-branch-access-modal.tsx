@@ -122,7 +122,7 @@ export function RequestBranchAccessModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="max-h-[90vh] w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-y-auto">
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50/50">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600">

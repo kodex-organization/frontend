@@ -637,7 +637,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
       {/* Tenant Details Modal */}
       {selectedTenantDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+          <div className="max-h-[90vh] w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-y-auto border border-slate-200">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <div>
                 <h3 className="text-lg font-bold text-slate-950">{selectedTenantDetail.name}</h3>
@@ -652,7 +652,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
             </div>
 
             <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-3 bg-slate-50 rounded-lg">
                   <div className="text-xs text-slate-400 uppercase font-semibold">Status</div>
                   <div className="text-sm font-bold text-slate-800 capitalize mt-0.5">
@@ -826,7 +826,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
       {/* Onboarding Dialog Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+          <div className="max-h-[90vh] w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-y-auto border border-slate-200">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <h3 className="text-lg font-bold text-slate-950">Onboard New Club Tenant</h3>
               <button
@@ -880,7 +880,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                   </Select>
                 </FormField>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <FormField label="Initial Status" htmlFor="onboardStatus">
                     <Select
                       id="onboardStatus"
@@ -905,7 +905,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
                   </FormField>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <FormField label="Currency" htmlFor="currency">
                     <Input
                       id="currency"
@@ -1013,7 +1013,7 @@ export function TenantManager({ onSelectTenantForSubscription }: TenantManagerPr
       {/* Force Override Modal (§3.15) */}
       {overrideModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-red-200">
+          <div className="max-h-[90vh] w-full max-w-md bg-white rounded-2xl shadow-xl overflow-y-auto border border-red-200">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-red-50">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-red-600" />

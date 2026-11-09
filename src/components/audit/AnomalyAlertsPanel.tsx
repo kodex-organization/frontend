@@ -262,7 +262,7 @@ export function AnomalyAlertsPanel({
       {/* Incident Resolution Modal */}
       {activeAlert && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+          <div className="max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-lg w-full p-4 sm:p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">
               Resolve Anomaly Alert
             </h3>
